@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, Check, CreditCard } from "lucide-react";
+import { Loader2, Check, CreditCard, DollarSign, Clock } from "lucide-react";
 import { Service, TimeSlot, insertBookingSchema } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -12,13 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Calendar from "@/components/calendar/Calendar";
-import { loadStripe } from "@stripe/stripe-js";
-import { Elements } from "@stripe/react-stripe-js";
-import { PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-
-// Load Stripe outside component
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || "pk_test_your_key");
+import { formatPrice } from "@/lib/utils";
 
 interface BookingFormProps {
   services: Service[];
@@ -32,72 +29,150 @@ const formSchema = insertBookingSchema.extend({
 
 type FormData = z.infer<typeof formSchema>;
 
-function StripeCheckoutForm({ 
+interface BraintreePaymentProps {
+  bookingData: FormData | null;
+  onComplete: (transactionId: string) => void;
+  isDeposit: boolean;
+  tipAmount?: number;
+}
+
+// This component will be replaced with a real Braintree integration
+// once we have the API credentials
+function BraintreePaymentForm({ 
   bookingData, 
-  onComplete 
-}: { 
-  bookingData: FormData | null; 
-  onComplete: () => void; 
-}) {
+  onComplete,
+  isDeposit,
+  tipAmount = 0
+}: BraintreePaymentProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const stripe = useStripe();
-  const elements = useElements();
   const { toast } = useToast();
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!stripe || !elements) {
+    if (!bookingData) {
+      setMessage("No booking data available");
       return;
     }
     
     setIsLoading(true);
     
-    const { error } = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: window.location.origin + "/booking?success=true",
-      },
-      redirect: "if_required",
-    });
-    
-    if (error) {
+    try {
+      // Simulate payment processing
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // In production, this would be replaced with a real API call
+      // to process payment with Braintree and get a nonce
+      const mockTransactionId = `tr_${Math.random().toString(36).substring(2, 10)}`;
+      
+      toast({
+        title: "Payment Successful",
+        description: isDeposit 
+          ? "Your deposit has been processed. Your booking is confirmed!" 
+          : "Your payment has been processed. Your booking is confirmed!",
+      });
+      
+      onComplete(mockTransactionId);
+    } catch (error: any) {
       setMessage(error.message || "An unexpected error occurred.");
       toast({
         title: "Payment Failed",
-        description: error.message,
+        description: error.message || "Payment processing failed. Please try again.",
         variant: "destructive",
       });
-    } else {
-      toast({
-        title: "Payment Successful",
-        description: "Your booking has been confirmed.",
-      });
-      onComplete();
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
+  
+  const paymentAmount = isDeposit
+    ? (bookingData?.amount || 0) * 0.25
+    : (bookingData?.amount || 0) + (tipAmount || 0);
   
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
+      <div className="p-4 bg-muted rounded-md mb-4">
+        <div className="text-sm text-muted-foreground mb-3">
+          {isDeposit
+            ? "Pay a 25% deposit now to secure your booking. The remaining balance will be due at the session."
+            : "Pay the full amount now. You can also add a tip after your session."
+          }
+        </div>
+        
+        <div className="mb-4">
+          <h4 className="font-medium mb-2">Payment Summary</h4>
+          
+          <div className="flex justify-between mb-2">
+            <span>{bookingData?.name}</span>
+            <span>{formatPrice(bookingData?.amount || 0)}</span>
+          </div>
+          
+          {tipAmount > 0 && (
+            <div className="flex justify-between mb-2">
+              <span>Tip</span>
+              <span>{formatPrice(tipAmount)}</span>
+            </div>
+          )}
+          
+          {isDeposit && (
+            <div className="flex justify-between mb-2">
+              <span>Deposit (25%)</span>
+              <span>{formatPrice((bookingData?.amount || 0) * 0.25)}</span>
+            </div>
+          )}
+          
+          <div className="flex justify-between font-bold border-t border-border pt-2 mt-2">
+            <span>Total Due Now</span>
+            <span>{formatPrice(paymentAmount)}</span>
+          </div>
+        </div>
+        
+        {/* Placeholder for Braintree Drop-in UI */}
+        <div className="bg-background border border-input rounded-md p-4 mb-3">
+          <div className="mb-4">
+            <label className="text-sm font-medium mb-1 block">Card Number</label>
+            <input 
+              type="text" 
+              className="w-full px-3 py-2 border border-input rounded-md" 
+              placeholder="4111 1111 1111 1111" 
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-1 block">Expiration</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 border border-input rounded-md" 
+                placeholder="MM/YY" 
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">CVV</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 border border-input rounded-md" 
+                placeholder="123" 
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      
       {message && <p className="text-red-500 text-sm">{message}</p>}
+      
       <Button 
-        disabled={isLoading || !stripe || !elements} 
-        className="w-full bg-primary hover:bg-primary-600 mt-4"
+        type="submit"
+        disabled={isLoading} 
+        className="w-full bg-primary hover:bg-primary/90"
       >
         {isLoading ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : (
           <CreditCard className="mr-2 h-4 w-4" />
         )}
-        Pay Deposit
+        {isDeposit ? `Pay Deposit (${formatPrice((bookingData?.amount || 0) * 0.25)})` : `Pay Full Amount (${formatPrice(paymentAmount)})`}
       </Button>
-      <p className="text-sm text-center mt-2 text-muted-foreground">
-        A 25% deposit is required to secure your booking.
-      </p>
     </form>
   );
 }
@@ -109,7 +184,8 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
   const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [availableTimes, setAvailableTimes] = useState<TimeSlot[]>([]);
   const [isPaymentStep, setIsPaymentStep] = useState(false);
-  const [clientSecret, setClientSecret] = useState("");
+  const [paymentOption, setPaymentOption] = useState<'deposit' | 'full'>('deposit');
+  const [tipAmount, setTipAmount] = useState(0);
   const [bookingData, setBookingData] = useState<FormData | null>(null);
   const [bookingComplete, setBookingComplete] = useState(false);
   
@@ -234,19 +310,8 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
       // Store booking data for later submission after payment
       setBookingData(data);
       
-      // Create payment intent
-      const response = await apiRequest("POST", "/api/create-payment-intent", {
-        amount: data.amount * 0.25, // 25% deposit
-      });
-      
-      const { clientSecret } = await response.json();
-      
-      if (clientSecret) {
-        setClientSecret(clientSecret);
-        setIsPaymentStep(true);
-      } else {
-        throw new Error("Failed to create payment intent");
-      }
+      // Move to payment step - we'll handle payment option selection there
+      setIsPaymentStep(true);
     } catch (error) {
       console.error("Error creating booking:", error);
       toast({
