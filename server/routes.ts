@@ -157,6 +157,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Get the payment status of a booking, used to return and complete payment or add tip
+  app.get("/api/bookings/:id/payment-status", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const booking = await storage.getBooking(id);
+      
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      
+      // Get the client token for new payments if needed
+      const clientToken = await braintreeService.generateClientToken();
+      
+      res.json({
+        booking: {
+          id: booking.id,
+          serviceId: booking.serviceId,
+          date: booking.date,
+          amount: booking.amount,
+          name: booking.name,
+          email: booking.email,
+          status: booking.status,
+          paymentStatus: booking.paymentStatus,
+          transactionId: booking.transactionId,
+          tipAmount: booking.tipAmount
+        },
+        clientToken,
+        // Calculate how much is left to pay if it's a deposit
+        remainingAmount: booking.paymentStatus === 'deposit_paid' 
+          ? booking.amount - (booking.amount * 0.25) 
+          : 0
+      });
+    } catch (error: any) {
+      res.status(500).json({ 
+        message: "Error fetching booking payment status", 
+        error: error.message 
+      });
+    }
+  });
+  
   app.get("/api/bookings", isAuthenticated, async (req, res) => {
     try {
       const bookings = await storage.getAllBookings();
@@ -263,72 +303,221 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Stripe Payment API
-  app.post("/api/create-payment-intent", async (req, res) => {
+  // Braintree Payment API
+  app.get("/api/braintree/client-token", async (req, res) => {
     try {
-      const { amount, bookingId } = req.body;
-      
-      if (!amount || amount <= 0) {
-        return res.status(400).json({ message: "Invalid amount" });
-      }
-      
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amount * 100), // Convert to cents
-        currency: "usd",
-        metadata: {
-          bookingId: bookingId ? bookingId.toString() : undefined
-        }
-      });
-      
-      // If bookingId is provided, update the booking with the payment intent ID
-      if (bookingId) {
-        await storage.updateBookingPayment(
-          bookingId, 
-          paymentIntent.id, 
-          "deposit_paid"
-        );
-      }
-      
-      res.json({ clientSecret: paymentIntent.client_secret });
+      const clientToken = await braintreeService.generateClientToken();
+      res.json({ clientToken });
     } catch (error: any) {
-      res
-        .status(500)
-        .json({ message: "Error creating payment intent: " + error.message });
+      res.status(500).json({ 
+        message: "Error generating client token", 
+        error: error.message 
+      });
     }
   });
 
-  app.post("/api/webhook", async (req, res) => {
-    const payload = req.body;
-    const sig = req.headers['stripe-signature'] as string;
-    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    
-    let event;
-    
+  app.post("/api/braintree/process-payment", async (req, res) => {
     try {
-      if (endpointSecret) {
-        event = stripe.webhooks.constructEvent(payload, sig, endpointSecret);
-      } else {
-        event = payload;
+      const { 
+        bookingId, 
+        paymentMethodNonce, 
+        isDeposit = false,
+        tipAmount = 0
+      } = req.body;
+      
+      if (!bookingId || !paymentMethodNonce) {
+        return res.status(400).json({ 
+          message: "Missing required fields" 
+        });
       }
       
-      // Handle the event
-      if (event.type === 'payment_intent.succeeded') {
-        const paymentIntent = event.data.object;
+      // Get the booking information
+      const booking = await storage.getBooking(parseInt(bookingId));
+      
+      if (!booking) {
+        return res.status(404).json({ 
+          message: "Booking not found" 
+        });
+      }
+      
+      // Process the payment
+      const result = await braintreeService.processPayment(
+        booking,
+        paymentMethodNonce,
+        isDeposit
+      );
+      
+      if (result.success && result.transaction) {
+        // Update booking with transaction information
+        const updatedBooking = await storage.updateBookingTransactionInfo(booking.id, {
+          transactionId: result.transaction.id,
+          paymentStatus: result.paymentStatus,
+          paymentMethod: result.transaction.paymentInstrumentType,
+          paymentMetadata: result.transaction,
+          tipAmount: tipAmount > 0 ? tipAmount : undefined
+        });
         
-        // Update booking if bookingId is in metadata
-        if (paymentIntent.metadata && paymentIntent.metadata.bookingId) {
-          const bookingId = parseInt(paymentIntent.metadata.bookingId);
-          await storage.updateBookingPayment(
-            bookingId,
-            paymentIntent.id,
-            "paid"
+        // Send confirmation emails
+        if (updatedBooking) {
+          await emailService.sendClientConfirmationEmail(
+            updatedBooking, 
+            result.transaction.id
+          );
+          
+          await emailService.sendAdminNotificationEmail(
+            updatedBooking, 
+            result.transaction.id
           );
         }
+        
+        res.json({
+          success: true,
+          transaction: {
+            id: result.transaction.id,
+            status: result.transaction.status,
+            amount: result.transaction.amount
+          },
+          booking: updatedBooking
+        });
+      } else {
+        // Update booking with error information if needed
+        await storage.updateBookingTransactionInfo(booking.id, {
+          transactionId: 'error',
+          paymentStatus: 'failed',
+          paymentErrorMessage: result.errorMessage
+        });
+        
+        res.status(400).json({
+          success: false,
+          message: result.errorMessage,
+          errors: result.errors
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ 
+        message: "Error processing payment", 
+        error: error.message 
+      });
+    }
+  });
+  
+  // Admin-only refund endpoint
+  app.post("/api/braintree/refund", isAuthenticated, async (req, res) => {
+    try {
+      const { transactionId, amount } = req.body;
+      
+      if (!transactionId) {
+        return res.status(400).json({ 
+          message: "Transaction ID is required" 
+        });
       }
       
-      res.json({ received: true });
-    } catch (err: any) {
-      res.status(400).send(`Webhook Error: ${err.message}`);
+      const result = await braintreeService.refundTransaction(
+        transactionId, 
+        amount
+      );
+      
+      if (result.success && result.transaction) {
+        // Find booking by transactionId and update it
+        const bookings = await storage.getAllBookings();
+        const booking = bookings.find(b => b.transactionId === transactionId);
+        
+        if (booking) {
+          await storage.updateBookingTransactionInfo(booking.id, {
+            transactionId: result.transaction.id,
+            paymentStatus: 'refunded'
+          });
+        }
+        
+        res.json({
+          success: true,
+          transaction: {
+            id: result.transaction.id,
+            status: result.transaction.status,
+            amount: result.transaction.amount
+          }
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: result.errorMessage
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ 
+        message: "Error processing refund", 
+        error: error.message 
+      });
+    }
+  });
+  
+  // Add a tip to a booking
+  app.post("/api/braintree/add-tip", async (req, res) => {
+    try {
+      const { 
+        bookingId, 
+        paymentMethodNonce, 
+        tipAmount 
+      } = req.body;
+      
+      if (!bookingId || !paymentMethodNonce || !tipAmount) {
+        return res.status(400).json({ 
+          message: "Missing required fields" 
+        });
+      }
+      
+      // Get the booking information
+      const booking = await storage.getBooking(parseInt(bookingId));
+      
+      if (!booking) {
+        return res.status(404).json({ 
+          message: "Booking not found" 
+        });
+      }
+      
+      // Create a modified booking object with the tip amount
+      const tipBooking = {
+        ...booking,
+        amount: tipAmount  // Override the amount with just the tip amount
+      };
+      
+      // Process the tip payment
+      const result = await braintreeService.processPayment(
+        tipBooking,
+        paymentMethodNonce,
+        false
+      );
+      
+      if (result.success && result.transaction) {
+        // Update booking with tip information
+        const updatedBooking = await storage.updateBookingTransactionInfo(booking.id, {
+          transactionId: result.transaction.id,
+          paymentStatus: booking.paymentStatus,  // Keep the original payment status
+          paymentMethod: result.transaction.paymentInstrumentType,
+          tipAmount: tipAmount
+        });
+        
+        res.json({
+          success: true,
+          transaction: {
+            id: result.transaction.id,
+            status: result.transaction.status,
+            amount: result.transaction.amount
+          },
+          booking: updatedBooking
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: result.errorMessage,
+          errors: result.errors
+        });
+      }
+    } catch (error: any) {
+      res.status(500).json({ 
+        message: "Error processing tip", 
+        error: error.message 
+      });
     }
   });
 

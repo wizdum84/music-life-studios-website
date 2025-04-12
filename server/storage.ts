@@ -33,6 +33,14 @@ export interface IStorage {
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBooking(id: number, booking: Partial<InsertBooking>): Promise<Booking | undefined>;
   updateBookingPayment(id: number, paymentIntentId: string, status: string): Promise<Booking | undefined>;
+  updateBookingTransactionInfo(id: number, transactionInfo: {
+    transactionId: string;
+    paymentStatus: string;
+    paymentMethod?: string;
+    paymentErrorMessage?: string;
+    paymentMetadata?: any;
+    tipAmount?: number;
+  }): Promise<Booking | undefined>;
   deleteBooking(id: number): Promise<boolean>;
   
   // Messages
@@ -289,6 +297,30 @@ export class MemStorage implements IStorage {
       ...existingBooking, 
       paymentIntentId, 
       paymentStatus: status 
+    };
+    this.bookings.set(id, updatedBooking);
+    return updatedBooking;
+  }
+  
+  async updateBookingTransactionInfo(id: number, transactionInfo: {
+    transactionId: string;
+    paymentStatus: string;
+    paymentMethod?: string;
+    paymentErrorMessage?: string;
+    paymentMetadata?: any;
+    tipAmount?: number;
+  }): Promise<Booking | undefined> {
+    const existingBooking = this.bookings.get(id);
+    if (!existingBooking) return undefined;
+    
+    const updatedBooking = { 
+      ...existingBooking, 
+      transactionId: transactionInfo.transactionId,
+      paymentStatus: transactionInfo.paymentStatus,
+      paymentMethod: transactionInfo.paymentMethod || existingBooking.paymentMethod,
+      paymentErrorMessage: transactionInfo.paymentErrorMessage,
+      paymentMetadata: transactionInfo.paymentMetadata,
+      tipAmount: transactionInfo.tipAmount
     };
     this.bookings.set(id, updatedBooking);
     return updatedBooking;

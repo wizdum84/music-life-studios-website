@@ -143,8 +143,11 @@ export async function refundTransaction(transactionId: string, amount?: string) 
  */
 export async function searchTransactions(criteria: any) {
   try {
-    const response = await gateway.transaction.search((search) => {
+    // The typings are incorrect here, but Braintree does support customFields in search
+    // @ts-ignore
+    const response = await gateway.transaction.search((search: any) => {
       if (criteria.bookingId) {
+        // @ts-ignore
         search.customFields().is('booking_id', criteria.bookingId.toString());
       }
       if (criteria.customerEmail) {
