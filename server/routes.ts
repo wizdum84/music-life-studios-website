@@ -134,6 +134,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Beats API routes
+  
+  // Get all beats
+  app.get("/api/beats", async (req, res) => {
+    try {
+      const beats = await storage.getAllBeats();
+      res.json(beats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get featured beats
+  app.get("/api/beats/featured", async (req, res) => {
+    try {
+      const beats = await storage.getFeaturedBeats();
+      res.json(beats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get beats by genre
+  app.get("/api/beats/genre/:genre", async (req, res) => {
+    try {
+      const { genre } = req.params;
+      const beats = await storage.getBeatsByGenre(genre);
+      res.json(beats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get single beat by ID
+  app.get("/api/beats/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const beat = await storage.getBeat(parseInt(id));
+      if (!beat) {
+        return res.status(404).json({ error: "Beat not found" });
+      }
+      res.json(beat);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Create beat (admin only)
+  app.post("/api/beats", isAuthenticated, async (req, res) => {
+    try {
+      const beat = await storage.createBeat(req.body);
+      res.status(201).json(beat);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Update beat (admin only)
+  app.put("/api/beats/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const beat = await storage.updateBeat(parseInt(id), req.body);
+      if (!beat) {
+        return res.status(404).json({ error: "Beat not found" });
+      }
+      res.json(beat);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Delete beat (admin only)
+  app.delete("/api/beats/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteBeat(parseInt(id));
+      if (!success) {
+        return res.status(404).json({ error: "Beat not found" });
+      }
+      res.status(204).end();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Beat Purchases API routes
+  
+  // Create beat purchase
+  app.post("/api/beat-purchases", async (req, res) => {
+    try {
+      const purchase = await storage.createBeatPurchase(req.body);
+      res.status(201).json(purchase);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get purchases by email (for customer to view their purchases)
+  app.get("/api/beat-purchases/email/:email", async (req, res) => {
+    try {
+      const { email } = req.params;
+      const purchases = await storage.getBeatPurchasesByEmail(email);
+      res.json(purchases);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Update beat purchase contract status
+  app.put("/api/beat-purchases/:id/contract", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { contractSigned } = req.body;
+      const purchase = await storage.updateBeatPurchaseContract(parseInt(id), contractSigned);
+      if (!purchase) {
+        return res.status(404).json({ error: "Purchase not found" });
+      }
+      res.json(purchase);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Increment beat purchase download count
+  app.post("/api/beat-purchases/:id/download", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const purchase = await storage.incrementBeatPurchaseDownloadCount(parseInt(id));
+      if (!purchase) {
+        return res.status(404).json({ error: "Purchase not found" });
+      }
+      res.json(purchase);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
   // Booking API
   app.post("/api/bookings", async (req, res) => {
     try {
