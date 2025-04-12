@@ -90,7 +90,8 @@ export default function ServicesSection({ services, isLoading }: ServicesSection
     <section id="services" className="py-20 bg-white">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
-          <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-4">Professional Services</h2>
+          <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-2">Professional Services</h2>
+          <h3 className="font-medium text-2xl text-primary mb-3">Your Sound, Perfected</h3>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Comprehensive audio solutions to elevate your sound from concept to completion.
           </p>

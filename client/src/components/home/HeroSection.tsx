@@ -20,8 +20,11 @@ export default function HeroSection() {
       <div className="container mx-auto px-4 py-20 md:py-32 relative z-10">
         <div className="max-w-3xl">
           <h1 className="font-bold text-4xl md:text-5xl lg:text-6xl text-white leading-tight mb-6">
-            {STUDIO_INFO.NAME}: <br />Your Sound, Perfected.
+            {STUDIO_INFO.NAME}
           </h1>
+          <h2 className="font-medium text-2xl md:text-3xl text-white mb-4">
+            Where Music is Life
+          </h2>
           <p className="text-gray-100 text-xl md:text-2xl mb-8 max-w-2xl">
             Professional audio engineering and music production services to elevate your creative vision.
           </p>
