@@ -1,0 +1,109 @@
+import { useState, useEffect } from "react";
+import { Link, useLocation } from "wouter";
+import { Menu, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { STUDIO_INFO } from "@/lib/constants";
+
+export default function Navbar() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [location] = useLocation();
+  
+  // Handle scroll event to add shadow to navbar
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 10) {
+        setScrolled(true);
+      } else {
+        setScrolled(false);
+      }
+    };
+    
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+  
+  // Close mobile menu when location changes
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location]);
+  
+  const isHomePage = location === "/";
+  
+  return (
+    <header className={`sticky top-0 z-50 bg-white ${scrolled ? 'shadow-md' : ''} transition-shadow duration-300`}>
+      <nav className="container mx-auto px-4 py-4 flex justify-between items-center">
+        <div className="flex items-center">
+          <Link href="/" className="flex items-center">
+            <span className="text-primary font-bold text-2xl">Music Life</span>
+            <span className="text-foreground font-medium ml-1 text-lg">Studios</span>
+          </Link>
+        </div>
+        
+        {/* Desktop Navigation */}
+        <div className="hidden md:flex items-center space-x-8">
+          {isHomePage ? (
+            <>
+              <a href="#services" className="font-medium hover:text-primary transition-colors">Services</a>
+              <a href="#portfolio" className="font-medium hover:text-primary transition-colors">Portfolio</a>
+              <a href="#pricing" className="font-medium hover:text-primary transition-colors">Pricing</a>
+              <a href="#about" className="font-medium hover:text-primary transition-colors">About</a>
+              <a href="#contact" className="font-medium hover:text-primary transition-colors">Contact</a>
+            </>
+          ) : (
+            <>
+              <Link href="/#services" className="font-medium hover:text-primary transition-colors">Services</Link>
+              <Link href="/#portfolio" className="font-medium hover:text-primary transition-colors">Portfolio</Link>
+              <Link href="/#pricing" className="font-medium hover:text-primary transition-colors">Pricing</Link>
+              <Link href="/#about" className="font-medium hover:text-primary transition-colors">About</Link>
+              <Link href="/#contact" className="font-medium hover:text-primary transition-colors">Contact</Link>
+            </>
+          )}
+          <Button asChild className="bg-primary hover:bg-primary-600">
+            <Link href="/booking">Book Now</Link>
+          </Button>
+        </div>
+        
+        {/* Mobile menu button */}
+        <button 
+          className="md:hidden text-foreground focus:outline-none"
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        >
+          {isMobileMenuOpen ? (
+            <X className="h-6 w-6" />
+          ) : (
+            <Menu className="h-6 w-6" />
+          )}
+        </button>
+      </nav>
+      
+      {/* Mobile Navigation */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden bg-white border-t border-muted">
+          <div className="container mx-auto px-4 py-3 flex flex-col space-y-3">
+            {isHomePage ? (
+              <>
+                <a href="#services" className="font-medium py-2 hover:text-primary transition-colors">Services</a>
+                <a href="#portfolio" className="font-medium py-2 hover:text-primary transition-colors">Portfolio</a>
+                <a href="#pricing" className="font-medium py-2 hover:text-primary transition-colors">Pricing</a>
+                <a href="#about" className="font-medium py-2 hover:text-primary transition-colors">About</a>
+                <a href="#contact" className="font-medium py-2 hover:text-primary transition-colors">Contact</a>
+              </>
+            ) : (
+              <>
+                <Link href="/#services" className="font-medium py-2 hover:text-primary transition-colors">Services</Link>
+                <Link href="/#portfolio" className="font-medium py-2 hover:text-primary transition-colors">Portfolio</Link>
+                <Link href="/#pricing" className="font-medium py-2 hover:text-primary transition-colors">Pricing</Link>
+                <Link href="/#about" className="font-medium py-2 hover:text-primary transition-colors">About</Link>
+                <Link href="/#contact" className="font-medium py-2 hover:text-primary transition-colors">Contact</Link>
+              </>
+            )}
+            <Button asChild className="bg-primary hover:bg-primary-600 w-full justify-center">
+              <Link href="/booking">Book Now</Link>
+            </Button>
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}

@@ -1,0 +1,387 @@
+import { 
+  users, type User, type InsertUser,
+  services, type Service, type InsertService,
+  tracks, type Track, type InsertTrack,
+  bookings, type Booking, type InsertBooking,
+  messages, type Message, type InsertMessage,
+  timeSlots, type TimeSlot, type InsertTimeSlot
+} from "@shared/schema";
+
+export interface IStorage {
+  // Users
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  
+  // Services
+  getAllServices(): Promise<Service[]>;
+  getService(id: number): Promise<Service | undefined>;
+  createService(service: InsertService): Promise<Service>;
+  updateService(id: number, service: Partial<InsertService>): Promise<Service | undefined>;
+  deleteService(id: number): Promise<boolean>;
+  
+  // Tracks
+  getAllTracks(): Promise<Track[]>;
+  getTrack(id: number): Promise<Track | undefined>;
+  createTrack(track: InsertTrack): Promise<Track>;
+  updateTrack(id: number, track: Partial<InsertTrack>): Promise<Track | undefined>;
+  deleteTrack(id: number): Promise<boolean>;
+  
+  // Bookings
+  getAllBookings(): Promise<Booking[]>;
+  getBooking(id: number): Promise<Booking | undefined>;
+  createBooking(booking: InsertBooking): Promise<Booking>;
+  updateBooking(id: number, booking: Partial<InsertBooking>): Promise<Booking | undefined>;
+  updateBookingPayment(id: number, paymentIntentId: string, status: string): Promise<Booking | undefined>;
+  deleteBooking(id: number): Promise<boolean>;
+  
+  // Messages
+  getAllMessages(): Promise<Message[]>;
+  getMessage(id: number): Promise<Message | undefined>;
+  createMessage(message: InsertMessage): Promise<Message>;
+  markMessageAsRead(id: number): Promise<Message | undefined>;
+  deleteMessage(id: number): Promise<boolean>;
+  
+  // Time Slots
+  getAllTimeSlots(): Promise<TimeSlot[]>;
+  getAvailableTimeSlots(startDate: Date, endDate: Date): Promise<TimeSlot[]>;
+  createTimeSlot(timeSlot: InsertTimeSlot): Promise<TimeSlot>;
+  bookTimeSlot(id: number, bookingId: number): Promise<TimeSlot | undefined>;
+  releaseTimeSlot(id: number): Promise<TimeSlot | undefined>;
+}
+
+export class MemStorage implements IStorage {
+  private users: Map<number, User>;
+  private services: Map<number, Service>;
+  private tracks: Map<number, Track>;
+  private bookings: Map<number, Booking>;
+  private messages: Map<number, Message>;
+  private timeSlots: Map<number, TimeSlot>;
+  
+  private userCurrentId: number;
+  private serviceCurrentId: number;
+  private trackCurrentId: number;
+  private bookingCurrentId: number;
+  private messageCurrentId: number;
+  private timeSlotCurrentId: number;
+
+  constructor() {
+    this.users = new Map();
+    this.services = new Map();
+    this.tracks = new Map();
+    this.bookings = new Map();
+    this.messages = new Map();
+    this.timeSlots = new Map();
+    
+    this.userCurrentId = 1;
+    this.serviceCurrentId = 1;
+    this.trackCurrentId = 1;
+    this.bookingCurrentId = 1;
+    this.messageCurrentId = 1;
+    this.timeSlotCurrentId = 1;
+    
+    // Add default admin user
+    this.createUser({
+      username: "admin",
+      password: "admin123" // In a real app, this would be hashed
+    });
+    
+    // Add default services
+    this.createService({
+      name: "Recording Session",
+      description: "Professional studio recording with state-of-the-art equipment and acoustically-treated space.",
+      price: 7500, // $75 per hour
+      duration: 60, // 1 hour
+      features: ["Up to 8 hours of studio time", "Multiple track recording", "Basic editing included"]
+    });
+    
+    this.createService({
+      name: "Mixing & Mastering",
+      description: "Polished, industry-standard mixes and masters to make your music shine on any platform.",
+      price: 12000, // $120 per hour
+      duration: 60, // 1 hour
+      features: ["Detailed mixing process", "Professional mastering", "Up to 3 revisions included"]
+    });
+    
+    this.createService({
+      name: "Production & Composition",
+      description: "Custom music production and composition services for artists, brands, and media projects.",
+      price: 17500, // $175 per hour
+      duration: 60, // 1 hour
+      features: ["Original music creation", "Arrangement and production", "Session musicians available"]
+    });
+    
+    // Create sample tracks
+    this.createTrack({
+      title: "Electric Dreams",
+      description: "Synthwave Project - Mixed & Mastered",
+      audioUrl: "https://example.com/audio/electric-dreams.mp3",
+      imageUrl: "https://example.com/images/electric-dreams.jpg",
+      type: "mixing"
+    });
+    
+    this.createTrack({
+      title: "Summer Vibes EP",
+      description: "Recording & Production",
+      audioUrl: "https://example.com/audio/summer-vibes.mp3",
+      imageUrl: "https://example.com/images/summer-vibes.jpg",
+      type: "recording"
+    });
+    
+    this.createTrack({
+      title: "Midnight Blue",
+      description: "Mixing & Mastering",
+      audioUrl: "https://example.com/audio/midnight-blue.mp3",
+      imageUrl: "https://example.com/images/midnight-blue.jpg",
+      type: "mixing"
+    });
+    
+    this.createTrack({
+      title: "Urban Echoes",
+      description: "Full Production",
+      audioUrl: "https://example.com/audio/urban-echoes.mp3",
+      imageUrl: "https://example.com/images/urban-echoes.jpg",
+      type: "production"
+    });
+    
+    this.createTrack({
+      title: "Acoustic Sessions",
+      description: "Recording & Mixing",
+      audioUrl: "https://example.com/audio/acoustic-sessions.mp3",
+      imageUrl: "https://example.com/images/acoustic-sessions.jpg",
+      type: "recording"
+    });
+    
+    // Create time slots for the next 30 days
+    const now = new Date();
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(now);
+      date.setDate(date.getDate() + i);
+      
+      // Create 3 time slots per day (10 AM, 2 PM, 6 PM)
+      const slot1 = new Date(date);
+      slot1.setHours(10, 0, 0, 0);
+      
+      const slot2 = new Date(date);
+      slot2.setHours(14, 0, 0, 0);
+      
+      const slot3 = new Date(date);
+      slot3.setHours(18, 0, 0, 0);
+      
+      this.createTimeSlot({ date: slot1, available: true });
+      this.createTimeSlot({ date: slot2, available: true });
+      this.createTimeSlot({ date: slot3, available: true });
+    }
+  }
+
+  // Users
+  async getUser(id: number): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.username === username,
+    );
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = this.userCurrentId++;
+    const user: User = { ...insertUser, id };
+    this.users.set(id, user);
+    return user;
+  }
+  
+  // Services
+  async getAllServices(): Promise<Service[]> {
+    return Array.from(this.services.values());
+  }
+  
+  async getService(id: number): Promise<Service | undefined> {
+    return this.services.get(id);
+  }
+  
+  async createService(service: InsertService): Promise<Service> {
+    const id = this.serviceCurrentId++;
+    const newService: Service = { ...service, id };
+    this.services.set(id, newService);
+    return newService;
+  }
+  
+  async updateService(id: number, service: Partial<InsertService>): Promise<Service | undefined> {
+    const existingService = this.services.get(id);
+    if (!existingService) return undefined;
+    
+    const updatedService = { ...existingService, ...service };
+    this.services.set(id, updatedService);
+    return updatedService;
+  }
+  
+  async deleteService(id: number): Promise<boolean> {
+    return this.services.delete(id);
+  }
+  
+  // Tracks
+  async getAllTracks(): Promise<Track[]> {
+    return Array.from(this.tracks.values());
+  }
+  
+  async getTrack(id: number): Promise<Track | undefined> {
+    return this.tracks.get(id);
+  }
+  
+  async createTrack(track: InsertTrack): Promise<Track> {
+    const id = this.trackCurrentId++;
+    const newTrack: Track = { ...track, id };
+    this.tracks.set(id, newTrack);
+    return newTrack;
+  }
+  
+  async updateTrack(id: number, track: Partial<InsertTrack>): Promise<Track | undefined> {
+    const existingTrack = this.tracks.get(id);
+    if (!existingTrack) return undefined;
+    
+    const updatedTrack = { ...existingTrack, ...track };
+    this.tracks.set(id, updatedTrack);
+    return updatedTrack;
+  }
+  
+  async deleteTrack(id: number): Promise<boolean> {
+    return this.tracks.delete(id);
+  }
+  
+  // Bookings
+  async getAllBookings(): Promise<Booking[]> {
+    return Array.from(this.bookings.values());
+  }
+  
+  async getBooking(id: number): Promise<Booking | undefined> {
+    return this.bookings.get(id);
+  }
+  
+  async createBooking(booking: InsertBooking): Promise<Booking> {
+    const id = this.bookingCurrentId++;
+    const newBooking: Booking = { 
+      ...booking, 
+      id, 
+      createdAt: new Date(),
+      status: "pending",
+      paymentStatus: "unpaid"
+    };
+    this.bookings.set(id, newBooking);
+    return newBooking;
+  }
+  
+  async updateBooking(id: number, booking: Partial<InsertBooking>): Promise<Booking | undefined> {
+    const existingBooking = this.bookings.get(id);
+    if (!existingBooking) return undefined;
+    
+    const updatedBooking = { ...existingBooking, ...booking };
+    this.bookings.set(id, updatedBooking);
+    return updatedBooking;
+  }
+  
+  async updateBookingPayment(id: number, paymentIntentId: string, status: string): Promise<Booking | undefined> {
+    const existingBooking = this.bookings.get(id);
+    if (!existingBooking) return undefined;
+    
+    const updatedBooking = { 
+      ...existingBooking, 
+      paymentIntentId, 
+      paymentStatus: status 
+    };
+    this.bookings.set(id, updatedBooking);
+    return updatedBooking;
+  }
+  
+  async deleteBooking(id: number): Promise<boolean> {
+    return this.bookings.delete(id);
+  }
+  
+  // Messages
+  async getAllMessages(): Promise<Message[]> {
+    return Array.from(this.messages.values());
+  }
+  
+  async getMessage(id: number): Promise<Message | undefined> {
+    return this.messages.get(id);
+  }
+  
+  async createMessage(message: InsertMessage): Promise<Message> {
+    const id = this.messageCurrentId++;
+    const newMessage: Message = { 
+      ...message, 
+      id, 
+      read: false,
+      createdAt: new Date()
+    };
+    this.messages.set(id, newMessage);
+    return newMessage;
+  }
+  
+  async markMessageAsRead(id: number): Promise<Message | undefined> {
+    const existingMessage = this.messages.get(id);
+    if (!existingMessage) return undefined;
+    
+    const updatedMessage = { ...existingMessage, read: true };
+    this.messages.set(id, updatedMessage);
+    return updatedMessage;
+  }
+  
+  async deleteMessage(id: number): Promise<boolean> {
+    return this.messages.delete(id);
+  }
+  
+  // Time Slots
+  async getAllTimeSlots(): Promise<TimeSlot[]> {
+    return Array.from(this.timeSlots.values());
+  }
+  
+  async getAvailableTimeSlots(startDate: Date, endDate: Date): Promise<TimeSlot[]> {
+    return Array.from(this.timeSlots.values()).filter(
+      (slot) => 
+        slot.available && 
+        slot.date >= startDate && 
+        slot.date <= endDate
+    );
+  }
+  
+  async createTimeSlot(timeSlot: InsertTimeSlot): Promise<TimeSlot> {
+    const id = this.timeSlotCurrentId++;
+    const newTimeSlot: TimeSlot = { 
+      ...timeSlot, 
+      id, 
+      bookingId: null
+    };
+    this.timeSlots.set(id, newTimeSlot);
+    return newTimeSlot;
+  }
+  
+  async bookTimeSlot(id: number, bookingId: number): Promise<TimeSlot | undefined> {
+    const existingTimeSlot = this.timeSlots.get(id);
+    if (!existingTimeSlot || !existingTimeSlot.available) return undefined;
+    
+    const updatedTimeSlot = { 
+      ...existingTimeSlot, 
+      available: false,
+      bookingId
+    };
+    this.timeSlots.set(id, updatedTimeSlot);
+    return updatedTimeSlot;
+  }
+  
+  async releaseTimeSlot(id: number): Promise<TimeSlot | undefined> {
+    const existingTimeSlot = this.timeSlots.get(id);
+    if (!existingTimeSlot) return undefined;
+    
+    const updatedTimeSlot = { 
+      ...existingTimeSlot, 
+      available: true,
+      bookingId: null
+    };
+    this.timeSlots.set(id, updatedTimeSlot);
+    return updatedTimeSlot;
+  }
+}
+
+export const storage = new MemStorage();
