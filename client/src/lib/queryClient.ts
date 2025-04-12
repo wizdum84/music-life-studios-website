@@ -23,6 +23,18 @@ export async function apiRequest(
   return res;
 }
 
+/**
+ * Specialized API function to check a booking's payment status
+ * Used when customers return to complete payment after a session
+ */
+export async function getBookingPaymentStatus(bookingId: string, email: string) {
+  const response = await apiRequest(
+    "GET", 
+    `/api/bookings/${bookingId}/payment-status?email=${encodeURIComponent(email)}`
+  );
+  return await response.json();
+}
+
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;

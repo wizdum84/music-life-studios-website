@@ -29,7 +29,7 @@ const formSchema = insertBookingSchema.extend({
 
 type FormData = z.infer<typeof formSchema>;
 
-interface BraintreePaymentProps {
+export interface BraintreePaymentProps {
   bookingData: FormData | null;
   onComplete: (transactionId: string) => void;
   isDeposit: boolean;
@@ -38,7 +38,7 @@ interface BraintreePaymentProps {
 
 // This component will be replaced with a real Braintree integration
 // once we have the API credentials
-function BraintreePaymentForm({ 
+export function BraintreePaymentForm({ 
   bookingData, 
   onComplete,
   isDeposit,
@@ -300,8 +300,23 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
     }).format(date);
   };
   
-  const handlePaymentComplete = () => {
-    setBookingComplete(true);
+  const handlePaymentComplete = (transactionId: string) => {
+    // Process the booking with payment information
+    apiRequest("POST", "/api/bookings", {
+      ...bookingData,
+      transactionId,
+      paymentStatus: paymentOption === 'deposit' ? 'deposit_paid' : 'paid',
+      status: 'confirmed'
+    }).then(() => {
+      setBookingComplete(true);
+    }).catch(error => {
+      console.error("Error finalizing booking:", error);
+      toast({
+        title: "Error",
+        description: "There was an error finalizing your booking. Please contact support.",
+        variant: "destructive"
+      });
+    });
   };
   
   // Form submission
@@ -340,18 +355,103 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
     );
   }
   
-  // If we're at the payment step, show the Stripe payment form
-  if (isPaymentStep && clientSecret) {
+  // If we're at the payment step, show the payment options and form
+  if (isPaymentStep) {
     return (
-      <>
-        <h3 className="font-medium text-xl mb-4">Payment Information</h3>
-        <Elements stripe={stripePromise} options={{ clientSecret }}>
-          <StripeCheckoutForm 
-            bookingData={bookingData} 
-            onComplete={handlePaymentComplete} 
-          />
-        </Elements>
-      </>
+      <div className="space-y-6">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="font-medium text-xl">Payment Information</h3>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setIsPaymentStep(false)}
+            className="flex items-center gap-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-arrow-left">
+              <path d="m12 19-7-7 7-7"/>
+              <path d="M19 12H5"/>
+            </svg>
+            Back
+          </Button>
+        </div>
+
+        {/* Summary Card */}
+        <Card className="bg-muted/30">
+          <CardHeader className="pb-3">
+            <CardTitle>Booking Summary</CardTitle>
+            <CardDescription>
+              {selectedService?.name} • {selectedDuration && `${selectedDuration / 60} hours`} • {selectedDate && formatDate(selectedDate)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Service Rate</span>
+                <span>{formatPrice(selectedService?.price || 0)}/hr</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Duration</span>
+                <span>{selectedDuration && `${selectedDuration / 60} hours`}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t font-medium">
+                <span>Total Amount</span>
+                <span>{formatPrice((bookingData?.amount || 0))}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Payment Options */}
+        <div className="my-6">
+          <h4 className="font-medium mb-4">Choose Payment Option</h4>
+          <Tabs defaultValue="deposit" onValueChange={(val) => setPaymentOption(val as 'deposit' | 'full')}>
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="deposit" className="flex gap-2 items-center">
+                <Clock className="h-4 w-4" />
+                Pay Deposit (25%)
+              </TabsTrigger>
+              <TabsTrigger value="full" className="flex gap-2 items-center">
+                <DollarSign className="h-4 w-4" />
+                Pay Full Amount
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="deposit">
+              <p className="text-sm text-muted-foreground mb-4">
+                Pay 25% now to secure your booking. The remaining balance will be due at the session.
+              </p>
+              <div className="font-medium flex justify-between">
+                <span>Deposit Due Now:</span>
+                <span>{formatPrice((bookingData?.amount || 0) * 0.25)}</span>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="full">
+              <p className="text-sm text-muted-foreground mb-4">
+                Pay the full amount now for your convenience.
+              </p>
+              <div className="font-medium flex justify-between">
+                <span>Total Due Now:</span>
+                <span>{formatPrice(bookingData?.amount || 0)}</span>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+        
+        {/* Braintree Payment Form */}
+        <BraintreePaymentForm
+          bookingData={bookingData}
+          onComplete={handlePaymentComplete}
+          isDeposit={paymentOption === 'deposit'}
+        />
+
+        {/* Return Later Option */}
+        {paymentOption === 'deposit' && (
+          <p className="text-center text-sm text-muted-foreground mt-6">
+            After your session, you'll receive an email with a link to pay the remaining balance and add a tip if you'd like.
+          </p>
+        )}
+      </div>
     );
   }
   

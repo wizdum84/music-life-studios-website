@@ -7,6 +7,7 @@ import Home from "@/pages/Home";
 import Booking from "@/pages/Booking";
 import Admin from "@/pages/Admin";
 import AdminLogin from "@/pages/AdminLogin";
+import CompletePayment from "@/pages/CompletePayment";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 
@@ -15,6 +16,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/booking" component={Booking} />
+      <Route path="/complete-payment" component={CompletePayment} />
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
