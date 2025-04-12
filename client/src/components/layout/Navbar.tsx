@@ -67,6 +67,7 @@ export default function Navbar() {
               <a href="#pricing" className="font-medium hover:text-primary transition-colors">Pricing</a>
               <a href="#about" className="font-medium hover:text-primary transition-colors">About</a>
               <a href="#contact" className="font-medium hover:text-primary transition-colors">Contact</a>
+              <Link href="/beats" className="font-medium hover:text-primary transition-colors">Beats & Licensing</Link>
             </>
           ) : (
             <>
@@ -75,6 +76,7 @@ export default function Navbar() {
               <Link href="/#pricing" className="font-medium hover:text-primary transition-colors">Pricing</Link>
               <Link href="/#about" className="font-medium hover:text-primary transition-colors">About</Link>
               <Link href="/#contact" className="font-medium hover:text-primary transition-colors">Contact</Link>
+              <Link href="/beats" className="font-medium hover:text-primary transition-colors">Beats & Licensing</Link>
             </>
           )}
           <Button asChild className="bg-primary hover:bg-primary-600">
@@ -106,6 +108,7 @@ export default function Navbar() {
                 <a href="#pricing" className="font-medium py-2 hover:text-primary transition-colors">Pricing</a>
                 <a href="#about" className="font-medium py-2 hover:text-primary transition-colors">About</a>
                 <a href="#contact" className="font-medium py-2 hover:text-primary transition-colors">Contact</a>
+                <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors">Beats & Licensing</Link>
               </>
             ) : (
               <>
@@ -114,6 +117,7 @@ export default function Navbar() {
                 <Link href="/#pricing" className="font-medium py-2 hover:text-primary transition-colors">Pricing</Link>
                 <Link href="/#about" className="font-medium py-2 hover:text-primary transition-colors">About</Link>
                 <Link href="/#contact" className="font-medium py-2 hover:text-primary transition-colors">Contact</Link>
+                <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors">Beats & Licensing</Link>
               </>
             )}
             <Button asChild className="bg-primary hover:bg-primary-600 w-full justify-center">

@@ -4,7 +4,9 @@ import {
   tracks, type Track, type InsertTrack,
   bookings, type Booking, type InsertBooking,
   messages, type Message, type InsertMessage,
-  timeSlots, type TimeSlot, type InsertTimeSlot
+  timeSlots, type TimeSlot, type InsertTimeSlot,
+  beats, type Beat, type InsertBeat,
+  beatPurchases, type BeatPurchase, type InsertBeatPurchase
 } from "@shared/schema";
 
 export interface IStorage {
@@ -56,6 +58,24 @@ export interface IStorage {
   createTimeSlot(timeSlot: InsertTimeSlot): Promise<TimeSlot>;
   bookTimeSlot(id: number, bookingId: number): Promise<TimeSlot | undefined>;
   releaseTimeSlot(id: number): Promise<TimeSlot | undefined>;
+  
+  // Beats
+  getAllBeats(): Promise<Beat[]>;
+  getFeaturedBeats(): Promise<Beat[]>;
+  getBeatsByGenre(genre: string): Promise<Beat[]>;
+  getBeat(id: number): Promise<Beat | undefined>;
+  createBeat(beat: InsertBeat): Promise<Beat>;
+  updateBeat(id: number, beat: Partial<InsertBeat>): Promise<Beat | undefined>;
+  deleteBeat(id: number): Promise<boolean>;
+  
+  // Beat Purchases
+  getAllBeatPurchases(): Promise<BeatPurchase[]>;
+  getBeatPurchasesByBeat(beatId: number): Promise<BeatPurchase[]>;
+  getBeatPurchasesByEmail(email: string): Promise<BeatPurchase[]>;
+  getBeatPurchase(id: number): Promise<BeatPurchase | undefined>;
+  createBeatPurchase(purchase: InsertBeatPurchase): Promise<BeatPurchase>;
+  updateBeatPurchaseContract(id: number, contractSigned: boolean): Promise<BeatPurchase | undefined>;
+  incrementBeatPurchaseDownloadCount(id: number): Promise<BeatPurchase | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -65,6 +85,8 @@ export class MemStorage implements IStorage {
   private bookings: Map<number, Booking>;
   private messages: Map<number, Message>;
   private timeSlots: Map<number, TimeSlot>;
+  private beats: Map<number, Beat>;
+  private beatPurchases: Map<number, BeatPurchase>;
   
   private userCurrentId: number;
   private serviceCurrentId: number;
@@ -72,6 +94,8 @@ export class MemStorage implements IStorage {
   private bookingCurrentId: number;
   private messageCurrentId: number;
   private timeSlotCurrentId: number;
+  private beatCurrentId: number;
+  private beatPurchaseCurrentId: number;
 
   constructor() {
     this.users = new Map();
@@ -80,6 +104,8 @@ export class MemStorage implements IStorage {
     this.bookings = new Map();
     this.messages = new Map();
     this.timeSlots = new Map();
+    this.beats = new Map();
+    this.beatPurchases = new Map();
     
     this.userCurrentId = 1;
     this.serviceCurrentId = 1;
@@ -87,6 +113,8 @@ export class MemStorage implements IStorage {
     this.bookingCurrentId = 1;
     this.messageCurrentId = 1;
     this.timeSlotCurrentId = 1;
+    this.beatCurrentId = 1;
+    this.beatPurchaseCurrentId = 1;
     
     // Add default admin user
     this.createUser({
@@ -180,6 +208,109 @@ export class MemStorage implements IStorage {
       this.createTimeSlot({ date: slot2, available: true });
       this.createTimeSlot({ date: slot3, available: true });
     }
+    
+    // Create sample beats
+    this.createBeat({
+      title: "Summer Heat",
+      genre: "Hip Hop",
+      description: "Upbeat summer vibe with catchy hooks and thick bass",
+      previewUrl: "https://example.com/audio/previews/summer-heat.mp3",
+      fullAudioUrl: "https://example.com/audio/full/summer-heat.mp3",
+      imageUrl: "https://example.com/images/beats/summer-heat.jpg",
+      bpm: 95,
+      price: 4999, // $49.99
+      licensingOptions: {
+        basic: {
+          price: 4999,
+          description: "MP3 file, non-exclusive rights, personal use only",
+          allowsSelling: false,
+          distribution: 1000
+        },
+        premium: {
+          price: 9999,
+          description: "WAV file, non-exclusive rights, distribute up to 5,000 copies",
+          allowsSelling: true,
+          distribution: 5000
+        },
+        exclusive: {
+          price: 29999,
+          description: "Full rights transfer, unrestricted use, stems included",
+          allowsSelling: true,
+          distribution: "unlimited"
+        }
+      },
+      contractUrl: "https://example.com/contracts/standard-license.pdf",
+      tags: ["summer", "hip-hop", "chill", "upbeat"],
+      featured: true
+    });
+    
+    this.createBeat({
+      title: "Midnight Drive",
+      genre: "R&B",
+      description: "Smooth R&B track with atmospheric pads and punchy drums",
+      previewUrl: "https://example.com/audio/previews/midnight-drive.mp3",
+      fullAudioUrl: "https://example.com/audio/full/midnight-drive.mp3",
+      imageUrl: "https://example.com/images/beats/midnight-drive.jpg",
+      bpm: 72,
+      price: 3999, // $39.99
+      licensingOptions: {
+        basic: {
+          price: 3999,
+          description: "MP3 file, non-exclusive rights, personal use only",
+          allowsSelling: false,
+          distribution: 1000
+        },
+        premium: {
+          price: 7999,
+          description: "WAV file, non-exclusive rights, distribute up to 5,000 copies",
+          allowsSelling: true,
+          distribution: 5000
+        },
+        exclusive: {
+          price: 19999,
+          description: "Full rights transfer, unrestricted use, stems included",
+          allowsSelling: true,
+          distribution: "unlimited"
+        }
+      },
+      contractUrl: "https://example.com/contracts/standard-license.pdf",
+      tags: ["r&b", "smooth", "night", "chill"],
+      featured: true
+    });
+    
+    this.createBeat({
+      title: "Trap Kingdom",
+      genre: "Trap",
+      description: "Hard-hitting trap beat with modern 808s and dark melodies",
+      previewUrl: "https://example.com/audio/previews/trap-kingdom.mp3",
+      fullAudioUrl: "https://example.com/audio/full/trap-kingdom.mp3",
+      imageUrl: "https://example.com/images/beats/trap-kingdom.jpg",
+      bpm: 140,
+      price: 5999, // $59.99
+      licensingOptions: {
+        basic: {
+          price: 5999,
+          description: "MP3 file, non-exclusive rights, personal use only",
+          allowsSelling: false,
+          distribution: 1000
+        },
+        premium: {
+          price: 11999,
+          description: "WAV file, non-exclusive rights, distribute up to 5,000 copies",
+          allowsSelling: true,
+          distribution: 5000
+        },
+        exclusive: {
+          price: 34999,
+          description: "Full rights transfer, unrestricted use, stems included",
+          allowsSelling: true,
+          distribution: "unlimited"
+        }
+      },
+      contractUrl: "https://example.com/contracts/standard-license.pdf",
+      tags: ["trap", "dark", "808", "hard"],
+      featured: false
+    });
   }
 
   // Users
@@ -413,6 +544,109 @@ export class MemStorage implements IStorage {
     };
     this.timeSlots.set(id, updatedTimeSlot);
     return updatedTimeSlot;
+  }
+  
+  // Beats
+  async getAllBeats(): Promise<Beat[]> {
+    return Array.from(this.beats.values());
+  }
+  
+  async getFeaturedBeats(): Promise<Beat[]> {
+    return Array.from(this.beats.values()).filter(beat => beat.featured);
+  }
+  
+  async getBeatsByGenre(genre: string): Promise<Beat[]> {
+    return Array.from(this.beats.values()).filter(
+      beat => beat.genre.toLowerCase() === genre.toLowerCase()
+    );
+  }
+  
+  async getBeat(id: number): Promise<Beat | undefined> {
+    return this.beats.get(id);
+  }
+  
+  async createBeat(beat: InsertBeat): Promise<Beat> {
+    const id = this.beatCurrentId++;
+    const newBeat: Beat = { 
+      ...beat, 
+      id, 
+      createdAt: new Date()
+    };
+    this.beats.set(id, newBeat);
+    return newBeat;
+  }
+  
+  async updateBeat(id: number, beat: Partial<InsertBeat>): Promise<Beat | undefined> {
+    const existingBeat = this.beats.get(id);
+    if (!existingBeat) return undefined;
+    
+    const updatedBeat = { ...existingBeat, ...beat };
+    this.beats.set(id, updatedBeat);
+    return updatedBeat;
+  }
+  
+  async deleteBeat(id: number): Promise<boolean> {
+    return this.beats.delete(id);
+  }
+  
+  // Beat Purchases
+  async getAllBeatPurchases(): Promise<BeatPurchase[]> {
+    return Array.from(this.beatPurchases.values());
+  }
+  
+  async getBeatPurchasesByBeat(beatId: number): Promise<BeatPurchase[]> {
+    return Array.from(this.beatPurchases.values()).filter(
+      purchase => purchase.beatId === beatId
+    );
+  }
+  
+  async getBeatPurchasesByEmail(email: string): Promise<BeatPurchase[]> {
+    return Array.from(this.beatPurchases.values()).filter(
+      purchase => purchase.customerEmail.toLowerCase() === email.toLowerCase()
+    );
+  }
+  
+  async getBeatPurchase(id: number): Promise<BeatPurchase | undefined> {
+    return this.beatPurchases.get(id);
+  }
+  
+  async createBeatPurchase(purchase: InsertBeatPurchase): Promise<BeatPurchase> {
+    const id = this.beatPurchaseCurrentId++;
+    const newPurchase: BeatPurchase = { 
+      ...purchase, 
+      id,
+      downloadCount: 0,
+      contractSigned: false,
+      contractSignedAt: null,
+      purchaseDate: new Date()
+    };
+    this.beatPurchases.set(id, newPurchase);
+    return newPurchase;
+  }
+  
+  async updateBeatPurchaseContract(id: number, contractSigned: boolean): Promise<BeatPurchase | undefined> {
+    const existingPurchase = this.beatPurchases.get(id);
+    if (!existingPurchase) return undefined;
+    
+    const updatedPurchase = { 
+      ...existingPurchase, 
+      contractSigned,
+      contractSignedAt: contractSigned ? new Date() : null
+    };
+    this.beatPurchases.set(id, updatedPurchase);
+    return updatedPurchase;
+  }
+  
+  async incrementBeatPurchaseDownloadCount(id: number): Promise<BeatPurchase | undefined> {
+    const existingPurchase = this.beatPurchases.get(id);
+    if (!existingPurchase) return undefined;
+    
+    const updatedPurchase = { 
+      ...existingPurchase, 
+      downloadCount: existingPurchase.downloadCount + 1
+    };
+    this.beatPurchases.set(id, updatedPurchase);
+    return updatedPurchase;
   }
 }
 

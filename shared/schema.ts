@@ -147,5 +147,72 @@ export type InsertBooking = z.infer<typeof insertBookingSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
+// Beats schema for licensing
+export const beats = pgTable("beats", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  genre: text("genre").notNull(),
+  description: text("description").notNull(),
+  previewUrl: text("preview_url").notNull(), // URL to preview audio
+  fullAudioUrl: text("full_audio_url").notNull(), // URL to full audio (delivered after purchase)
+  imageUrl: text("image_url"), // Cover image
+  bpm: integer("bpm").notNull(), // Beats per minute
+  price: integer("price").notNull(), // Price in cents
+  licensingOptions: json("licensing_options").notNull(), // Different licensing options (basic, premium, exclusive)
+  contractUrl: text("contract_url"), // URL to licensing contract PDF
+  tags: text("tags").array(), // Keywords for search
+  featured: boolean("featured").default(false), // Whether the beat is featured
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBeatSchema = createInsertSchema(beats)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    title: z.string().min(2, "Title must be at least 2 characters"),
+    genre: z.string(),
+    description: z.string().min(10, "Description must be at least 10 characters"),
+    previewUrl: z.string().url("Preview URL must be a valid URL"),
+    fullAudioUrl: z.string().url("Full audio URL must be a valid URL"),
+    imageUrl: z.string().url("Image URL must be a valid URL").optional(),
+    bpm: z.number().min(1, "BPM must be at least 1"),
+    price: z.number().min(1, "Price must be at least 1 cent"),
+    licensingOptions: z.any(), // We'll validate this on the client side
+    contractUrl: z.string().url("Contract URL must be a valid URL").optional(),
+    tags: z.array(z.string()).optional(),
+    featured: z.boolean().optional(),
+  });
+
+// Beat purchases
+export const beatPurchases = pgTable("beat_purchases", {
+  id: serial("id").primaryKey(),
+  beatId: integer("beat_id").notNull(),
+  customerName: text("customer_name").notNull(),
+  customerEmail: text("customer_email").notNull(),
+  licenseType: text("license_type").notNull(), // basic, premium, exclusive
+  price: integer("price").notNull(), // Price in cents
+  transactionId: text("transaction_id").notNull(), // Payment transaction ID
+  downloadCount: integer("download_count").default(0), // Number of times downloaded
+  contractSigned: boolean("contract_signed").default(false), // Whether the contract has been signed
+  contractSignedAt: timestamp("contract_signed_at"), // When the contract was signed
+  purchaseDate: timestamp("purchase_date").defaultNow(),
+});
+
+export const insertBeatPurchaseSchema = createInsertSchema(beatPurchases)
+  .omit({ id: true, downloadCount: true, contractSigned: true, contractSignedAt: true, purchaseDate: true })
+  .extend({
+    beatId: z.number(),
+    customerName: z.string().min(2, "Name must be at least 2 characters"),
+    customerEmail: z.string().email("Please enter a valid email"),
+    licenseType: z.string(),
+    price: z.number().min(1, "Price must be at least 1 cent"),
+    transactionId: z.string(),
+  });
+
 export type TimeSlot = typeof timeSlots.$inferSelect;
 export type InsertTimeSlot = z.infer<typeof insertTimeSlotSchema>;
+
+export type Beat = typeof beats.$inferSelect;
+export type InsertBeat = z.infer<typeof insertBeatSchema>;
+
+export type BeatPurchase = typeof beatPurchases.$inferSelect;
+export type InsertBeatPurchase = z.infer<typeof insertBeatPurchaseSchema>;
