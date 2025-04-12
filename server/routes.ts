@@ -4,17 +4,12 @@ import { storage } from "./storage";
 import { insertBookingSchema, insertMessageSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import Stripe from "stripe";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-
-// Initialize Stripe with API key from environment
-const stripeApiKey = process.env.STRIPE_SECRET_KEY || "sk_test_your_key_here";
-const stripe = new Stripe(stripeApiKey, {
-  apiVersion: "2023-10-16",
-});
+import * as braintreeService from "./services/braintree";
+import * as emailService from "./services/email";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Session setup for admin authentication
