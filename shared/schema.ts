@@ -63,11 +63,28 @@ export const bookings = pgTable("bookings", {
   paymentIntentId: text("payment_intent_id"),
   paymentStatus: text("payment_status").default("unpaid"), // unpaid, deposit_paid, paid
   amount: integer("amount").notNull(), // In cents
+  transactionId: text("transaction_id"),  // Braintree transaction ID
+  paymentMethod: text("payment_method"),  // card, paypal, etc.
+  paymentErrorMessage: text("payment_error_message"), // Error message if payment failed
+  paymentMetadata: json("payment_metadata"), // Additional payment information
+  discountCode: text("discount_code"), // Discount code applied to booking
+  discountAmount: integer("discount_amount"), // Discount amount in cents
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const insertBookingSchema = createInsertSchema(bookings)
-  .omit({ id: true, createdAt: true, paymentIntentId: true, paymentStatus: true })
+  .omit({ 
+    id: true, 
+    createdAt: true, 
+    paymentIntentId: true, 
+    paymentStatus: true,
+    transactionId: true,
+    paymentMethod: true, 
+    paymentErrorMessage: true,
+    paymentMetadata: true,
+    discountCode: true,
+    discountAmount: true
+  })
   .extend({
     serviceId: z.number(),
     name: z.string().min(2, "Name must be at least 2 characters"),
@@ -75,7 +92,8 @@ export const insertBookingSchema = createInsertSchema(bookings)
     date: z.string().or(z.date()),
     duration: z.number(),
     details: z.string().optional(),
-    amount: z.number()
+    amount: z.number(),
+    discountCode: z.string().optional()
   });
 
 // Contact messages schema
