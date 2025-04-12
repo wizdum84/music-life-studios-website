@@ -306,9 +306,15 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
       ...bookingData,
       transactionId,
       paymentStatus: paymentOption === 'deposit' ? 'deposit_paid' : 'paid',
-      status: 'confirmed'
+      status: 'confirmed',
+      tipAmount: paymentOption === 'full' ? tipAmount : 0 // Include tip amount in booking data
     }).then(() => {
       setBookingComplete(true);
+      
+      // Reset tip amount if needed
+      if (tipAmount > 0) {
+        setTipAmount(0);
+      }
     }).catch(error => {
       console.error("Error finalizing booking:", error);
       toast({
@@ -430,9 +436,80 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
               <p className="text-sm text-muted-foreground mb-4">
                 Pay the full amount now for your convenience.
               </p>
-              <div className="font-medium flex justify-between">
-                <span>Total Due Now:</span>
-                <span>{formatPrice(bookingData?.amount || 0)}</span>
+              
+              {/* Tip options for full payment */}
+              <div className="mb-4 p-4 border border-dashed border-border rounded-md bg-muted/30">
+                <h5 className="text-sm font-medium mb-3">Would you like to add a tip?</h5>
+                
+                <div className="grid grid-cols-4 gap-2 mb-3">
+                  <Button 
+                    variant={tipAmount === 0 ? "default" : "outline"} 
+                    size="sm" 
+                    onClick={() => setTipAmount(0)}
+                    className="text-xs py-1 h-auto"
+                  >
+                    No Tip
+                  </Button>
+                  <Button 
+                    variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.10) ? "default" : "outline"} 
+                    size="sm" 
+                    onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.10))}
+                    className="text-xs py-1 h-auto"
+                  >
+                    10% ({formatPrice((bookingData?.amount || 0) * 0.10)})
+                  </Button>
+                  <Button 
+                    variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.15) ? "default" : "outline"} 
+                    size="sm" 
+                    onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.15))}
+                    className="text-xs py-1 h-auto"
+                  >
+                    15% ({formatPrice((bookingData?.amount || 0) * 0.15)})
+                  </Button>
+                  <Button 
+                    variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.20) ? "default" : "outline"} 
+                    size="sm" 
+                    onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.20))}
+                    className="text-xs py-1 h-auto"
+                  >
+                    20% ({formatPrice((bookingData?.amount || 0) * 0.20)})
+                  </Button>
+                </div>
+                
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2">$</span>
+                  <Input
+                    type="number"
+                    placeholder="Custom amount"
+                    min="0"
+                    step="0.01"
+                    className="pl-8 text-sm"
+                    value={tipAmount > 0 ? (tipAmount / 100).toFixed(2) : ""}
+                    onChange={(e) => {
+                      const value = e.target.value === "" ? 0 : parseFloat(e.target.value) * 100;
+                      setTipAmount(Math.round(value));
+                    }}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Service Total:</span>
+                  <span>{formatPrice(bookingData?.amount || 0)}</span>
+                </div>
+                
+                {tipAmount > 0 && (
+                  <div className="flex justify-between">
+                    <span>Tip:</span>
+                    <span>{formatPrice(tipAmount)}</span>
+                  </div>
+                )}
+                
+                <div className="flex justify-between font-medium pt-2 border-t border-border">
+                  <span>Total Due Now:</span>
+                  <span>{formatPrice((bookingData?.amount || 0) + tipAmount)}</span>
+                </div>
               </div>
             </TabsContent>
           </Tabs>
@@ -443,6 +520,7 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
           bookingData={bookingData}
           onComplete={handlePaymentComplete}
           isDeposit={paymentOption === 'deposit'}
+          tipAmount={paymentOption === 'full' ? tipAmount : 0}
         />
 
         {/* Return Later Option */}

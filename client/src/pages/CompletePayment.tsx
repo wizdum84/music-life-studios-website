@@ -114,11 +114,26 @@ export default function CompletePayment() {
   
   // Handle payment completion
   const handlePaymentComplete = (transactionId: string) => {
-    setStep("complete");
-    toast({
-      title: "Payment Complete",
-      description: "Thank you for completing your payment.",
-      variant: "default"
+    // Update booking payment status with transaction info and tip
+    apiRequest("POST", `/api/bookings/${booking.id}/update-payment`, {
+      transactionId: transactionId,
+      paymentStatus: "paid",
+      tipAmount: tipAmount,
+      totalPaid: remainingAmount + tipAmount
+    }).then(() => {
+      setStep("complete");
+      toast({
+        title: "Payment Complete",
+        description: "Thank you for completing your payment.",
+        variant: "default"
+      });
+    }).catch(error => {
+      console.error("Error updating payment status:", error);
+      toast({
+        title: "Error",
+        description: "There was an error recording your payment. Please contact support.",
+        variant: "destructive"
+      });
     });
   };
   
@@ -215,41 +230,40 @@ export default function CompletePayment() {
         
         <Form {...tipForm}>
           <form onSubmit={tipForm.handleSubmit(handleTipSubmit)} className="space-y-4">
-            <FormField
-              control={tipForm.control}
-              name="tipAmount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tip Amount (Optional)</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2">$</span>
-                      <Input 
-                        type="number" 
-                        min={0} 
-                        step="0.01"
-                        className="pl-8" 
-                        {...field}
-                        onChange={(e) => {
-                          // Convert to cents when saving to form state
-                          const value = e.target.value === "" ? 0 : parseFloat(e.target.value) * 100;
-                          field.onChange(value);
-                          setTipAmount(value);
-                        }}
-                        value={field.value ? field.value / 100 : ""}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            
-            <div className="flex justify-between text-sm">
-              <span>Typical tips: </span>
-              <div className="space-x-2">
+            <div className="mb-6">
+              <h3 className="font-medium mb-3">Add a Tip</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Show your appreciation for the service by adding a tip. Select a preset percentage or enter a custom amount.
+              </p>
+              
+              <div className="grid grid-cols-4 gap-2 mb-4">
                 <Button 
-                  variant="outline" 
+                  variant={tipAmount === 0 ? "default" : "outline"} 
+                  size="sm" 
+                  type="button"
+                  onClick={() => {
+                    tipForm.setValue("tipAmount", 0);
+                    setTipAmount(0);
+                  }}
+                  className="text-xs py-1 h-auto"
+                >
+                  No Tip
+                </Button>
+                <Button 
+                  variant={tipAmount === Math.round(remainingAmount * 0.10) ? "default" : "outline"} 
+                  size="sm" 
+                  type="button"
+                  onClick={() => {
+                    const tip10 = Math.round(remainingAmount * 0.10);
+                    tipForm.setValue("tipAmount", tip10);
+                    setTipAmount(tip10);
+                  }}
+                  className="text-xs py-1 h-auto"
+                >
+                  10% ({formatPrice(remainingAmount * 0.10)})
+                </Button>
+                <Button 
+                  variant={tipAmount === Math.round(remainingAmount * 0.15) ? "default" : "outline"} 
                   size="sm" 
                   type="button"
                   onClick={() => {
@@ -257,11 +271,12 @@ export default function CompletePayment() {
                     tipForm.setValue("tipAmount", tip15);
                     setTipAmount(tip15);
                   }}
+                  className="text-xs py-1 h-auto"
                 >
                   15% ({formatPrice(remainingAmount * 0.15)})
                 </Button>
                 <Button 
-                  variant="outline" 
+                  variant={tipAmount === Math.round(remainingAmount * 0.20) ? "default" : "outline"} 
                   size="sm" 
                   type="button"
                   onClick={() => {
@@ -269,10 +284,42 @@ export default function CompletePayment() {
                     tipForm.setValue("tipAmount", tip20);
                     setTipAmount(tip20);
                   }}
+                  className="text-xs py-1 h-auto"
                 >
                   20% ({formatPrice(remainingAmount * 0.20)})
                 </Button>
               </div>
+              
+              <FormField
+                control={tipForm.control}
+                name="tipAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Custom Tip Amount</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2">$</span>
+                        <Input 
+                          type="number" 
+                          min={0} 
+                          step="0.01"
+                          className="pl-8" 
+                          placeholder="Enter custom tip amount"
+                          {...field}
+                          onChange={(e) => {
+                            // Convert to cents when saving to form state
+                            const value = e.target.value === "" ? 0 : parseFloat(e.target.value) * 100;
+                            field.onChange(value);
+                            setTipAmount(Math.round(value));
+                          }}
+                          value={field.value ? (field.value / 100).toFixed(2) : ""}
+                        />
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
             
             <div className="flex justify-between pt-4 border-t border-border font-medium">
