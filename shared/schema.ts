@@ -39,7 +39,9 @@ export const tracks = pgTable("tracks", {
   description: text("description").notNull(),
   audioUrl: text("audio_url").notNull(),
   imageUrl: text("image_url"),
-  type: text("type").notNull(), // recording, mixing, production
+  type: text("type").notNull(), // recording, mixing, production, sample
+  category: text("category"), // For samples: general, vocals, drums, etc.
+  sampleType: text("sample_type"), // For samples: mp3, wav, stem
 });
 
 export const insertTrackSchema = createInsertSchema(tracks).pick({
@@ -48,6 +50,8 @@ export const insertTrackSchema = createInsertSchema(tracks).pick({
   audioUrl: true,
   imageUrl: true,
   type: true,
+  category: true,
+  sampleType: true,
 });
 
 // Bookings schema

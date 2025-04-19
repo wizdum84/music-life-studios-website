@@ -457,6 +457,16 @@ function BeatsManager() {
     setIsPreviewUploading(true);
     setPreviewUploadProgress(0);
     
+    // Detect file type and suggest title if empty
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!formData.title) {
+      const suggestedTitle = file.name.split('.')[0].replace(/-/g, ' ').replace(/_/g, ' ');
+      setFormData(prev => ({
+        ...prev,
+        title: suggestedTitle
+      }));
+    }
+    
     // Simulate progress
     const interval = setInterval(() => {
       setPreviewUploadProgress(prev => {
@@ -490,10 +500,19 @@ function BeatsManager() {
     }, 3000);
   };
   
-  // Simulate full audio file upload
+  // Simulate full audio file upload (handles MP3, WAV and stem packs)
   const simulateFullAudioUpload = (file: File) => {
     setIsFullAudioUploading(true);
     setFullAudioUploadProgress(0);
+    
+    // Check if this is a stem pack (ZIP or RAR)
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const isStemPack = extension === 'zip' || extension === 'rar';
+    const isWav = extension === 'wav';
+    
+    // Display different toast message based on file type
+    const fileTypeDisplay = isStemPack ? "stem pack" : 
+                            isWav ? "WAV file" : "MP3 file";
     
     // Simulate progress
     const interval = setInterval(() => {
@@ -515,16 +534,33 @@ function BeatsManager() {
       // Create a fake URL for demo purposes
       const fakeUrl = `https://storage.musiclifestudios.com/full-${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
       
+      // If this is a stem pack, we would have individual files for each stem
+      if (isStemPack) {
+        // Simulate stem files that would be in the ZIP/RAR
+        const stemFiles = [
+          { name: "vocals.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-vocals.wav` },
+          { name: "drums.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-drums.wav` },
+          { name: "bass.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-bass.wav` },
+          { name: "melody.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-melody.wav` },
+          { name: "fx.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-fx.wav` }
+        ];
+        
+        toast({
+          title: "Stem pack uploaded successfully",
+          description: `${file.name} with ${stemFiles.length} stems extracted`,
+        });
+      } else {
+        toast({
+          title: `${fileTypeDisplay} uploaded successfully`,
+          description: `${file.name} has been uploaded`,
+        });
+      }
+      
       // Update form data with the URL
       setFormData(prev => ({
         ...prev,
         fullAudioUrl: fakeUrl
       }));
-      
-      toast({
-        title: "Full audio uploaded successfully",
-        description: `${file.name} has been uploaded`,
-      });
     }, 4000);
   };
   
@@ -652,25 +688,32 @@ function BeatsManager() {
               </div>
               
               <FileUploader
-                label="Preview Audio"
+                label="Preview Audio (MP3/WAV)"
                 description="Upload a preview version (30-60 seconds)"
-                accept="audio/*"
+                accept="audio/mpeg,audio/wav,.mp3,.wav"
                 maxSize={20}
                 onFileSelected={simulatePreviewUpload}
                 uploading={isPreviewUploading}
                 uploadProgress={previewUploadProgress}
                 uploadSuccess={formData.previewUrl !== ""}
+                className="border border-dashed p-4 rounded-lg"
               />
+              {formData.previewUrl && (
+                <div className="bg-muted/20 p-3 rounded-md">
+                  <audio src={formData.previewUrl} controls className="w-full" />
+                </div>
+              )}
               
               <FileUploader
-                label="Full Audio File"
-                description="Upload the complete beat (will be delivered to customers)"
-                accept="audio/*"
-                maxSize={100}
+                label="Full Audio File or Stem Pack"
+                description="Upload the MP3/WAV or ZIP/RAR stem pack (delivered to buyers)"
+                accept="audio/mpeg,audio/wav,application/zip,application/x-rar-compressed,.mp3,.wav,.zip,.rar"
+                maxSize={200}
                 onFileSelected={simulateFullAudioUpload}
                 uploading={isFullAudioUploading}
                 uploadProgress={fullAudioUploadProgress}
                 uploadSuccess={formData.fullAudioUrl !== ""}
+                className="border border-dashed p-4 rounded-lg"
               />
               
               <div className="grid gap-2">
@@ -803,12 +846,17 @@ function SamplesManager() {
   const [selectedSample, setSelectedSample] = useState<Track | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [fileType, setFileType] = useState<string>("mp3");
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     type: "sample",
     audioUrl: "",
-    imageUrl: ""
+    imageUrl: "",
+    category: "general",
+    sampleType: "mp3" // mp3, wav, stem, or other
   });
   
   // Fetch all tracks that are samples
@@ -860,9 +908,29 @@ function SamplesManager() {
   });
   
   // Simulate audio file upload
-  const simulateFileUpload = (file: File) => {
+  const handleFileUpload = (file: File) => {
     setIsUploading(true);
     setUploadProgress(0);
+    setUploadError("");
+    setUploadedFile(file);
+    
+    // Detect file type from extension
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (extension) {
+      if (extension === 'wav') {
+        setFileType('wav');
+        setFormData(prev => ({ ...prev, sampleType: 'wav' }));
+      } else if (extension === 'mp3') {
+        setFileType('mp3');
+        setFormData(prev => ({ ...prev, sampleType: 'mp3' }));
+      } else if (extension === 'zip' || extension === 'rar') {
+        setFileType('stem');
+        setFormData(prev => ({ ...prev, sampleType: 'stem' }));
+      } else {
+        setFileType('other');
+        setFormData(prev => ({ ...prev, sampleType: 'other' }));
+      }
+    }
     
     // Simulate progress
     const interval = setInterval(() => {
@@ -884,10 +952,11 @@ function SamplesManager() {
       // Create a fake URL for demo purposes
       const fakeUrl = `https://storage.musiclifestudios.com/samples/${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
       
-      // Update form data with the URL
+      // Update form data with the URL and suggest a title from filename
       setFormData(prev => ({
         ...prev,
-        audioUrl: fakeUrl
+        audioUrl: fakeUrl,
+        title: prev.title || file.name.split('.')[0].replace(/-/g, ' ').replace(/_/g, ' ')
       }));
       
       toast({
@@ -903,9 +972,15 @@ function SamplesManager() {
       description: "",
       type: "sample",
       audioUrl: "",
-      imageUrl: ""
+      imageUrl: "",
+      category: "general",
+      sampleType: "mp3"
     });
     setSelectedSample(null);
+    setUploadedFile(null);
+    setUploadProgress(0);
+    setIsUploading(false);
+    setUploadError("");
   };
   
   const handleAddOrUpdate = () => {
@@ -938,6 +1013,19 @@ function SamplesManager() {
     }
   };
   
+  const fileTypeDisplay = (type: string) => {
+    switch (type) {
+      case 'mp3':
+        return 'MP3 Audio';
+      case 'wav':
+        return 'WAV Audio';
+      case 'stem':
+        return 'Stem Pack';
+      default:
+        return 'Audio File';
+    }
+  };
+  
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -947,66 +1035,141 @@ function SamplesManager() {
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="bg-gradient-to-r from-primary to-primary/80">
               <PlusCircle className="h-4 w-4 mr-2" />
-              Add Sample
+              Upload New Sample
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>
-                {selectedSample ? "Edit Sample" : "Add New Sample"}
+                {selectedSample ? "Edit Sample" : "Upload New Sample"}
               </DialogTitle>
               <DialogDescription>
-                Upload audio samples to showcase your work.
+                Upload MP3s, WAVs, or Stem packs to showcase your work.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="title">Sample Title</Label>
-                <Input 
-                  id="title" 
-                  placeholder="Enter sample title" 
-                  value={formData.title}
-                  onChange={(e) => setFormData({...formData, title: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea 
-                  id="description" 
-                  placeholder="Describe your sample" 
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                />
-              </div>
-              
-              <FileUploader
-                label="Sample Audio File"
-                description="Upload the audio sample (MP3, WAV, etc.)"
-                accept="audio/*"
-                maxSize={50}
-                onFileSelected={simulateFileUpload}
-                uploading={isUploading}
-                uploadProgress={uploadProgress}
-                uploadSuccess={formData.audioUrl !== ""}
-              />
-              
-              <div className="grid gap-2">
-                <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
-                <Input 
-                  id="imageUrl" 
-                  placeholder="Enter image URL" 
-                  value={formData.imageUrl}
-                  onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                />
+            <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <FileUploader
+                    label="Upload Audio File"
+                    description="MP3, WAV, Stem Packs (ZIP), or other audio files"
+                    accept=".mp3,.wav,.zip,.rar,audio/*"
+                    maxSize={100}
+                    onFileSelected={handleFileUpload}
+                    uploading={isUploading}
+                    uploadProgress={uploadProgress}
+                    uploadError={uploadError}
+                    uploadSuccess={formData.audioUrl !== ""}
+                    className="border-2 border-dashed p-6 rounded-lg"
+                  />
+                </div>
+                
+                {formData.audioUrl && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label htmlFor="title">Sample Title</Label>
+                      <Input 
+                        id="title" 
+                        placeholder="Enter sample title" 
+                        value={formData.title}
+                        onChange={(e) => setFormData({...formData, title: e.target.value})}
+                      />
+                    </div>
+                    
+                    <div className="grid gap-2">
+                      <Label htmlFor="category">Category</Label>
+                      <Select
+                        value={formData.category}
+                        onValueChange={(value) => setFormData({...formData, category: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="general">General</SelectItem>
+                          <SelectItem value="vocals">Vocals</SelectItem>
+                          <SelectItem value="drums">Drums</SelectItem>
+                          <SelectItem value="bass">Bass</SelectItem>
+                          <SelectItem value="melody">Melody</SelectItem>
+                          <SelectItem value="effect">Sound Effects</SelectItem>
+                          <SelectItem value="stem">Stem</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="md:col-span-2">
+                      <div className="grid gap-2">
+                        <Label htmlFor="description">Description</Label>
+                        <Textarea 
+                          id="description" 
+                          placeholder="Describe your sample" 
+                          value={formData.description}
+                          onChange={(e) => setFormData({...formData, description: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid gap-2">
+                      <Label htmlFor="sampleType">File Type</Label>
+                      <Select
+                        value={formData.sampleType}
+                        onValueChange={(value) => setFormData({...formData, sampleType: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select file type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mp3">MP3 File</SelectItem>
+                          <SelectItem value="wav">WAV File</SelectItem>
+                          <SelectItem value="stem">Stem Pack</SelectItem>
+                          <SelectItem value="other">Other Format</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="grid gap-2">
+                      <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
+                      <Input 
+                        id="imageUrl" 
+                        placeholder="Enter image URL" 
+                        value={formData.imageUrl}
+                        onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                      />
+                    </div>
+                    
+                    {uploadedFile && formData.audioUrl && (
+                      <div className="md:col-span-2 bg-muted/30 p-4 rounded-md">
+                        <div className="grid gap-2">
+                          <Label>Audio Preview</Label>
+                          {formData.sampleType !== 'stem' ? (
+                            <audio 
+                              src={formData.audioUrl} 
+                              controls 
+                              className="w-full" 
+                            />
+                          ) : (
+                            <div className="flex items-center space-x-2 text-sm">
+                              <FileText className="h-4 w-4" />
+                              <span>{uploadedFile?.name} (Stem Pack - not previewable)</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
             <DialogFooter>
               <DialogClose asChild>
                 <Button variant="outline" onClick={resetForm}>Cancel</Button>
               </DialogClose>
-              <Button onClick={handleAddOrUpdate}>
+              <Button 
+                onClick={handleAddOrUpdate}
+                disabled={!formData.audioUrl || !formData.title || !formData.description}
+              >
                 {selectedSample ? "Update Sample" : "Add Sample"}
               </Button>
             </DialogFooter>
@@ -1019,12 +1182,22 @@ function SamplesManager() {
             <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
           </div>
         ) : samples.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Music className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
-            <p>No samples uploaded yet.</p>
-            <Button className="mt-4" variant="outline" onClick={() => setShowAddDialog(true)}>
-              Add Your First Sample
-            </Button>
+          <div className="text-center py-12 text-muted-foreground">
+            <div className="space-y-4">
+              <Music className="mx-auto h-12 w-12 text-muted-foreground/50" />
+              <div>
+                <p className="font-medium">No samples uploaded yet</p>
+                <p className="text-sm text-muted-foreground mb-4">Upload MP3s, WAVs, or Stem packs to showcase your work</p>
+                <Button 
+                  size="lg" 
+                  className="bg-gradient-to-r from-primary to-primary/80"
+                  onClick={() => setShowAddDialog(true)}
+                >
+                  <PlusCircle className="h-5 w-5 mr-2" />
+                  Upload Your First Sample
+                </Button>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1041,9 +1214,16 @@ function SamplesManager() {
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                     <div className="text-center text-white">
                       <h3 className="font-semibold">{sample.title}</h3>
-                      <span className="text-xs bg-primary px-2 py-0.5 rounded">
-                        Sample
-                      </span>
+                      <div className="flex items-center justify-center space-x-2 mt-1">
+                        <span className="text-xs bg-primary px-2 py-0.5 rounded">
+                          {fileTypeDisplay(sample.sampleType || 'mp3')}
+                        </span>
+                        {sample.category && (
+                          <span className="text-xs bg-black/50 px-2 py-0.5 rounded-sm">
+                            {sample.category}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1051,11 +1231,23 @@ function SamplesManager() {
                 <CardContent className="p-4">
                   <p className="text-sm text-muted-foreground line-clamp-2">{sample.description}</p>
                   <div className="mt-4 flex justify-between items-center">
-                    <audio 
-                      src={sample.audioUrl} 
-                      controls 
-                      className="w-full h-8" 
-                    />
+                    {sample.sampleType !== 'stem' ? (
+                      <audio 
+                        src={sample.audioUrl} 
+                        controls 
+                        className="w-full h-8" 
+                      />
+                    ) : (
+                      <div className="w-full flex items-center justify-between bg-muted/30 px-3 py-2 rounded">
+                        <div className="flex items-center space-x-2">
+                          <FileText className="h-4 w-4" />
+                          <span className="text-sm">Stem Pack</span>
+                        </div>
+                        <Button variant="outline" size="sm">
+                          Download
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
                 
@@ -1070,7 +1262,9 @@ function SamplesManager() {
                         description: sample.description,
                         type: "sample",
                         audioUrl: sample.audioUrl,
-                        imageUrl: sample.imageUrl || ""
+                        imageUrl: sample.imageUrl || "",
+                        category: sample.category || "general",
+                        sampleType: sample.sampleType || "mp3"
                       });
                       setShowAddDialog(true);
                     }}
