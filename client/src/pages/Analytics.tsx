@@ -145,10 +145,10 @@ export default function Analytics() {
           ? booking.amount * 0.25
           : booking.amount;
         
-        // Add tip amount if present
-        const tipAmount = booking.tipAmount || 0;
+        // If there's a discount amount, subtract it
+        const discountAmount = booking.discountAmount || 0;
         
-        return acc + paidAmount + tipAmount;
+        return acc + paidAmount - discountAmount;
       }
       return acc;
     }, 0);
@@ -305,7 +305,7 @@ export default function Analytics() {
       beatPurchases.forEach(purchase => {
         const purchaseDate = new Date(purchase.purchaseDate || 0);
         if (purchaseDate >= startDate && purchaseDate <= endDate) {
-          beatsRevenue += purchase.amount;
+          beatsRevenue += purchase.price;
         }
       });
       
@@ -750,7 +750,7 @@ export default function Analytics() {
                         dataKey="value" 
                         name="Revenue" 
                         fill="#4C84FF" 
-                        label={{ position: 'top', formatter: (value) => `$${value}` }}
+                        label={{ position: 'top', formatter: (value: number) => `$${value}` }}
                       />
                     </BarChart>
                   </ResponsiveContainer>
@@ -861,7 +861,7 @@ export default function Analytics() {
                     <tbody>
                       {beats.slice(0, 10).map(beat => {
                         const sales = beatPurchases.filter(p => p.beatId === beat.id);
-                        const revenue = sales.reduce((acc, s) => acc + s.amount, 0);
+                        const revenue = sales.reduce((acc, s) => acc + s.price, 0);
                         
                         return (
                           <tr key={beat.id} className="border-b hover:bg-muted/50">
