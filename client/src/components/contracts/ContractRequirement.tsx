@@ -47,7 +47,7 @@ export function ContractRequirement({
           try {
             const verifyResponse = await apiRequest(
               "GET", 
-              `/api/contracts/verify-signature?entityType=${entityType}&entityId=${entityId}&email=${email}`
+              `/api/verify-entity-contract-signed?entityType=${entityType}&entityId=${entityId}&email=${email}`
             );
             const verifyData = await verifyResponse.json();
             
@@ -193,9 +193,27 @@ export function ContractRequirement({
         </div>
         
         <div className="mb-6 max-h-60 overflow-y-auto p-4 bg-background border rounded-md">
-          <pre className="whitespace-pre-wrap text-sm font-sans">
-            {contract.content}
-          </pre>
+          <h4 className="font-medium mb-2">Description:</h4>
+          <p className="whitespace-pre-wrap text-sm font-sans mb-4">
+            {contract.description}
+          </p>
+          
+          {contract.fileUrl && (
+            <div className="flex flex-col items-center justify-center border-t pt-4">
+              <a 
+                href={contract.fileUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline flex items-center"
+              >
+                <FileText className="w-4 h-4 mr-1" />
+                View Full Contract Document
+              </a>
+              <span className="text-xs text-muted-foreground mt-1">
+                (Opens in a new window)
+              </span>
+            </div>
+          )}
         </div>
         
         <div className="space-y-6">

@@ -11,7 +11,61 @@ import { Strategy as LocalStrategy } from "passport-local";
 import * as braintreeService from "./services/braintree";
 import * as emailService from "./services/email";
 
+// Create default studio rules contract if it doesn't exist
+async function ensureStudioRulesExist() {
+  try {
+    // Check if we already have a studio rules contract
+    const existingRules = await storage.getContractsByCategory("studio_rules");
+    
+    if (existingRules && existingRules.length > 0) {
+      return; // We already have studio rules
+    }
+    
+    // Create default studio rules contract
+    await storage.createContract({
+      title: "Studio Rules & Policies",
+      description: `MUSIC LIFE STUDIOS - STUDIO RULES & POLICIES
+
+BOOKING & CANCELLATION:
+- A 25% non-refundable deposit is required to secure all bookings.
+- Cancellations must be made at least 48 hours in advance for rescheduling.
+- Late cancellations (less than 48 hours) forfeit the deposit.
+- Arriving more than 30 minutes late may result in a shortened session or cancellation with no refund.
+
+STUDIO CONDUCT:
+- No smoking, vaping, or illegal substances permitted in the studio.
+- Food and drinks are only allowed in designated areas.
+- Treat all equipment with care. Clients will be held responsible for damage caused by negligence.
+- Maximum occupancy: 8 people unless previously arranged.
+- Keep noise levels reasonable in common areas.
+
+RECORDING & PRODUCTION:
+- Bring all necessary files on a reliable USB drive or portable hard drive.
+- Files should be organized and properly labeled.
+- Backup your projects. The studio is not responsible for lost data.
+- Engineer breaks: 10 minutes per 2 hours of recording.
+
+POST-SESSION:
+- Session files will be stored for 30 days after recording.
+- Final mixes will be provided in formats requested by the client.
+- Minor revisions (up to 3) are included in mixing packages.
+- Major revisions may incur additional costs.
+
+By signing this agreement, you acknowledge you have read and agree to comply with all studio rules and policies.`,
+      fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/studio_rules.pdf",
+      fileType: "pdf",
+      category: "studio_rules",
+    });
+    
+    console.log("Default studio rules contract created");
+  } catch (error) {
+    console.error("Error creating default studio rules contract:", error);
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Ensure studio rules exist when the server starts
+  await ensureStudioRulesExist();
   // Session setup for admin authentication
   const MemoryStoreSession = MemoryStore(session);
   

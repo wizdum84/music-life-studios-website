@@ -416,9 +416,9 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
         </Card>
         
         <div className="bg-background border rounded-lg p-1">
-          {/* Contract Requirements Component */}
+          {/* Studio Rules Contract Component */}
           <ContractRequirement
-            contractId={1} // Would use service specific contract in production
+            contractId={4} // Studio Rules Contract ID
             entityType="booking"
             entityId={undefined} // Will be set after booking is created
             email={bookingData?.email || ""}
