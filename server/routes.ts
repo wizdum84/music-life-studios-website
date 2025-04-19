@@ -221,6 +221,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Beat Purchases API routes
   
+  // Get all beat purchases (for analytics)
+  app.get("/api/beat-purchases", isAuthenticated, async (req, res) => {
+    try {
+      const purchases = await storage.getAllBeatPurchases();
+      res.json(purchases);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
   // Create beat purchase
   app.post("/api/beat-purchases", async (req, res) => {
     try {
