@@ -77,6 +77,13 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
   const [selectedLicense, setSelectedLicense] = useState("basic");
   const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [contractStep, setContractStep] = useState(false);
+  const [contractSigned, setContractSigned] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
   
   // Create audio element when component mounts
   useEffect(() => {
@@ -192,114 +199,308 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
     if (!audioElement) return;
     audioElement.pause();
   };
+
+  const handlePurchaseClick = () => {
+    setPurchaseDialogOpen(true);
+  };
+
+  const handleContinueToContract = () => {
+    if (!customerName || !customerEmail) {
+      toast({
+        title: "Missing information",
+        description: "Please provide your name and email to continue.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Basic email validation
+    if (!/^\S+@\S+\.\S+$/.test(customerEmail)) {
+      toast({
+        title: "Invalid email",
+        description: "Please provide a valid email address.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setContractStep(true);
+  };
+
+  const handleContractSigned = () => {
+    setContractSigned(true);
+  };
+
+  const handleCompletePurchase = async () => {
+    if (!contractSigned) {
+      toast({
+        title: "Contract required",
+        description: "Please sign the license agreement to complete your purchase.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      
+      // In a real application, this would integrate with Stripe or another payment processor
+      // For now, we'll just create a beat purchase record
+      const response = await apiRequest("POST", "/api/beat-purchases", {
+        beatId: beat.id,
+        customerName,
+        customerEmail,
+        licenseType: selectedLicense,
+        price: getPrice()
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to process purchase");
+      }
+
+      toast({
+        title: "Purchase successful!",
+        description: "Your beat license has been purchased successfully. Check your email for download instructions.",
+        variant: "default"
+      });
+
+      // Close dialog and reset state
+      setPurchaseDialogOpen(false);
+      setContractStep(false);
+      setContractSigned(false);
+      setCustomerName("");
+      setCustomerEmail("");
+    } catch (err: any) {
+      console.error("Error processing purchase:", err);
+      toast({
+        title: "Purchase failed",
+        description: err.message || "There was an error processing your purchase. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
   
   return (
-    <Card className="overflow-hidden transition-all hover:shadow-md border-muted hover:border-primary/30">
-      <div 
-        className="h-44 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center relative" 
-        style={{
-          backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center'
-        }}
-      >
-        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-          <div className="text-center">
-            <h3 className="text-white text-xl font-semibold">{beat.title}</h3>
-            {beat.featured && (
-              <span className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded mt-1 inline-block">
-                Featured
-              </span>
-            )}
+    <>
+      <Card className="overflow-hidden transition-all hover:shadow-md border-muted hover:border-primary/30">
+        <div 
+          className="h-44 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center relative" 
+          style={{
+            backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center'
+          }}
+        >
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <div className="text-center">
+              <h3 className="text-white text-xl font-semibold">{beat.title}</h3>
+              {beat.featured && (
+                <span className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded mt-1 inline-block">
+                  Featured
+                </span>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-      
-      <CardHeader className="p-4 pb-0">
-        <div className="flex justify-between items-center">
-          <div>
-            <span className="inline-block px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium">{beat.genre}</span>
-            <p className="font-medium mt-1">{beat.bpm} BPM</p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">Starting at</p>
-            <p className="font-semibold text-primary">{formatPrice(beat.price)}</p>
-          </div>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="p-4">
-        <BeatPlayer 
-          beat={beat} 
-          isPlaying={isPlaying} 
-          onPlay={handlePlay} 
-          onPause={handlePause}
-          isLoading={isAudioLoading}
-        />
         
-        <div className="mt-5">
-          <Tabs defaultValue="basic" onValueChange={setSelectedLicense} className="border rounded-md p-2">
-            <TabsList className="grid grid-cols-3 w-full mb-2">
-              <TabsTrigger value="basic">Basic</TabsTrigger>
-              <TabsTrigger value="premium">Premium</TabsTrigger>
-              <TabsTrigger value="exclusive">Exclusive</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="basic" className="mt-2 space-y-2">
-              <div className="flex justify-between items-center">
-                <h4 className="font-medium">Basic License</h4>
-                <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).basic.price)}</p>
+        <CardHeader className="p-4 pb-0">
+          <div className="flex justify-between items-center">
+            <div>
+              <span className="inline-block px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium">{beat.genre}</span>
+              <p className="font-medium mt-1">{beat.bpm} BPM</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Starting at</p>
+              <p className="font-semibold text-primary">{formatPrice(beat.price)}</p>
+            </div>
+          </div>
+        </CardHeader>
+        
+        <CardContent className="p-4">
+          <BeatPlayer 
+            beat={beat} 
+            isPlaying={isPlaying} 
+            onPlay={handlePlay} 
+            onPause={handlePause}
+            isLoading={isAudioLoading}
+          />
+          
+          <div className="mt-5">
+            <Tabs defaultValue="basic" onValueChange={setSelectedLicense} className="border rounded-md p-2">
+              <TabsList className="grid grid-cols-3 w-full mb-2">
+                <TabsTrigger value="basic">Basic</TabsTrigger>
+                <TabsTrigger value="premium">Premium</TabsTrigger>
+                <TabsTrigger value="exclusive">Exclusive</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="basic" className="mt-2 space-y-2">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-medium">Basic License</h4>
+                  <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).basic.price)}</p>
+                </div>
+                <ul className="text-sm space-y-1">
+                  {getLicenseFeatures("basic").map((feature, index) => (
+                    <li key={index} className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </TabsContent>
+              
+              <TabsContent value="premium" className="mt-2 space-y-2">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-medium">Premium License</h4>
+                  <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).premium.price)}</p>
+                </div>
+                <ul className="text-sm space-y-1">
+                  {getLicenseFeatures("premium").map((feature, index) => (
+                    <li key={index} className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </TabsContent>
+              
+              <TabsContent value="exclusive" className="mt-2 space-y-2">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-medium">Exclusive License</h4>
+                  <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).exclusive.price)}</p>
+                </div>
+                <ul className="text-sm space-y-1">
+                  {getLicenseFeatures("exclusive").map((feature, index) => (
+                    <li key={index} className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </CardContent>
+        
+        <CardFooter className="p-4 pt-0">
+          <Button className="w-full bg-primary hover:bg-primary-600" onClick={handlePurchaseClick}>
+            <ShoppingCart className="h-4 w-4 mr-2" />
+            Purchase {selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License
+          </Button>
+        </CardFooter>
+      </Card>
+
+      {/* Purchase Dialog */}
+      <Dialog open={purchaseDialogOpen} onOpenChange={setPurchaseDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              Purchase {selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License
+            </DialogTitle>
+            <DialogDescription>
+              {contractStep ? 
+                "Please review and agree to the licensing terms." :
+                "Fill in your details to purchase this beat license."
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          {!contractStep ? (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Your Name</Label>
+                <Input 
+                  id="name" 
+                  value={customerName} 
+                  onChange={(e) => setCustomerName(e.target.value)} 
+                  placeholder="Enter your full name"
+                />
               </div>
-              <ul className="text-sm space-y-1">
-                {getLicenseFeatures("basic").map((feature, index) => (
-                  <li key={index} className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-            </TabsContent>
-            
-            <TabsContent value="premium" className="mt-2 space-y-2">
-              <div className="flex justify-between items-center">
-                <h4 className="font-medium">Premium License</h4>
-                <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).premium.price)}</p>
+              
+              <div className="space-y-2">
+                <Label htmlFor="email">Email Address</Label>
+                <Input 
+                  id="email" 
+                  type="email" 
+                  value={customerEmail} 
+                  onChange={(e) => setCustomerEmail(e.target.value)} 
+                  placeholder="Enter your email address"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Your download link will be sent to this email.
+                </p>
               </div>
-              <ul className="text-sm space-y-1">
-                {getLicenseFeatures("premium").map((feature, index) => (
-                  <li key={index} className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-            </TabsContent>
-            
-            <TabsContent value="exclusive" className="mt-2 space-y-2">
-              <div className="flex justify-between items-center">
-                <h4 className="font-medium">Exclusive License</h4>
-                <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).exclusive.price)}</p>
+              
+              <div className="bg-muted/30 p-4 rounded-md border space-y-2">
+                <div className="flex justify-between">
+                  <span>Beat:</span>
+                  <span className="font-medium">{beat.title}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>License Type:</span>
+                  <span className="font-medium">{selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Price:</span>
+                  <span className="font-medium">{formatPrice(getPrice())}</span>
+                </div>
               </div>
-              <ul className="text-sm space-y-1">
-                {getLicenseFeatures("exclusive").map((feature, index) => (
-                  <li key={index} className="flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </CardContent>
-      
-      <CardFooter className="p-4 pt-0">
-        <Button className="w-full bg-primary hover:bg-primary-600">
-          <ShoppingCart className="h-4 w-4 mr-2" />
-          Purchase {selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License
-        </Button>
-      </CardFooter>
-    </Card>
+              
+              <DialogFooter className="pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setPurchaseDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleContinueToContract}
+                >
+                  Continue to License Agreement
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="py-4">
+              {/* Contract requirement component */}
+              <ContractRequirement 
+                contractId={1} // This would be from the beat's contract or a default beat contract
+                entityType="beat"
+                entityId={beat.id}
+                email={customerEmail}
+                name={customerName}
+                onContractSigned={handleContractSigned}
+                onCheckExistingSignature={false}
+              />
+              
+              <DialogFooter className="pt-6">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setContractStep(false)}
+                >
+                  Back
+                </Button>
+                <Button 
+                  onClick={handleCompletePurchase} 
+                  disabled={!contractSigned || isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <span className="flex items-center">
+                      <span className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full mr-2"></span>
+                      Processing...
+                    </span>
+                  ) : (
+                    <>Complete Purchase</>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
