@@ -46,34 +46,65 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
     return options[selectedLicense]?.price || beat.price;
   };
   
+  // Get features based on license type 
+  const getLicenseFeatures = (type: string) => {
+    const features = [];
+    const options = beat.licensingOptions as any;
+    
+    if (type === "basic") {
+      features.push("MP3 format only");
+      features.push("Limited to 1,000 streams");
+      features.push("Personal use only");
+    } else if (type === "premium") {
+      features.push("WAV + MP3 formats");
+      features.push("Up to 5,000 streams");
+      features.push("Commercial use");
+      features.push("Can be sold with credit");
+    } else if (type === "exclusive") {
+      features.push("All audio formats + stems");
+      features.push("Unlimited streams");
+      features.push("Full ownership rights");
+      features.push("No credit required");
+    }
+    
+    return features;
+  };
+  
   // Play/pause handlers
   const handlePlay = () => setIsPlaying(true);
   const handlePause = () => setIsPlaying(false);
   
   return (
-    <Card className="overflow-hidden transition-all hover:shadow-md">
+    <Card className="overflow-hidden transition-all hover:shadow-md border-muted hover:border-primary/30">
       <div 
-        className="h-40 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center" 
+        className="h-44 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center relative" 
         style={{
           backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
           backgroundSize: 'cover',
           backgroundPosition: 'center'
         }}
       >
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-          <h3 className="text-white text-xl font-semibold">{beat.title}</h3>
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+          <div className="text-center">
+            <h3 className="text-white text-xl font-semibold">{beat.title}</h3>
+            {beat.featured && (
+              <span className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded mt-1 inline-block">
+                Featured
+              </span>
+            )}
+          </div>
         </div>
       </div>
       
       <CardHeader className="p-4 pb-0">
         <div className="flex justify-between items-center">
           <div>
-            <span className="text-sm text-muted-foreground">{beat.genre}</span>
-            <p className="font-medium">{beat.bpm} BPM</p>
+            <span className="inline-block px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium">{beat.genre}</span>
+            <p className="font-medium mt-1">{beat.bpm} BPM</p>
           </div>
           <div className="text-right">
-            <p className="text-sm text-muted-foreground">Starting at</p>
-            <p className="font-medium text-primary">{formatPrice(beat.price)}</p>
+            <p className="text-xs text-muted-foreground">Starting at</p>
+            <p className="font-semibold text-primary">{formatPrice(beat.price)}</p>
           </div>
         </div>
       </CardHeader>
@@ -86,33 +117,66 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
           onPause={handlePause} 
         />
         
-        <div className="mt-4">
-          <Tabs defaultValue="basic" onValueChange={setSelectedLicense}>
-            <TabsList className="grid grid-cols-3 w-full">
+        <div className="mt-5">
+          <Tabs defaultValue="basic" onValueChange={setSelectedLicense} className="border rounded-md p-2">
+            <TabsList className="grid grid-cols-3 w-full mb-2">
               <TabsTrigger value="basic">Basic</TabsTrigger>
               <TabsTrigger value="premium">Premium</TabsTrigger>
               <TabsTrigger value="exclusive">Exclusive</TabsTrigger>
             </TabsList>
-            <TabsContent value="basic" className="mt-2 text-sm">
-              <p>{(beat.licensingOptions as any).basic.description}</p>
-              <p className="font-medium mt-1">{formatPrice((beat.licensingOptions as any).basic.price)}</p>
+            
+            <TabsContent value="basic" className="mt-2 space-y-2">
+              <div className="flex justify-between items-center">
+                <h4 className="font-medium">Basic License</h4>
+                <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).basic.price)}</p>
+              </div>
+              <ul className="text-sm space-y-1">
+                {getLicenseFeatures("basic").map((feature, index) => (
+                  <li key={index} className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
+                    {feature}
+                  </li>
+                ))}
+              </ul>
             </TabsContent>
-            <TabsContent value="premium" className="mt-2 text-sm">
-              <p>{(beat.licensingOptions as any).premium.description}</p>
-              <p className="font-medium mt-1">{formatPrice((beat.licensingOptions as any).premium.price)}</p>
+            
+            <TabsContent value="premium" className="mt-2 space-y-2">
+              <div className="flex justify-between items-center">
+                <h4 className="font-medium">Premium License</h4>
+                <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).premium.price)}</p>
+              </div>
+              <ul className="text-sm space-y-1">
+                {getLicenseFeatures("premium").map((feature, index) => (
+                  <li key={index} className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
+                    {feature}
+                  </li>
+                ))}
+              </ul>
             </TabsContent>
-            <TabsContent value="exclusive" className="mt-2 text-sm">
-              <p>{(beat.licensingOptions as any).exclusive.description}</p>
-              <p className="font-medium mt-1">{formatPrice((beat.licensingOptions as any).exclusive.price)}</p>
+            
+            <TabsContent value="exclusive" className="mt-2 space-y-2">
+              <div className="flex justify-between items-center">
+                <h4 className="font-medium">Exclusive License</h4>
+                <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).exclusive.price)}</p>
+              </div>
+              <ul className="text-sm space-y-1">
+                {getLicenseFeatures("exclusive").map((feature, index) => (
+                  <li key={index} className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary"></div>
+                    {feature}
+                  </li>
+                ))}
+              </ul>
             </TabsContent>
           </Tabs>
         </div>
       </CardContent>
       
       <CardFooter className="p-4 pt-0">
-        <Button className="w-full">
+        <Button className="w-full bg-primary hover:bg-primary-600">
           <ShoppingCart className="h-4 w-4 mr-2" />
-          Purchase {selectedLicense} License
+          Purchase {selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License
         </Button>
       </CardFooter>
     </Card>
@@ -130,49 +194,88 @@ const FilterSidebar = ({
   genres: string[] 
 }) => {
   return (
-    <div className="w-full lg:w-64 p-4 bg-muted/30 rounded-lg">
-      <h3 className="font-medium text-lg mb-4">Filters</h3>
+    <div className="w-full lg:w-64 p-5 bg-muted/30 rounded-lg border border-muted-foreground/10 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-lg">Find Your Beat</h3>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="text-xs"
+          onClick={() => onGenreChange(null)}
+        >
+          Reset Filters
+        </Button>
+      </div>
       
-      <div className="mb-6">
-        <h4 className="text-sm font-medium mb-2">Genre</h4>
-        <div className="space-y-2">
-          <button
-            className={`block w-full text-left py-1 px-2 rounded ${selectedGenre === null ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-            onClick={() => onGenreChange(null)}
-          >
-            All Genres
-          </button>
-          {genres.map(genre => (
+      <div className="space-y-6">
+        <div>
+          <div className="flex items-center mb-3">
+            <div className="w-1 h-4 bg-primary rounded mr-2"></div>
+            <h4 className="font-medium">Genre</h4>
+          </div>
+          <div className="space-y-1.5 pl-3">
             <button
-              key={genre}
-              className={`block w-full text-left py-1 px-2 rounded ${selectedGenre === genre ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-              onClick={() => onGenreChange(genre)}
+              className={`block w-full text-left py-1.5 px-3 rounded-md transition-colors 
+                ${selectedGenre === null 
+                  ? 'bg-primary text-primary-foreground font-medium' 
+                  : 'hover:bg-muted text-foreground/80'}`}
+              onClick={() => onGenreChange(null)}
             >
-              {genre}
+              All Genres
             </button>
-          ))}
-        </div>
-      </div>
-      
-      <div className="mb-6">
-        <h4 className="text-sm font-medium mb-2">BPM Range</h4>
-        <div className="px-2">
-          <Slider defaultValue={[60, 180]} min={60} max={180} step={1} />
-          <div className="flex justify-between text-xs text-muted-foreground mt-1">
-            <span>60</span>
-            <span>180</span>
+            {genres.map(genre => (
+              <button
+                key={genre}
+                className={`block w-full text-left py-1.5 px-3 rounded-md transition-colors
+                  ${selectedGenre === genre 
+                    ? 'bg-primary text-primary-foreground font-medium' 
+                    : 'hover:bg-muted text-foreground/80'}`}
+                onClick={() => onGenreChange(genre)}
+              >
+                {genre}
+              </button>
+            ))}
           </div>
         </div>
-      </div>
-      
-      <div>
-        <h4 className="text-sm font-medium mb-2">Price</h4>
-        <div className="px-2">
-          <Slider defaultValue={[50]} min={0} max={100} step={1} />
-          <div className="flex justify-between text-xs text-muted-foreground mt-1">
-            <span>$0</span>
-            <span>$500+</span>
+        
+        <div>
+          <div className="flex items-center mb-3">
+            <div className="w-1 h-4 bg-primary rounded mr-2"></div>
+            <h4 className="font-medium">BPM Range</h4>
           </div>
+          <div className="px-3 py-2">
+            <Slider defaultValue={[60, 180]} min={60} max={180} step={1} className="mb-2" />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>60</span>
+              <span>180</span>
+            </div>
+            <div className="flex justify-between mt-2">
+              <span className="text-xs font-medium">Selected: 60 - 180 BPM</span>
+            </div>
+          </div>
+        </div>
+        
+        <div>
+          <div className="flex items-center mb-3">
+            <div className="w-1 h-4 bg-primary rounded mr-2"></div>
+            <h4 className="font-medium">Price Range</h4>
+          </div>
+          <div className="px-3 py-2">
+            <Slider defaultValue={[50]} min={0} max={100} step={1} className="mb-2" />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>$0</span>
+              <span>$500+</span>
+            </div>
+            <div className="flex justify-between mt-2">
+              <span className="text-xs font-medium">Max: $250</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="pt-2">
+          <Button className="w-full" variant="outline">
+            Apply Filters
+          </Button>
         </div>
       </div>
     </div>
@@ -202,10 +305,36 @@ export default function Beats() {
   return (
     <div className="py-16 container mx-auto">
       <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold mb-2">Beats & Licensing</h1>
+        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-primary-600 bg-clip-text text-transparent">Beats & Licensing</h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
           Browse our collection of premium beats available for licensing. Find the perfect sound for your next project.
         </p>
+        <div className="mt-6 bg-muted/30 p-5 rounded-lg max-w-3xl mx-auto">
+          <h3 className="text-xl font-semibold mb-2">How It Works</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
+            <div className="p-3">
+              <div className="bg-primary/10 w-8 h-8 rounded-full flex items-center justify-center mb-2">
+                <span className="font-semibold">1</span>
+              </div>
+              <h4 className="font-medium mb-1">Browse & Listen</h4>
+              <p className="text-sm">Preview beats and find the perfect match for your project</p>
+            </div>
+            <div className="p-3">
+              <div className="bg-primary/10 w-8 h-8 rounded-full flex items-center justify-center mb-2">
+                <span className="font-semibold">2</span>
+              </div>
+              <h4 className="font-medium mb-1">Choose License</h4>
+              <p className="text-sm">Select from Basic, Premium or Exclusive ownership options</p>
+            </div>
+            <div className="p-3">
+              <div className="bg-primary/10 w-8 h-8 rounded-full flex items-center justify-center mb-2">
+                <span className="font-semibold">3</span>
+              </div>
+              <h4 className="font-medium mb-1">Download & Create</h4>
+              <p className="text-sm">Get high-quality files instantly after purchase</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {featuredBeats.length > 0 && (

@@ -90,21 +90,21 @@ export default function Navbar() {
           <div className="container mx-auto px-4 py-3 flex flex-col space-y-3">
             {isHomePage ? (
               <>
-                <a href="#services" className="font-medium py-2 hover:text-primary transition-colors">Services</a>
-                <a href="#portfolio" className="font-medium py-2 hover:text-primary transition-colors">Portfolio</a>
-                <a href="#pricing" className="font-medium py-2 hover:text-primary transition-colors">Pricing</a>
-                <a href="#about" className="font-medium py-2 hover:text-primary transition-colors">About</a>
-                <a href="#contact" className="font-medium py-2 hover:text-primary transition-colors">Contact</a>
-                <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors">Beats & Licensing</Link>
+                <a href="#services" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Services</a>
+                <a href="#portfolio" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Portfolio</a>
+                <a href="#pricing" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Pricing</a>
+                <a href="#about" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>About</a>
+                <a href="#contact" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Contact</a>
+                <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Beats & Licensing</Link>
               </>
             ) : (
               <>
-                <Link href="/#services" className="font-medium py-2 hover:text-primary transition-colors">Services</Link>
-                <Link href="/#portfolio" className="font-medium py-2 hover:text-primary transition-colors">Portfolio</Link>
-                <Link href="/#pricing" className="font-medium py-2 hover:text-primary transition-colors">Pricing</Link>
-                <Link href="/#about" className="font-medium py-2 hover:text-primary transition-colors">About</Link>
-                <Link href="/#contact" className="font-medium py-2 hover:text-primary transition-colors">Contact</Link>
-                <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors">Beats & Licensing</Link>
+                <Link href="/#services" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Services</Link>
+                <Link href="/#portfolio" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Portfolio</Link>
+                <Link href="/#pricing" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Pricing</Link>
+                <Link href="/#about" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>About</Link>
+                <Link href="/#contact" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Contact</Link>
+                <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Beats & Licensing</Link>
               </>
             )}
             <Button asChild className="bg-primary hover:bg-primary-600 w-full justify-center">
