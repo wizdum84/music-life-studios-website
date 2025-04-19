@@ -103,7 +103,7 @@ export function ContractRequirement({
       setIsSubmitting(true);
       setError(null);
       
-      const response = await apiRequest("POST", "/api/contracts/sign", {
+      const response = await apiRequest("POST", "/api/contract-signatures", {
         contractId: contract.id,
         customerName: name,
         customerEmail: email,
