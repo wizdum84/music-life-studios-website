@@ -5,8 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PlayCircle, PauseCircle, Download, ShoppingCart } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
+import { ContractRequirement } from "@/components/contracts";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 // Audio player for previewing beats
 const BeatPlayer = ({ beat, isPlaying, onPlay, onPause, isLoading = false }: { 
