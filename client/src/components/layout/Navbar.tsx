@@ -23,28 +23,15 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
   
-  // Close mobile menu when location changes or when section is clicked
+  // Close mobile menu when location changes or when any navigation link is clicked
   useEffect(() => {
     setIsMobileMenuOpen(false);
-    
-    // Add event listener for section links to collapse menu after click
-    const handleSectionClick = () => {
-      setIsMobileMenuOpen(false);
-    };
-    
-    // Get all section links
-    const sectionLinks = document.querySelectorAll('a[href^="#"]');
-    sectionLinks.forEach(link => {
-      link.addEventListener('click', handleSectionClick);
-    });
-    
-    return () => {
-      // Clean up event listeners
-      sectionLinks.forEach(link => {
-        link.removeEventListener('click', handleSectionClick);
-      });
-    };
   }, [location]);
+  
+  // Function to close mobile menu when any link is clicked
+  const handleLinkClick = () => {
+    setIsMobileMenuOpen(false);
+  };
   
   const isHomePage = location === "/";
   
