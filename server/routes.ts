@@ -1098,6 +1098,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message });
     }
   });
+  
+  // Feedback Management API
+  
+  // Get all feedbacks
+  app.get("/api/feedbacks", async (req, res) => {
+    try {
+      const feedbacks = await storage.getAllFeedbacks();
+      res.json(feedbacks);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get feedback by ID
+  app.get("/api/feedbacks/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const feedback = await storage.getFeedback(id);
+      
+      if (!feedback) {
+        return res.status(404).json({ message: "Feedback not found" });
+      }
+      
+      res.json(feedback);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get feedback by service type
+  app.get("/api/feedbacks/service/:serviceType", async (req, res) => {
+    try {
+      const { serviceType } = req.params;
+      const feedbacks = await storage.getFeedbacksByServiceType(serviceType);
+      res.json(feedbacks);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get feedback stats (average rating, total count, etc.)
+  app.get("/api/feedback-stats", async (req, res) => {
+    try {
+      const stats = await storage.getFeedbackStats();
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Create new feedback
+  app.post("/api/feedbacks", async (req, res) => {
+    try {
+      const { name, email, rating, comment, serviceType, bookingId, beatPurchaseId } = req.body;
+      
+      // Validate required fields
+      if (!rating || !serviceType) {
+        return res.status(400).json({ message: "Rating and service type are required" });
+      }
+      
+      const newFeedback = await storage.createFeedback({
+        rating,
+        serviceType,
+        status: 'active',
+        comment: comment || null,
+        bookingId: bookingId || null,
+        beatPurchaseId: beatPurchaseId || null,
+        userId: null, // Can be linked to a user if authenticated
+        name,
+        email,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      
+      res.status(201).json(newFeedback);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Update feedback status (active/hidden/flagged) - admin only
+  app.put("/api/feedbacks/:id/status", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { status } = req.body;
+      
+      if (!status || !['active', 'hidden', 'flagged'].includes(status)) {
+        return res.status(400).json({ message: "Valid status is required (active, hidden, or flagged)" });
+      }
+      
+      const feedback = await storage.getFeedback(id);
+      if (!feedback) {
+        return res.status(404).json({ message: "Feedback not found" });
+      }
+      
+      const updatedFeedback = await storage.updateFeedbackStatus(id, status);
+      res.json(updatedFeedback);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Delete feedback - admin only
+  app.delete("/api/feedbacks/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const feedback = await storage.getFeedback(id);
+      
+      if (!feedback) {
+        return res.status(404).json({ message: "Feedback not found" });
+      }
+      
+      await storage.deleteFeedback(id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
