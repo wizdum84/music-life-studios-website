@@ -26,10 +26,11 @@ import {
   DialogClose
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarIcon, PlusCircle, Music, Calendar as CalendarIcon2, Clock, Edit, Trash2 } from "lucide-react";
+import { CalendarIcon, PlusCircle, Music, Calendar as CalendarIcon2, Clock, Edit, Trash2, FileText } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import FileUploader from "./FileUploader";
+import ContractManager from "./ContractManager";
 import { format, addDays, startOfWeek, endOfWeek } from "date-fns";
 
 export default function ContentManager() {
@@ -39,11 +40,15 @@ export default function ContentManager() {
   return (
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <TabsList className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <TabsTrigger value="tracks">Music Portfolio</TabsTrigger>
           <TabsTrigger value="beats">Beat Marketplace</TabsTrigger>
           <TabsTrigger value="schedule">Weekly Schedule</TabsTrigger>
           <TabsTrigger value="services">Services</TabsTrigger>
+          <TabsTrigger value="contracts">
+            <FileText className="h-4 w-4 mr-2" />
+            Contracts
+          </TabsTrigger>
         </TabsList>
         
         <TabsContent value="tracks">
@@ -60,6 +65,10 @@ export default function ContentManager() {
         
         <TabsContent value="services">
           <ServicesManager />
+        </TabsContent>
+        
+        <TabsContent value="contracts">
+          <ContractManager />
         </TabsContent>
       </Tabs>
     </div>

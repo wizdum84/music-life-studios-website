@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Booking, Message } from "@shared/schema";
+import ContentManager from "./ContentManager";
 import { 
   BarChart, 
   CalendarDays, 
@@ -28,13 +29,14 @@ import {
 
 export default function AdminDashboard() {
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("overview");
   
   // Fetch bookings and messages
-  const { data: bookings, isLoading: isLoadingBookings } = useQuery<Booking[]>({
+  const { data: bookings = [], isLoading: isLoadingBookings } = useQuery<Booking[]>({
     queryKey: ['/api/bookings'],
   });
   
-  const { data: messages, isLoading: isLoadingMessages } = useQuery<Message[]>({
+  const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[]>({
     queryKey: ['/api/messages'],
   });
   
@@ -56,11 +58,11 @@ export default function AdminDashboard() {
   };
   
   // Calculate stats
-  const pendingBookings = bookings?.filter(booking => booking.status === "pending") || [];
-  const upcomingBookings = bookings?.filter(booking => 
+  const pendingBookings = bookings.filter(booking => booking.status === "pending");
+  const upcomingBookings = bookings.filter(booking => 
     booking.status === "confirmed" && new Date(booking.date) > new Date()
-  ) || [];
-  const unreadMessages = messages?.filter(message => !message.read) || [];
+  );
+  const unreadMessages = messages.filter(message => !message.read);
   
   // Format date
   const formatDate = (dateString: string | Date) => {
@@ -89,222 +91,264 @@ export default function AdminDashboard() {
       </div>
     );
   }
-  
+
   return (
     <div className="space-y-6">
-      {/* Stats Overview */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Bookings</CardTitle>
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{bookings?.length || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              {pendingBookings.length} pending approval
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming Sessions</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{upcomingBookings.length}</div>
-            <p className="text-xs text-muted-foreground">
-              Next: {upcomingBookings.length > 0 
-                ? formatDate(upcomingBookings[0].date) 
-                : "None scheduled"}
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Messages</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{messages?.length || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              {unreadMessages.length} unread
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Revenue</CardTitle>
-            <BarChart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              ${bookings
-                ?.filter(b => b.paymentStatus === "paid")
-                .reduce((sum, b) => sum + b.amount, 0) / 100 || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              From {bookings?.filter(b => b.paymentStatus === "paid").length || 0} paid bookings
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-      
-      {/* Recent Activity Tabs */}
-      <Tabs defaultValue="upcoming" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="upcoming">Upcoming Sessions</TabsTrigger>
-          <TabsTrigger value="pending">Pending Bookings</TabsTrigger>
-          <TabsTrigger value="messages">Recent Messages</TabsTrigger>
+      {/* Main Dashboard Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid grid-cols-3 w-full">
+          <TabsTrigger value="overview">
+            <BarChart className="h-4 w-4 mr-2" />
+            Dashboard Overview
+          </TabsTrigger>
+          <TabsTrigger value="content">
+            <Upload className="h-4 w-4 mr-2" />
+            Content Manager
+          </TabsTrigger>
+          <TabsTrigger value="analytics">
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Business Analytics
+          </TabsTrigger>
         </TabsList>
         
-        {/* Upcoming Sessions Tab */}
-        <TabsContent value="upcoming" className="space-y-4">
-          <div className="grid gap-4">
-            {upcomingBookings.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center pt-6 pb-6">
-                  <Calendar className="h-10 w-10 text-muted-foreground mb-2" />
-                  <p className="text-muted-foreground">No upcoming sessions scheduled.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              upcomingBookings.slice(0, 5).map((booking) => (
-                <Card key={booking.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <Avatar>
-                          <AvatarFallback>{booking.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-medium leading-none">{booking.name}</p>
-                          <p className="text-sm text-muted-foreground">{booking.email}</p>
-                          <div className="flex items-center pt-2">
-                            <CalendarDays className="mr-1 h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">{formatDate(booking.date)}</span>
-                            <Clock className="ml-2 mr-1 h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">{formatTime(booking.date)}</span>
+        {/* Dashboard Overview Tab */}
+        <TabsContent value="overview" className="space-y-6">
+          {/* Stats Overview */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Bookings</CardTitle>
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{bookings.length}</div>
+                <p className="text-xs text-muted-foreground">
+                  {pendingBookings.length} pending approval
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Upcoming Sessions</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{upcomingBookings.length}</div>
+                <p className="text-xs text-muted-foreground">
+                  Next: {upcomingBookings.length > 0 
+                    ? formatDate(upcomingBookings[0].date) 
+                    : "None scheduled"}
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Messages</CardTitle>
+                <MessageSquare className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{messages.length}</div>
+                <p className="text-xs text-muted-foreground">
+                  {unreadMessages.length} unread
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Revenue</CardTitle>
+                <BarChart className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  ${bookings
+                    .filter(b => b.paymentStatus === "paid")
+                    .reduce((sum, b) => sum + b.amount, 0) / 100}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  From {bookings.filter(b => b.paymentStatus === "paid").length} paid bookings
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+          
+          {/* Recent Activity Tabs */}
+          <Tabs defaultValue="upcoming" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="upcoming">Upcoming Sessions</TabsTrigger>
+              <TabsTrigger value="pending">Pending Bookings</TabsTrigger>
+              <TabsTrigger value="messages">Recent Messages</TabsTrigger>
+            </TabsList>
+            
+            {/* Upcoming Sessions Tab */}
+            <TabsContent value="upcoming" className="space-y-4">
+              <div className="grid gap-4">
+                {upcomingBookings.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center pt-6 pb-6">
+                      <Calendar className="h-10 w-10 text-muted-foreground mb-2" />
+                      <p className="text-muted-foreground">No upcoming sessions scheduled.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  upcomingBookings.slice(0, 5).map((booking) => (
+                    <Card key={booking.id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4">
+                            <Avatar>
+                              <AvatarFallback>{booking.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="text-sm font-medium leading-none">{booking.name}</p>
+                              <p className="text-sm text-muted-foreground">{booking.email}</p>
+                              <div className="flex items-center pt-2">
+                                <CalendarDays className="mr-1 h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">{formatDate(booking.date)}</span>
+                                <Clock className="ml-2 mr-1 h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">{formatTime(booking.date)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge>{booking.duration / 60} hours</Badge>
+                            <p className="mt-1 text-sm font-medium">${booking.amount / 100}</p>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <Badge>{booking.duration / 60} hours</Badge>
-                        <p className="mt-1 text-sm font-medium">${booking.amount / 100}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+            
+            {/* Pending Bookings Tab */}
+            <TabsContent value="pending" className="space-y-4">
+              <div className="grid gap-4">
+                {pendingBookings.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center pt-6 pb-6">
+                      <CheckCircle className="h-10 w-10 text-muted-foreground mb-2" />
+                      <p className="text-muted-foreground">No pending bookings to approve.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  pendingBookings.slice(0, 5).map((booking) => (
+                    <Card key={booking.id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4">
+                            <Avatar>
+                              <AvatarFallback>{booking.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="text-sm font-medium leading-none">{booking.name}</p>
+                              <p className="text-sm text-muted-foreground">{booking.email}</p>
+                              <div className="flex items-center pt-2">
+                                <CalendarDays className="mr-1 h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">{formatDate(booking.date)}</span>
+                                <Clock className="ml-2 mr-1 h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">{formatTime(booking.date)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="outline">{booking.paymentStatus}</Badge>
+                            <p className="mt-1 text-sm font-medium">${booking.amount / 100}</p>
+                          </div>
+                        </div>
+                        <div className="flex justify-end space-x-2 mt-4">
+                          <Button variant="outline" size="sm">
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Decline
+                          </Button>
+                          <Button size="sm">
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                            Approve
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+            
+            {/* Recent Messages Tab */}
+            <TabsContent value="messages" className="space-y-4">
+              <div className="grid gap-4">
+                {messages.length === 0 ? (
+                  <Card>
+                    <CardContent className="flex flex-col items-center justify-center pt-6 pb-6">
+                      <MessageSquare className="h-10 w-10 text-muted-foreground mb-2" />
+                      <p className="text-muted-foreground">No messages received yet.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  messages.slice(0, 5).map((message) => (
+                    <Card key={message.id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start space-x-4">
+                            <Avatar>
+                              <AvatarFallback>{message.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="flex items-center">
+                                <p className="text-sm font-medium leading-none">{message.name}</p>
+                                {!message.read && (
+                                  <Badge variant="secondary" className="ml-2">New</Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-muted-foreground">{message.email}</p>
+                              <p className="text-sm font-medium mt-2">{message.subject}</p>
+                              <p className="text-sm mt-1 text-muted-foreground line-clamp-2">
+                                {message.message}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-2">
+                                {message.createdAt && formatDate(message.createdAt)} 
+                                {message.createdAt && " at "} 
+                                {message.createdAt && formatTime(message.createdAt)}
+                              </p>
+                            </div>
+                          </div>
+                          {!message.read && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => markAsRead(message.id)}
+                            >
+                              Mark as Read
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
         
-        {/* Pending Bookings Tab */}
-        <TabsContent value="pending" className="space-y-4">
-          <div className="grid gap-4">
-            {pendingBookings.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center pt-6 pb-6">
-                  <CheckCircle className="h-10 w-10 text-muted-foreground mb-2" />
-                  <p className="text-muted-foreground">No pending bookings to approve.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              pendingBookings.slice(0, 5).map((booking) => (
-                <Card key={booking.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <Avatar>
-                          <AvatarFallback>{booking.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-medium leading-none">{booking.name}</p>
-                          <p className="text-sm text-muted-foreground">{booking.email}</p>
-                          <div className="flex items-center pt-2">
-                            <CalendarDays className="mr-1 h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">{formatDate(booking.date)}</span>
-                            <Clock className="ml-2 mr-1 h-3 w-3 text-muted-foreground" />
-                            <span className="text-xs text-muted-foreground">{formatTime(booking.date)}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <Badge variant="outline">{booking.paymentStatus}</Badge>
-                        <p className="mt-1 text-sm font-medium">${booking.amount / 100}</p>
-                      </div>
-                    </div>
-                    <div className="flex justify-end space-x-2 mt-4">
-                      <Button variant="outline" size="sm">
-                        <XCircle className="mr-2 h-4 w-4" />
-                        Decline
-                      </Button>
-                      <Button size="sm">
-                        <CheckCircle className="mr-2 h-4 w-4" />
-                        Approve
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
+        {/* Content Manager Tab */}
+        <TabsContent value="content">
+          <ContentManager />
         </TabsContent>
         
-        {/* Recent Messages Tab */}
-        <TabsContent value="messages" className="space-y-4">
-          <div className="grid gap-4">
-            {messages?.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center pt-6 pb-6">
-                  <MessageSquare className="h-10 w-10 text-muted-foreground mb-2" />
-                  <p className="text-muted-foreground">No messages received yet.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              messages?.slice(0, 5).map((message) => (
-                <Card key={message.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-4">
-                        <Avatar>
-                          <AvatarFallback>{message.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="flex items-center">
-                            <p className="text-sm font-medium leading-none">{message.name}</p>
-                            {!message.read && (
-                              <Badge variant="secondary" className="ml-2">New</Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground">{message.email}</p>
-                          <p className="text-sm font-medium mt-2">{message.subject}</p>
-                          <p className="text-sm mt-1 text-muted-foreground line-clamp-2">
-                            {message.message}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            {formatDate(message.createdAt)} at {formatTime(message.createdAt)}
-                          </p>
-                        </div>
-                      </div>
-                      {!message.read && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => markAsRead(message.id)}
-                        >
-                          Mark as Read
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
+        {/* Analytics Tab */}
+        <TabsContent value="analytics">
+          <div className="flex items-center justify-center py-8">
+            <Button 
+              variant="outline" 
+              onClick={() => window.location.href = '/analytics'}
+              className="flex items-center"
+            >
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              View Full Analytics Dashboard
+            </Button>
           </div>
         </TabsContent>
       </Tabs>
