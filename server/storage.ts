@@ -132,6 +132,8 @@ export class MemStorage implements IStorage {
     this.timeSlots = new Map();
     this.beats = new Map();
     this.beatPurchases = new Map();
+    this.contracts = new Map();
+    this.contractSignatures = new Map();
     
     this.userCurrentId = 1;
     this.serviceCurrentId = 1;
@@ -141,6 +143,8 @@ export class MemStorage implements IStorage {
     this.timeSlotCurrentId = 1;
     this.beatCurrentId = 1;
     this.beatPurchaseCurrentId = 1;
+    this.contractCurrentId = 1;
+    this.contractSignatureCurrentId = 1;
     
     // Add default admin user
     this.createUser({
@@ -336,6 +340,31 @@ export class MemStorage implements IStorage {
       contractUrl: "https://example.com/contracts/standard-license.pdf",
       tags: ["trap", "dark", "808", "hard"],
       featured: false
+    });
+    
+    // Add sample contracts
+    this.createContract({
+      title: "Beat License Agreement",
+      description: "Standard licensing agreement for non-exclusive beat usage",
+      fileUrl: "https://example.com/contracts/beat-license-agreement.pdf",
+      fileType: "pdf",
+      category: "licensing"
+    });
+    
+    this.createContract({
+      title: "Studio Session Agreement",
+      description: "Terms and conditions for booking studio sessions",
+      fileUrl: "https://example.com/contracts/studio-session-agreement.pdf",
+      fileType: "pdf",
+      category: "services"
+    });
+    
+    this.createContract({
+      title: "Exclusive Rights Transfer",
+      description: "Contract for transferring exclusive rights to a beat",
+      fileUrl: "https://example.com/contracts/exclusive-rights-transfer.pdf",
+      fileType: "pdf",
+      category: "licensing"
     });
   }
 
@@ -669,10 +698,134 @@ export class MemStorage implements IStorage {
     
     const updatedPurchase = { 
       ...existingPurchase, 
-      downloadCount: existingPurchase.downloadCount + 1
+      downloadCount: (existingPurchase.downloadCount || 0) + 1
     };
     this.beatPurchases.set(id, updatedPurchase);
     return updatedPurchase;
+  }
+
+  // Contracts
+  async getAllContracts(): Promise<Contract[]> {
+    return Array.from(this.contracts.values());
+  }
+  
+  async getContractsByCategory(category: string): Promise<Contract[]> {
+    return Array.from(this.contracts.values()).filter(
+      (contract) => contract.category === category
+    );
+  }
+  
+  async getActiveContracts(): Promise<Contract[]> {
+    return Array.from(this.contracts.values()).filter(
+      (contract) => contract.active
+    );
+  }
+  
+  async getContract(id: number): Promise<Contract | undefined> {
+    return this.contracts.get(id);
+  }
+  
+  async createContract(contract: InsertContract): Promise<Contract> {
+    const id = this.contractCurrentId++;
+    const newContract: Contract = { 
+      ...contract, 
+      id,
+      version: 1,
+      active: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.contracts.set(id, newContract);
+    return newContract;
+  }
+  
+  async updateContract(id: number, contract: Partial<InsertContract>): Promise<Contract | undefined> {
+    const existingContract = this.contracts.get(id);
+    if (!existingContract) return undefined;
+    
+    const updatedContract = { 
+      ...existingContract, 
+      ...contract,
+      updatedAt: new Date()
+    };
+    this.contracts.set(id, updatedContract);
+    return updatedContract;
+  }
+  
+  async incrementContractVersion(id: number): Promise<Contract | undefined> {
+    const existingContract = this.contracts.get(id);
+    if (!existingContract) return undefined;
+    
+    const updatedContract = { 
+      ...existingContract, 
+      version: existingContract.version + 1,
+      updatedAt: new Date()
+    };
+    this.contracts.set(id, updatedContract);
+    return updatedContract;
+  }
+  
+  async setContractActive(id: number, active: boolean): Promise<Contract | undefined> {
+    const existingContract = this.contracts.get(id);
+    if (!existingContract) return undefined;
+    
+    const updatedContract = { 
+      ...existingContract, 
+      active,
+      updatedAt: new Date()
+    };
+    this.contracts.set(id, updatedContract);
+    return updatedContract;
+  }
+  
+  async deleteContract(id: number): Promise<boolean> {
+    return this.contracts.delete(id);
+  }
+  
+  // Contract Signatures
+  async getAllContractSignatures(): Promise<ContractSignature[]> {
+    return Array.from(this.contractSignatures.values());
+  }
+  
+  async getContractSignature(id: number): Promise<ContractSignature | undefined> {
+    return this.contractSignatures.get(id);
+  }
+  
+  async getContractSignaturesByContract(contractId: number): Promise<ContractSignature[]> {
+    return Array.from(this.contractSignatures.values()).filter(
+      (signature) => signature.contractId === contractId
+    );
+  }
+  
+  async getContractSignaturesByEmail(email: string): Promise<ContractSignature[]> {
+    return Array.from(this.contractSignatures.values()).filter(
+      (signature) => signature.customerEmail === email
+    );
+  }
+  
+  async getContractSignatureByEntityAndEmail(relatedEntityType: string, relatedEntityId: number, email: string): Promise<ContractSignature | undefined> {
+    return Array.from(this.contractSignatures.values()).find(
+      (signature) => 
+        signature.relatedEntityType === relatedEntityType && 
+        signature.relatedEntityId === relatedEntityId && 
+        signature.customerEmail === email
+    );
+  }
+  
+  async createContractSignature(signature: InsertContractSignature): Promise<ContractSignature> {
+    const id = this.contractSignatureCurrentId++;
+    const newSignature: ContractSignature = { 
+      ...signature, 
+      id,
+      createdAt: new Date()
+    };
+    this.contractSignatures.set(id, newSignature);
+    return newSignature;
+  }
+  
+  async verifyContractSigned(contractId: number, email: string): Promise<boolean> {
+    const signatures = await this.getContractSignaturesByContract(contractId);
+    return signatures.some(sig => sig.customerEmail === email && sig.agreedToTerms);
   }
 }
 
