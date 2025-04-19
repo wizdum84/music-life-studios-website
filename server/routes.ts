@@ -977,6 +977,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error verifying entity contract signature" });
     }
   });
+  
+  // Feedback and Ratings API
+  
+  // Get all feedbacks (admin only)
+  app.get("/api/feedbacks", isAuthenticated, async (req, res) => {
+    try {
+      const feedbacks = await storage.getAllFeedbacks();
+      res.json(feedbacks);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get feedback stats
+  app.get("/api/feedback-stats", async (req, res) => {
+    try {
+      const stats = await storage.getFeedbackStats();
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get feedbacks by service type
+  app.get("/api/feedbacks/service/:serviceType", async (req, res) => {
+    try {
+      const { serviceType } = req.params;
+      const feedbacks = await storage.getFeedbacksByServiceType(serviceType);
+      res.json(feedbacks);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Submit new feedback
+  app.post("/api/feedbacks", async (req, res) => {
+    try {
+      const feedback = await storage.createFeedback(req.body);
+      res.status(201).json(feedback);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Update feedback status (admin only)
+  app.put("/api/feedbacks/:id/status", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      const feedback = await storage.updateFeedbackStatus(parseInt(id), status);
+      if (!feedback) {
+        return res.status(404).json({ error: "Feedback not found" });
+      }
+      res.json(feedback);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Delete feedback (admin only)
+  app.delete("/api/feedbacks/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteFeedback(parseInt(id));
+      if (!success) {
+        return res.status(404).json({ error: "Feedback not found" });
+      }
+      res.status(204).end();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Schedule Management API
+  
+  // Create weekly schedule (admin only)
+  app.post("/api/schedule/weekly", isAuthenticated, async (req, res) => {
+    try {
+      const { 
+        startDate, 
+        endDate, 
+        dailyStartTime, 
+        dailyEndTime, 
+        slotDuration, 
+        daysOfWeek 
+      } = req.body;
+      
+      const slots = await storage.createWeeklySchedule(
+        new Date(startDate),
+        new Date(endDate),
+        dailyStartTime,
+        dailyEndTime,
+        slotDuration,
+        daysOfWeek
+      );
+      
+      res.status(201).json(slots);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Delete time slots in a date range (admin only)
+  app.delete("/api/schedule/range", isAuthenticated, async (req, res) => {
+    try {
+      const { startDate, endDate } = req.body;
+      
+      const success = await storage.deleteTimeSlotsByDateRange(
+        new Date(startDate),
+        new Date(endDate)
+      );
+      
+      if (success) {
+        res.status(200).json({ message: "Time slots deleted successfully" });
+      } else {
+        res.status(404).json({ message: "No available time slots found in specified range" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
