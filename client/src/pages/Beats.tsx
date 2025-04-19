@@ -9,27 +9,57 @@ import { PlayCircle, PauseCircle, Download, ShoppingCart } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 
 // Audio player for previewing beats
-const BeatPlayer = ({ beat, isPlaying, onPlay, onPause }: { 
+const BeatPlayer = ({ beat, isPlaying, onPlay, onPause, isLoading = false }: { 
   beat: Beat; 
   isPlaying: boolean; 
   onPlay: () => void; 
-  onPause: () => void 
+  onPause: () => void;
+  isLoading?: boolean;
 }) => {
   return (
     <div className="flex items-center gap-2 w-full">
       <button
         onClick={isPlaying ? onPause : onPlay}
-        className="rounded-full hover:bg-primary/10 p-1 transition-colors"
+        className={`rounded-full p-1 transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary/10 cursor-pointer'}`}
+        disabled={isLoading}
       >
-        {isPlaying ? (
+        {isLoading ? (
+          <div className="relative w-12 h-12">
+            <PlayCircle size={48} className="text-primary/50 absolute inset-0" />
+            <svg className="animate-spin absolute inset-0 w-12 h-12 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+        ) : isPlaying ? (
           <PauseCircle size={48} className="text-primary" />
         ) : (
           <PlayCircle size={48} className="text-primary" />
         )}
       </button>
       <div className="w-full">
-        <Slider defaultValue={[0]} max={100} step={1} className="w-full" />
-        <div className="text-xs text-muted-foreground mt-1">00:00 / 03:45</div>
+        <Slider 
+          defaultValue={[0]} 
+          max={100} 
+          step={1} 
+          className={`w-full ${isLoading ? 'opacity-50' : ''}`}
+          disabled={isLoading}
+        />
+        <div className="flex justify-between text-xs text-muted-foreground mt-1">
+          <span>00:00</span>
+          {isLoading ? (
+            <span className="inline-flex items-center">
+              <span className="animate-pulse">Loading audio</span>
+              <span className="ml-1 flex">
+                <span className="animate-bounce h-1 w-1 bg-primary rounded-full mx-[1px] delay-75"></span>
+                <span className="animate-bounce h-1 w-1 bg-primary rounded-full mx-[1px] delay-150"></span>
+                <span className="animate-bounce h-1 w-1 bg-primary rounded-full mx-[1px] delay-300"></span>
+              </span>
+            </span>
+          ) : (
+            <span>03:45</span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -39,6 +69,71 @@ const BeatPlayer = ({ beat, isPlaying, onPlay, onPause }: {
 const BeatCard = ({ beat }: { beat: Beat }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedLicense, setSelectedLicense] = useState("basic");
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  
+  // Create audio element when component mounts
+  useEffect(() => {
+    const audio = new Audio(beat.previewUrl || 'dummy-url');
+    setAudioElement(audio);
+    
+    // Cleanup on unmount
+    return () => {
+      if (audio) {
+        audio.pause();
+        audio.src = '';
+      }
+    };
+  }, [beat.previewUrl]);
+  
+  // Setup audio event listeners
+  useEffect(() => {
+    if (!audioElement) return;
+    
+    const handleAudioPlay = () => {
+      setIsAudioLoading(false);
+      setIsPlaying(true);
+    };
+    
+    const handleAudioPause = () => {
+      setIsPlaying(false);
+    };
+    
+    const handleAudioEnded = () => {
+      setIsPlaying(false);
+    };
+    
+    const handleLoadStart = () => {
+      setIsAudioLoading(true);
+    };
+    
+    const handleCanPlay = () => {
+      setIsAudioLoading(false);
+    };
+    
+    const handleError = () => {
+      setIsAudioLoading(false);
+      console.error("Error loading audio file");
+    };
+    
+    // Add event listeners
+    audioElement.addEventListener('play', handleAudioPlay);
+    audioElement.addEventListener('pause', handleAudioPause);
+    audioElement.addEventListener('ended', handleAudioEnded);
+    audioElement.addEventListener('loadstart', handleLoadStart);
+    audioElement.addEventListener('canplay', handleCanPlay);
+    audioElement.addEventListener('error', handleError);
+    
+    // Cleanup listeners on unmount or when audio element changes
+    return () => {
+      audioElement.removeEventListener('play', handleAudioPlay);
+      audioElement.removeEventListener('pause', handleAudioPause);
+      audioElement.removeEventListener('ended', handleAudioEnded);
+      audioElement.removeEventListener('loadstart', handleLoadStart);
+      audioElement.removeEventListener('canplay', handleCanPlay);
+      audioElement.removeEventListener('error', handleError);
+    };
+  }, [audioElement]);
   
   // Get price based on selected license
   const getPrice = () => {
@@ -71,8 +166,26 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
   };
   
   // Play/pause handlers
-  const handlePlay = () => setIsPlaying(true);
-  const handlePause = () => setIsPlaying(false);
+  const handlePlay = () => {
+    if (!audioElement) return;
+    
+    // Stop all other playing audio elements first
+    document.querySelectorAll('audio').forEach(audio => {
+      if (audio !== audioElement) audio.pause();
+    });
+    
+    // Try to play this audio
+    setIsAudioLoading(true);
+    audioElement.play().catch(error => {
+      console.error("Error playing audio:", error);
+      setIsAudioLoading(false);
+    });
+  };
+  
+  const handlePause = () => {
+    if (!audioElement) return;
+    audioElement.pause();
+  };
   
   return (
     <Card className="overflow-hidden transition-all hover:shadow-md border-muted hover:border-primary/30">
@@ -114,7 +227,8 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
           beat={beat} 
           isPlaying={isPlaying} 
           onPlay={handlePlay} 
-          onPause={handlePause} 
+          onPause={handlePause}
+          isLoading={isAudioLoading}
         />
         
         <div className="mt-5">
