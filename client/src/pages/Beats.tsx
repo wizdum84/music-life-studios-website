@@ -285,6 +285,11 @@ const FilterSidebar = ({
 export default function Beats() {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   
+  // Scroll to top when page loads
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+  
   // Fetch all beats
   const { data: beats = [], isLoading } = useQuery<Beat[]>({
     queryKey: ['/api/beats'],
