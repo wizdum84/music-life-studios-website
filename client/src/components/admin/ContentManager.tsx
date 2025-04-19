@@ -41,23 +41,35 @@ export default function ContentManager() {
   return (
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-2 md:grid-cols-5 gap-2">
-          <TabsTrigger value="tracks">Music Portfolio</TabsTrigger>
-          <TabsTrigger value="beats">Beat Marketplace</TabsTrigger>
-          <TabsTrigger value="schedule">Weekly Schedule</TabsTrigger>
-          <TabsTrigger value="services">Services</TabsTrigger>
-          <TabsTrigger value="contracts">
-            <FileText className="h-4 w-4 mr-2" />
-            Contracts
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-2">
+          <TabsList className="w-full justify-start">
+            <TabsTrigger value="tracks" className="px-4">Music Portfolio</TabsTrigger>
+            <TabsTrigger value="samples" className="px-4">Samples</TabsTrigger>
+            <TabsTrigger value="beats" className="px-4">Beat Marketplace</TabsTrigger>
+            <TabsTrigger value="beats-by-genre" className="px-4">Beats by Genre</TabsTrigger>
+            <TabsTrigger value="schedule" className="px-4">Weekly Schedule</TabsTrigger>
+            <TabsTrigger value="services" className="px-4">Services</TabsTrigger>
+            <TabsTrigger value="contracts" className="px-4">
+              <FileText className="h-4 w-4 mr-2" />
+              Contracts
+            </TabsTrigger>
+          </TabsList>
+        </div>
         
         <TabsContent value="tracks">
           <TracksManager />
         </TabsContent>
         
+        <TabsContent value="samples">
+          <SamplesManager />
+        </TabsContent>
+        
         <TabsContent value="beats">
           <BeatsManager />
+        </TabsContent>
+        
+        <TabsContent value="beats-by-genre">
+          <BeatsByGenreManager />
         </TabsContent>
         
         <TabsContent value="schedule">
@@ -771,6 +783,765 @@ function BeatsManager() {
                     className="text-destructive"
                   >
                     <Trash2 className="h-4 w-4 mr-1" />
+                    Delete
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SamplesManager() {
+  const { toast } = useToast();
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [selectedSample, setSelectedSample] = useState<Track | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    type: "sample",
+    audioUrl: "",
+    imageUrl: ""
+  });
+  
+  // Fetch all tracks that are samples
+  const { data: samples = [], isLoading } = useQuery<Track[]>({
+    queryKey: ['/api/tracks'],
+    select: (tracks) => tracks.filter(track => track.type === 'sample')
+  });
+  
+  // Add sample mutation
+  const addSampleMutation = useMutation({
+    mutationFn: async (sample: any) => {
+      return apiRequest("POST", "/api/tracks", sample);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tracks'] });
+      setShowAddDialog(false);
+      resetForm();
+      toast({
+        title: "Sample added successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error adding sample",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Delete sample mutation
+  const deleteSampleMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/tracks/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tracks'] });
+      toast({
+        title: "Sample deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error deleting sample",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Simulate audio file upload
+  const simulateFileUpload = (file: File) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    // Simulate progress
+    const interval = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev >= 95) {
+          clearInterval(interval);
+          return 95;
+        }
+        return prev + 5;
+      });
+    }, 200);
+    
+    // Simulate completion after 3 seconds
+    setTimeout(() => {
+      clearInterval(interval);
+      setUploadProgress(100);
+      setIsUploading(false);
+      
+      // Create a fake URL for demo purposes
+      const fakeUrl = `https://storage.musiclifestudios.com/samples/${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
+      
+      // Update form data with the URL
+      setFormData(prev => ({
+        ...prev,
+        audioUrl: fakeUrl
+      }));
+      
+      toast({
+        title: "Sample uploaded successfully",
+        description: `${file.name} has been uploaded`,
+      });
+    }, 3000);
+  };
+  
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      description: "",
+      type: "sample",
+      audioUrl: "",
+      imageUrl: ""
+    });
+    setSelectedSample(null);
+  };
+  
+  const handleAddOrUpdate = () => {
+    // Basic validation
+    if (!formData.title || !formData.description || !formData.audioUrl) {
+      toast({
+        title: "Missing required fields",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (selectedSample) {
+      // Update existing sample
+      const updatedSample = {
+        ...formData,
+        id: selectedSample.id
+      };
+      
+      // Replace with actual update logic
+      toast({
+        title: "Sample updated successfully",
+      });
+      setShowAddDialog(false);
+      resetForm();
+    } else {
+      // Add new sample
+      addSampleMutation.mutate(formData);
+    }
+  };
+  
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle>Samples Manager</CardTitle>
+          <CardDescription>Upload and manage your audio samples</CardDescription>
+        </div>
+        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+          <DialogTrigger asChild>
+            <Button>
+              <PlusCircle className="h-4 w-4 mr-2" />
+              Add Sample
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedSample ? "Edit Sample" : "Add New Sample"}
+              </DialogTitle>
+              <DialogDescription>
+                Upload audio samples to showcase your work.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="title">Sample Title</Label>
+                <Input 
+                  id="title" 
+                  placeholder="Enter sample title" 
+                  value={formData.title}
+                  onChange={(e) => setFormData({...formData, title: e.target.value})}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea 
+                  id="description" 
+                  placeholder="Describe your sample" 
+                  value={formData.description}
+                  onChange={(e) => setFormData({...formData, description: e.target.value})}
+                />
+              </div>
+              
+              <FileUploader
+                label="Sample Audio File"
+                description="Upload the audio sample (MP3, WAV, etc.)"
+                accept="audio/*"
+                maxSize={50}
+                onFileSelected={simulateFileUpload}
+                uploading={isUploading}
+                uploadProgress={uploadProgress}
+                uploadSuccess={formData.audioUrl !== ""}
+              />
+              
+              <div className="grid gap-2">
+                <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
+                <Input 
+                  id="imageUrl" 
+                  placeholder="Enter image URL" 
+                  value={formData.imageUrl}
+                  onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline" onClick={resetForm}>Cancel</Button>
+              </DialogClose>
+              <Button onClick={handleAddOrUpdate}>
+                {selectedSample ? "Update Sample" : "Add Sample"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+          </div>
+        ) : samples.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Music className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
+            <p>No samples uploaded yet.</p>
+            <Button className="mt-4" variant="outline" onClick={() => setShowAddDialog(true)}>
+              Add Your First Sample
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {samples.map((sample) => (
+              <Card key={sample.id} className="overflow-hidden">
+                <div 
+                  className="h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
+                  style={{
+                    backgroundImage: sample.imageUrl ? `url(${sample.imageUrl})` : undefined,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }}
+                >
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <div className="text-center text-white">
+                      <h3 className="font-semibold">{sample.title}</h3>
+                      <span className="text-xs bg-primary px-2 py-0.5 rounded">
+                        Sample
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground line-clamp-2">{sample.description}</p>
+                  <div className="mt-4 flex justify-between items-center">
+                    <audio 
+                      src={sample.audioUrl} 
+                      controls 
+                      className="w-full h-8" 
+                    />
+                  </div>
+                </CardContent>
+                
+                <CardFooter className="flex justify-end gap-2 p-4 pt-0">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setSelectedSample(sample);
+                      setFormData({
+                        title: sample.title,
+                        description: sample.description,
+                        type: "sample",
+                        audioUrl: sample.audioUrl,
+                        imageUrl: sample.imageUrl || ""
+                      });
+                      setShowAddDialog(true);
+                    }}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={() => {
+                      if (confirm("Are you sure you want to delete this sample?")) {
+                        deleteSampleMutation.mutate(sample.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BeatsByGenreManager() {
+  const { toast } = useToast();
+  const [genre, setGenre] = useState("hip-hop");
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [selectedBeat, setSelectedBeat] = useState<Beat | null>(null);
+  const [isPreviewUploading, setIsPreviewUploading] = useState(false);
+  const [previewUploadProgress, setPreviewUploadProgress] = useState(0);
+  const [isFullAudioUploading, setIsFullAudioUploading] = useState(false);
+  const [fullAudioUploadProgress, setFullAudioUploadProgress] = useState(0);
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    genre: "hip-hop",
+    bpm: 120,
+    price: 2999, // $29.99
+    previewUrl: "",
+    fullAudioUrl: "",
+    imageUrl: "",
+    featured: false,
+    licensingOptions: {
+      basic: { price: 2999, description: "Basic license" },
+      premium: { price: 6999, description: "Premium license" },
+      exclusive: { price: 19999, description: "Exclusive license" }
+    },
+    tags: [],
+    contractUrl: ""
+  });
+  
+  // Fetch all beats
+  const { data: allBeats = [], isLoading } = useQuery<Beat[]>({
+    queryKey: ['/api/beats'],
+  });
+  
+  // Filter beats by selected genre
+  const filteredBeats = allBeats.filter(beat => beat.genre === genre);
+  
+  // Genres for selection
+  const genres = [
+    { value: "hip-hop", label: "Hip Hop" },
+    { value: "rnb", label: "R&B" },
+    { value: "pop", label: "Pop" },
+    { value: "trap", label: "Trap" },
+    { value: "dance", label: "Dance" },
+    { value: "reggaeton", label: "Reggaeton" },
+    { value: "drill", label: "Drill" },
+    { value: "afrobeat", label: "Afrobeat" },
+    { value: "lofi", label: "Lo-Fi" },
+    { value: "rock", label: "Rock" },
+    { value: "electronic", label: "Electronic" },
+    { value: "other", label: "Other" }
+  ];
+  
+  // Add beat mutation
+  const addBeatMutation = useMutation({
+    mutationFn: async (beat: any) => {
+      return apiRequest("POST", "/api/beats", beat);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/beats'] });
+      setShowAddDialog(false);
+      resetForm();
+      toast({
+        title: "Beat added successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error adding beat",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+  
+  // Simulate preview file upload
+  const simulatePreviewUpload = (file: File) => {
+    setIsPreviewUploading(true);
+    setPreviewUploadProgress(0);
+    
+    // Simulate progress
+    const interval = setInterval(() => {
+      setPreviewUploadProgress(prev => {
+        if (prev >= 95) {
+          clearInterval(interval);
+          return 95;
+        }
+        return prev + 5;
+      });
+    }, 200);
+    
+    // Simulate completion after 3 seconds
+    setTimeout(() => {
+      clearInterval(interval);
+      setPreviewUploadProgress(100);
+      setIsPreviewUploading(false);
+      
+      // Create a fake URL for demo purposes
+      const fakeUrl = `https://storage.musiclifestudios.com/beats/${genre}/preview-${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
+      
+      // Update form data with the URL
+      setFormData(prev => ({
+        ...prev,
+        previewUrl: fakeUrl
+      }));
+      
+      toast({
+        title: "Preview uploaded successfully",
+        description: `${file.name} has been uploaded`,
+      });
+    }, 3000);
+  };
+  
+  // Simulate full audio file upload
+  const simulateFullAudioUpload = (file: File) => {
+    setIsFullAudioUploading(true);
+    setFullAudioUploadProgress(0);
+    
+    // Simulate progress
+    const interval = setInterval(() => {
+      setFullAudioUploadProgress(prev => {
+        if (prev >= 95) {
+          clearInterval(interval);
+          return 95;
+        }
+        return prev + 5;
+      });
+    }, 250);
+    
+    // Simulate completion after 4 seconds
+    setTimeout(() => {
+      clearInterval(interval);
+      setFullAudioUploadProgress(100);
+      setIsFullAudioUploading(false);
+      
+      // Create a fake URL for demo purposes
+      const fakeUrl = `https://storage.musiclifestudios.com/beats/${genre}/full-${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
+      
+      // Update form data with the URL
+      setFormData(prev => ({
+        ...prev,
+        fullAudioUrl: fakeUrl
+      }));
+      
+      toast({
+        title: "Full audio uploaded successfully",
+        description: `${file.name} has been uploaded`,
+      });
+    }, 4000);
+  };
+  
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      description: "",
+      genre: genre,
+      bpm: 120,
+      price: 2999,
+      previewUrl: "",
+      fullAudioUrl: "",
+      imageUrl: "",
+      featured: false,
+      licensingOptions: {
+        basic: { price: 2999, description: "Basic license" },
+        premium: { price: 6999, description: "Premium license" },
+        exclusive: { price: 19999, description: "Exclusive license" }
+      },
+      tags: [],
+      contractUrl: ""
+    });
+    setSelectedBeat(null);
+  };
+  
+  const handleAddOrUpdate = () => {
+    // Basic validation
+    if (!formData.title || !formData.description || !formData.genre || !formData.previewUrl || !formData.fullAudioUrl) {
+      toast({
+        title: "Missing required fields",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (selectedBeat) {
+      // Update existing beat
+      // Replace with actual update logic
+      toast({
+        title: "Beat updated successfully",
+      });
+      setShowAddDialog(false);
+      resetForm();
+    } else {
+      // Add new beat
+      addBeatMutation.mutate(formData);
+    }
+  };
+  
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle>Beats by Genre</CardTitle>
+          <CardDescription>Upload and manage your beats by genre</CardDescription>
+        </div>
+        <div className="flex space-x-2">
+          <Select 
+            value={genre} 
+            onValueChange={setGenre}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Select genre" />
+            </SelectTrigger>
+            <SelectContent>
+              {genres.map(g => (
+                <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+            <DialogTrigger asChild>
+              <Button>
+                <PlusCircle className="h-4 w-4 mr-2" />
+                Add {genres.find(g => g.value === genre)?.label} Beat
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px]">
+              <DialogHeader>
+                <DialogTitle>
+                  {selectedBeat ? "Edit Beat" : `Add New ${genres.find(g => g.value === genre)?.label} Beat`}
+                </DialogTitle>
+                <DialogDescription>
+                  Upload a new beat to your marketplace in the {genres.find(g => g.value === genre)?.label} genre.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input 
+                    id="title" 
+                    placeholder="Enter beat title" 
+                    value={formData.title}
+                    onChange={(e) => setFormData({...formData, title: e.target.value})}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea 
+                    id="description" 
+                    placeholder="Describe your beat" 
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="bpm">BPM</Label>
+                    <Input 
+                      id="bpm" 
+                      type="number" 
+                      placeholder="120" 
+                      value={formData.bpm}
+                      onChange={(e) => setFormData({...formData, bpm: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="price">Base Price ($)</Label>
+                    <Input 
+                      id="price" 
+                      type="number" 
+                      step="0.01"
+                      placeholder="29.99" 
+                      value={(formData.price / 100).toFixed(2)}
+                      onChange={(e) => {
+                        const price = parseFloat(e.target.value) * 100;
+                        setFormData({...formData, price: Math.round(price)});
+                      }}
+                    />
+                  </div>
+                </div>
+                
+                <FileUploader
+                  label="Preview Audio"
+                  description="Upload a short preview of your beat (MP3)"
+                  accept="audio/mp3,audio/mpeg"
+                  maxSize={10}
+                  onFileSelected={simulatePreviewUpload}
+                  uploading={isPreviewUploading}
+                  uploadProgress={previewUploadProgress}
+                  uploadSuccess={formData.previewUrl !== ""}
+                />
+                
+                <FileUploader
+                  label="Full Audio Track"
+                  description="Upload the full beat (to be sold)"
+                  accept="audio/*"
+                  maxSize={100}
+                  onFileSelected={simulateFullAudioUpload}
+                  uploading={isFullAudioUploading}
+                  uploadProgress={fullAudioUploadProgress}
+                  uploadSuccess={formData.fullAudioUrl !== ""}
+                />
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
+                  <Input 
+                    id="imageUrl" 
+                    placeholder="Enter image URL" 
+                    value={formData.imageUrl}
+                    onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                  />
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="featured" 
+                    checked={formData.featured}
+                    onCheckedChange={(checked) => setFormData({...formData, featured: checked === true})}
+                  />
+                  <Label htmlFor="featured">Feature this beat in the marketplace</Label>
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="tags">Tags (comma separated)</Label>
+                  <Input 
+                    id="tags" 
+                    placeholder="e.g. dark, melodic, 808s" 
+                    value={formData.tags.join(', ')}
+                    onChange={(e) => {
+                      const tags = e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag);
+                      setFormData({...formData, tags});
+                    }}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" onClick={resetForm}>Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleAddOrUpdate}>
+                  {selectedBeat ? "Update Beat" : "Add Beat"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+          </div>
+        ) : filteredBeats.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Music className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
+            <p>No {genres.find(g => g.value === genre)?.label} beats uploaded yet.</p>
+            <Button className="mt-4" variant="outline" onClick={() => setShowAddDialog(true)}>
+              Add Your First {genres.find(g => g.value === genre)?.label} Beat
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredBeats.map((beat) => (
+              <Card key={beat.id} className="overflow-hidden">
+                <div 
+                  className="h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
+                  style={{
+                    backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }}
+                >
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <div className="text-center text-white">
+                      <h3 className="font-semibold">{beat.title}</h3>
+                      <span className="text-xs bg-primary px-2 py-0.5 rounded">
+                        {genres.find(g => g.value === beat.genre)?.label} • {beat.bpm} BPM
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{beat.description}</p>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <Badge variant={beat.featured ? "default" : "outline"}>
+                        {beat.featured ? "Featured" : "Standard"}
+                      </Badge>
+                    </div>
+                    <div className="text-md font-semibold">
+                      ${(beat.price / 100).toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <audio 
+                      src={beat.previewUrl} 
+                      controls 
+                      className="w-full h-8" 
+                    />
+                  </div>
+                </CardContent>
+                
+                <CardFooter className="flex justify-end gap-2 p-4 pt-0">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setSelectedBeat(beat);
+                      setFormData({
+                        title: beat.title,
+                        description: beat.description,
+                        genre: beat.genre,
+                        bpm: beat.bpm,
+                        price: beat.price,
+                        previewUrl: beat.previewUrl,
+                        fullAudioUrl: beat.fullAudioUrl,
+                        imageUrl: beat.imageUrl || "",
+                        featured: beat.featured || false,
+                        licensingOptions: beat.licensingOptions || {
+                          basic: { price: 2999, description: "Basic license" },
+                          premium: { price: 6999, description: "Premium license" },
+                          exclusive: { price: 19999, description: "Exclusive license" }
+                        },
+                        tags: beat.tags || [],
+                        contractUrl: beat.contractUrl || ""
+                      });
+                      setShowAddDialog(true);
+                    }}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={() => {
+                      if (confirm("Are you sure you want to delete this beat?")) {
+                        // Implement delete logic
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </Button>
                 </CardFooter>
