@@ -96,18 +96,18 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       {/* Main Dashboard Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-3 w-full">
-          <TabsTrigger value="overview">
+        <TabsList className="flex flex-wrap w-full gap-2">
+          <TabsTrigger value="overview" className="flex-grow">
             <BarChart className="h-4 w-4 mr-2" />
-            Dashboard Overview
+            <span className="whitespace-nowrap">Dashboard Overview</span>
           </TabsTrigger>
-          <TabsTrigger value="content">
+          <TabsTrigger value="content" className="flex-grow">
             <Upload className="h-4 w-4 mr-2" />
-            Content Manager
+            <span className="whitespace-nowrap">Content Manager</span>
           </TabsTrigger>
-          <TabsTrigger value="analytics">
+          <TabsTrigger value="analytics" className="flex-grow">
             <FileSpreadsheet className="h-4 w-4 mr-2" />
-            Business Analytics
+            <span className="whitespace-nowrap">Business Analytics</span>
           </TabsTrigger>
         </TabsList>
         
@@ -176,10 +176,10 @@ export default function AdminDashboard() {
           
           {/* Recent Activity Tabs */}
           <Tabs defaultValue="upcoming" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="upcoming">Upcoming Sessions</TabsTrigger>
-              <TabsTrigger value="pending">Pending Bookings</TabsTrigger>
-              <TabsTrigger value="messages">Recent Messages</TabsTrigger>
+            <TabsList className="grid grid-cols-3 gap-1">
+              <TabsTrigger value="upcoming" className="text-sm">Upcoming Sessions</TabsTrigger>
+              <TabsTrigger value="pending" className="text-sm">Pending Bookings</TabsTrigger>
+              <TabsTrigger value="messages" className="text-sm">Recent Messages</TabsTrigger>
             </TabsList>
             
             {/* Upcoming Sessions Tab */}

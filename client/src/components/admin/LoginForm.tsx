@@ -38,14 +38,7 @@ export default function LoginForm() {
     setIsLoading(true);
     
     try {
-      const response = await fetch("/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
+      const response = await apiRequest("POST", "/api/login", data);
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -58,7 +51,8 @@ export default function LoginForm() {
         description: "Welcome to the admin dashboard",
       });
       
-      navigate("/admin");
+      // Force a reload of the page to ensure all auth state is updated correctly
+      window.location.href = "/admin";
     } catch (error: any) {
       console.error("Login error:", error);
       toast({

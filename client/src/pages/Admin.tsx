@@ -39,21 +39,23 @@ export default function Admin() {
       </Helmet>
       
       <div className="container mx-auto px-4 py-8">
-        <header className="mb-8 flex justify-between items-end">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
-            <p className="text-muted-foreground">
-              Manage your bookings, messages, and content
-            </p>
+        <header className="mb-8">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
+              <p className="text-muted-foreground">
+                Manage your bookings, messages, and content
+              </p>
+            </div>
+            
+            <a 
+              href="/analytics" 
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors w-full md:w-auto"
+            >
+              <BarChart2 size={18} />
+              <span className="font-medium">Business Analytics</span>
+            </a>
           </div>
-          
-          <a 
-            href="/analytics" 
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <BarChart2 size={16} />
-            Business Analytics
-          </a>
         </header>
         
         <Tabs defaultValue="dashboard">
