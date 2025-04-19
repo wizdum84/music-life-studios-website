@@ -1447,8 +1447,8 @@ function BeatsByGenreManager() {
                     placeholder="e.g. dark, melodic, 808s" 
                     value={formData.tags.join(', ')}
                     onChange={(e) => {
-                      const tags = e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag);
-                      setFormData({...formData, tags});
+                      const tagArray: string[] = e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag);
+                      setFormData({...formData, tags: tagArray});
                     }}
                   />
                 </div>
@@ -1537,12 +1537,13 @@ function BeatsByGenreManager() {
                         fullAudioUrl: beat.fullAudioUrl,
                         imageUrl: beat.imageUrl || "",
                         featured: beat.featured || false,
-                        licensingOptions: beat.licensingOptions || {
+                        licensingOptions: {
                           basic: { price: 2999, description: "Basic license" },
                           premium: { price: 6999, description: "Premium license" },
-                          exclusive: { price: 19999, description: "Exclusive license" }
+                          exclusive: { price: 19999, description: "Exclusive license" },
+                          ...(typeof beat.licensingOptions === 'object' ? beat.licensingOptions : {})
                         },
-                        tags: beat.tags || [],
+                        tags: Array.isArray(beat.tags) ? beat.tags : [],
                         contractUrl: beat.contractUrl || ""
                       });
                       setShowAddDialog(true);
@@ -1780,7 +1781,7 @@ function ServicesManager() {
           </div>
         ) : services.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            <CalendarIcon2 className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
+            <Calendar className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
             <p>No services added yet.</p>
             <Button className="mt-4" variant="outline" onClick={() => setShowAddDialog(true)}>
               Add Your First Service
