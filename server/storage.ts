@@ -6,7 +6,9 @@ import {
   messages, type Message, type InsertMessage,
   timeSlots, type TimeSlot, type InsertTimeSlot,
   beats, type Beat, type InsertBeat,
-  beatPurchases, type BeatPurchase, type InsertBeatPurchase
+  beatPurchases, type BeatPurchase, type InsertBeatPurchase,
+  contracts, type Contract, type InsertContract,
+  contractSignatures, type ContractSignature, type InsertContractSignature
 } from "@shared/schema";
 
 export interface IStorage {
@@ -76,6 +78,26 @@ export interface IStorage {
   createBeatPurchase(purchase: InsertBeatPurchase): Promise<BeatPurchase>;
   updateBeatPurchaseContract(id: number, contractSigned: boolean): Promise<BeatPurchase | undefined>;
   incrementBeatPurchaseDownloadCount(id: number): Promise<BeatPurchase | undefined>;
+  
+  // Contracts
+  getAllContracts(): Promise<Contract[]>;
+  getContractsByCategory(category: string): Promise<Contract[]>;
+  getActiveContracts(): Promise<Contract[]>;
+  getContract(id: number): Promise<Contract | undefined>;
+  createContract(contract: InsertContract): Promise<Contract>;
+  updateContract(id: number, contract: Partial<InsertContract>): Promise<Contract | undefined>;
+  incrementContractVersion(id: number): Promise<Contract | undefined>;
+  setContractActive(id: number, active: boolean): Promise<Contract | undefined>;
+  deleteContract(id: number): Promise<boolean>;
+  
+  // Contract Signatures
+  getAllContractSignatures(): Promise<ContractSignature[]>;
+  getContractSignature(id: number): Promise<ContractSignature | undefined>;
+  getContractSignaturesByContract(contractId: number): Promise<ContractSignature[]>;
+  getContractSignaturesByEmail(email: string): Promise<ContractSignature[]>;
+  getContractSignatureByEntityAndEmail(relatedEntityType: string, relatedEntityId: number, email: string): Promise<ContractSignature | undefined>;
+  createContractSignature(signature: InsertContractSignature): Promise<ContractSignature>;
+  verifyContractSigned(contractId: number, email: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -87,6 +109,8 @@ export class MemStorage implements IStorage {
   private timeSlots: Map<number, TimeSlot>;
   private beats: Map<number, Beat>;
   private beatPurchases: Map<number, BeatPurchase>;
+  private contracts: Map<number, Contract>;
+  private contractSignatures: Map<number, ContractSignature>;
   
   private userCurrentId: number;
   private serviceCurrentId: number;
@@ -96,6 +120,8 @@ export class MemStorage implements IStorage {
   private timeSlotCurrentId: number;
   private beatCurrentId: number;
   private beatPurchaseCurrentId: number;
+  private contractCurrentId: number;
+  private contractSignatureCurrentId: number;
 
   constructor() {
     this.users = new Map();

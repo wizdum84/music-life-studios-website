@@ -211,8 +211,65 @@ export const insertBeatPurchaseSchema = createInsertSchema(beatPurchases)
 export type TimeSlot = typeof timeSlots.$inferSelect;
 export type InsertTimeSlot = z.infer<typeof insertTimeSlotSchema>;
 
+// Contracts schema
+export const contracts = pgTable("contracts", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileType: text("file_type").notNull().default("pdf"), // pdf, doc, docx
+  category: text("category").notNull().default("licensing"), // licensing, services, other
+  version: integer("version").default(1), // Version tracking
+  active: boolean("active").default(true), // Whether this contract is currently active
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertContractSchema = createInsertSchema(contracts)
+  .omit({ id: true, version: true, active: true, createdAt: true, updatedAt: true })
+  .extend({
+    title: z.string().min(2, "Title must be at least 2 characters"),
+    description: z.string().min(10, "Description must be at least 10 characters"),
+    fileUrl: z.string().url("File URL must be a valid URL"),
+    fileType: z.string().default("pdf"),
+    category: z.string().default("licensing"),
+  });
+
+// Contract signatures
+export const contractSignatures = pgTable("contract_signatures", {
+  id: serial("id").primaryKey(),
+  contractId: integer("contract_id").notNull(),
+  customerName: text("customer_name").notNull(),
+  customerEmail: text("customer_email").notNull(),
+  signatureData: text("signature_data").notNull(), // Base64 signature image
+  ipAddress: text("ip_address"), // IP address for verification
+  agreedToTerms: boolean("agreed_to_terms").notNull().default(false),
+  relatedEntityType: text("related_entity_type"), // "beat", "booking", etc.
+  relatedEntityId: integer("related_entity_id"), // ID of the related entity
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertContractSignatureSchema = createInsertSchema(contractSignatures)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    contractId: z.number(),
+    customerName: z.string().min(2, "Name must be at least 2 characters"),
+    customerEmail: z.string().email("Please enter a valid email"),
+    signatureData: z.string().min(10, "Signature data is required"),
+    ipAddress: z.string().optional(),
+    agreedToTerms: z.boolean(),
+    relatedEntityType: z.string().optional(),
+    relatedEntityId: z.number().optional(),
+  });
+
 export type Beat = typeof beats.$inferSelect;
 export type InsertBeat = z.infer<typeof insertBeatSchema>;
 
 export type BeatPurchase = typeof beatPurchases.$inferSelect;
 export type InsertBeatPurchase = z.infer<typeof insertBeatPurchaseSchema>;
+
+export type Contract = typeof contracts.$inferSelect;
+export type InsertContract = z.infer<typeof insertContractSchema>;
+
+export type ContractSignature = typeof contractSignatures.$inferSelect;
+export type InsertContractSignature = z.infer<typeof insertContractSignatureSchema>;
