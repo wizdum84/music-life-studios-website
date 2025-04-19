@@ -668,6 +668,262 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Contract Management API
+  app.get("/api/contracts", async (req, res) => {
+    try {
+      const { category } = req.query;
+      
+      if (category) {
+        const contracts = await storage.getContractsByCategory(category as string);
+        return res.json(contracts);
+      }
+      
+      const activeOnly = req.query.activeOnly === 'true';
+      if (activeOnly) {
+        const activeContracts = await storage.getActiveContracts();
+        return res.json(activeContracts);
+      }
+      
+      const contracts = await storage.getAllContracts();
+      res.json(contracts);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching contracts" });
+    }
+  });
+  
+  app.get("/api/contracts/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const contract = await storage.getContract(id);
+      
+      if (!contract) {
+        return res.status(404).json({ message: "Contract not found" });
+      }
+      
+      res.json(contract);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching contract" });
+    }
+  });
+  
+  app.post("/api/contracts", isAuthenticated, async (req, res) => {
+    try {
+      const { title, description, fileUrl, fileType, category } = req.body;
+      
+      if (!title || !description || !fileUrl) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      const newContract = await storage.createContract({
+        title,
+        description,
+        fileUrl,
+        fileType: fileType || "pdf",
+        category: category || "licensing"
+      });
+      
+      res.status(201).json(newContract);
+    } catch (error) {
+      res.status(500).json({ message: "Error creating contract" });
+    }
+  });
+  
+  app.patch("/api/contracts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const contract = await storage.getContract(id);
+      
+      if (!contract) {
+        return res.status(404).json({ message: "Contract not found" });
+      }
+      
+      const updatedContract = await storage.updateContract(id, req.body);
+      res.json(updatedContract);
+    } catch (error) {
+      res.status(500).json({ message: "Error updating contract" });
+    }
+  });
+  
+  app.patch("/api/contracts/:id/version", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const contract = await storage.getContract(id);
+      
+      if (!contract) {
+        return res.status(404).json({ message: "Contract not found" });
+      }
+      
+      const updatedContract = await storage.incrementContractVersion(id);
+      res.json(updatedContract);
+    } catch (error) {
+      res.status(500).json({ message: "Error updating contract version" });
+    }
+  });
+  
+  app.patch("/api/contracts/:id/active", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { active } = req.body;
+      
+      if (active === undefined) {
+        return res.status(400).json({ message: "Missing active status" });
+      }
+      
+      const contract = await storage.getContract(id);
+      if (!contract) {
+        return res.status(404).json({ message: "Contract not found" });
+      }
+      
+      const updatedContract = await storage.setContractActive(id, active);
+      res.json(updatedContract);
+    } catch (error) {
+      res.status(500).json({ message: "Error updating contract active status" });
+    }
+  });
+  
+  app.delete("/api/contracts/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const contract = await storage.getContract(id);
+      
+      if (!contract) {
+        return res.status(404).json({ message: "Contract not found" });
+      }
+      
+      await storage.deleteContract(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Error deleting contract" });
+    }
+  });
+  
+  // Contract Signatures API
+  app.get("/api/contract-signatures", isAuthenticated, async (req, res) => {
+    try {
+      const { contractId, email } = req.query;
+      
+      if (contractId) {
+        const signatures = await storage.getContractSignaturesByContract(parseInt(contractId as string));
+        return res.json(signatures);
+      }
+      
+      if (email) {
+        const signatures = await storage.getContractSignaturesByEmail(email as string);
+        return res.json(signatures);
+      }
+      
+      const signatures = await storage.getAllContractSignatures();
+      res.json(signatures);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching contract signatures" });
+    }
+  });
+  
+  app.get("/api/contract-signatures/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const signature = await storage.getContractSignature(id);
+      
+      if (!signature) {
+        return res.status(404).json({ message: "Contract signature not found" });
+      }
+      
+      res.json(signature);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching contract signature" });
+    }
+  });
+  
+  app.post("/api/contract-signatures", async (req, res) => {
+    try {
+      const { 
+        contractId, 
+        customerName, 
+        customerEmail, 
+        signatureData, 
+        ipAddress, 
+        agreedToTerms,
+        relatedEntityType,
+        relatedEntityId 
+      } = req.body;
+      
+      if (!contractId || !customerName || !customerEmail || !signatureData || agreedToTerms === undefined) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      // Check if contract exists
+      const contract = await storage.getContract(contractId);
+      if (!contract) {
+        return res.status(404).json({ message: "Contract not found" });
+      }
+      
+      // Create the signature
+      const newSignature = await storage.createContractSignature({
+        contractId,
+        customerName,
+        customerEmail,
+        signatureData,
+        ipAddress,
+        agreedToTerms,
+        relatedEntityType,
+        relatedEntityId
+      });
+      
+      // If this is for a beat purchase, update the purchase to mark contract as signed
+      if (relatedEntityType === 'beat' && relatedEntityId) {
+        await storage.updateBeatPurchaseContract(relatedEntityId, true);
+      }
+      
+      res.status(201).json(newSignature);
+    } catch (error) {
+      res.status(500).json({ message: "Error creating contract signature" });
+    }
+  });
+  
+  // Check if a user has signed a contract
+  app.get("/api/verify-contract-signed", async (req, res) => {
+    try {
+      const { contractId, email } = req.query;
+      
+      if (!contractId || !email) {
+        return res.status(400).json({ message: "Missing contractId or email" });
+      }
+      
+      const isSigned = await storage.verifyContractSigned(
+        parseInt(contractId as string), 
+        email as string
+      );
+      
+      res.json({ signed: isSigned });
+    } catch (error) {
+      res.status(500).json({ message: "Error verifying contract signature" });
+    }
+  });
+
+  // Check if a user has signed a contract for a specific entity
+  app.get("/api/verify-entity-contract-signed", async (req, res) => {
+    try {
+      const { entityType, entityId, email } = req.query;
+      
+      if (!entityType || !entityId || !email) {
+        return res.status(400).json({ message: "Missing required parameters" });
+      }
+      
+      const signature = await storage.getContractSignatureByEntityAndEmail(
+        entityType as string,
+        parseInt(entityId as string),
+        email as string
+      );
+      
+      res.json({ 
+        signed: !!signature && signature.agreedToTerms,
+        signature 
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Error verifying entity contract signature" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
