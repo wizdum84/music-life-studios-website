@@ -5,6 +5,8 @@ import { Helmet } from "react-helmet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 import BookingManager from "@/components/admin/BookingManager";
+import ContentManager from "@/components/admin/ContentManager";
+import ScheduleManager from "@/components/admin/ScheduleManager";
 import { Loader2, BarChart2 } from "lucide-react";
 
 export default function Admin() {
@@ -58,11 +60,15 @@ export default function Admin() {
           </div>
         </header>
         
-        <Tabs defaultValue="dashboard">
-          <TabsList className="mb-6">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="bookings">Bookings</TabsTrigger>
-          </TabsList>
+        <Tabs defaultValue="dashboard" className="space-y-6">
+          <div className="overflow-x-auto pb-2">
+            <TabsList className="w-full justify-start">
+              <TabsTrigger value="dashboard" className="px-4">Dashboard</TabsTrigger>
+              <TabsTrigger value="bookings" className="px-4">Bookings</TabsTrigger>
+              <TabsTrigger value="content" className="px-4">Content Manager</TabsTrigger>
+              <TabsTrigger value="schedule" className="px-4">Schedule Manager</TabsTrigger>
+            </TabsList>
+          </div>
           
           <TabsContent value="dashboard">
             <AdminDashboard />
@@ -70,6 +76,14 @@ export default function Admin() {
           
           <TabsContent value="bookings">
             <BookingManager />
+          </TabsContent>
+          
+          <TabsContent value="content">
+            <ContentManager />
+          </TabsContent>
+          
+          <TabsContent value="schedule">
+            <ScheduleManager />
           </TabsContent>
         </Tabs>
       </div>
