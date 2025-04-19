@@ -5,7 +5,7 @@ import { Helmet } from "react-helmet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 import BookingManager from "@/components/admin/BookingManager";
-import { Loader2 } from "lucide-react";
+import { Loader2, BarChart2 } from "lucide-react";
 
 export default function Admin() {
   const [location, navigate] = useLocation();
@@ -35,15 +35,25 @@ export default function Admin() {
   return (
     <>
       <Helmet>
-        <title>Admin Dashboard | SoundCraft Studios</title>
+        <title>Admin Dashboard | Music Life Studios</title>
       </Helmet>
       
       <div className="container mx-auto px-4 py-8">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
-          <p className="text-muted-foreground">
-            Manage your bookings, messages, and content
-          </p>
+        <header className="mb-8 flex justify-between items-end">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
+            <p className="text-muted-foreground">
+              Manage your bookings, messages, and content
+            </p>
+          </div>
+          
+          <a 
+            href="/analytics" 
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <BarChart2 size={16} />
+            Business Analytics
+          </a>
         </header>
         
         <Tabs defaultValue="dashboard">

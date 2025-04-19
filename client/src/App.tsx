@@ -9,6 +9,7 @@ import Beats from "@/pages/Beats";
 import Admin from "@/pages/Admin";
 import AdminLogin from "@/pages/AdminLogin";
 import CompletePayment from "@/pages/CompletePayment";
+import Analytics from "@/pages/Analytics";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/complete-payment" component={CompletePayment} />
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin" component={Admin} />
+      <Route path="/analytics" component={Analytics} />
       <Route component={NotFound} />
     </Switch>
   );
