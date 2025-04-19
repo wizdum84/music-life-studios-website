@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, Check, CreditCard, DollarSign, Clock } from "lucide-react";
+import { Loader2, Check, CreditCard, DollarSign, Clock, FileText, ArrowLeft } from "lucide-react";
 import { Service, TimeSlot, insertBookingSchema } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Calendar from "@/components/calendar/Calendar";
 import { formatPrice } from "@/lib/utils";
+import { ContractRequirement } from "@/components/contracts";
 
 interface BookingFormProps {
   services: Service[];
@@ -183,6 +184,8 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
   const [selectedServiceId, setSelectedServiceId] = useState<number | null>(null);
   const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [availableTimes, setAvailableTimes] = useState<TimeSlot[]>([]);
+  const [isContractStep, setIsContractStep] = useState(false);
+  const [contractSigned, setContractSigned] = useState(false);
   const [isPaymentStep, setIsPaymentStep] = useState(false);
   const [paymentOption, setPaymentOption] = useState<'deposit' | 'full'>('deposit');
   const [tipAmount, setTipAmount] = useState(0);
@@ -325,14 +328,22 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
     });
   };
   
+  // Contract signing complete handler
+  const handleContractSigned = () => {
+    setContractSigned(true);
+    // Move to payment step
+    setIsContractStep(false);
+    setIsPaymentStep(true);
+  };
+  
   // Form submission
   const onSubmit = async (data: FormData) => {
     try {
       // Store booking data for later submission after payment
       setBookingData(data);
       
-      // Move to payment step - we'll handle payment option selection there
-      setIsPaymentStep(true);
+      // Move to contract step first
+      setIsContractStep(true);
     } catch (error) {
       console.error("Error creating booking:", error);
       toast({
@@ -361,6 +372,65 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
     );
   }
   
+  // If we're at the contract step, show contract requirements
+  if (isContractStep) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="font-medium text-xl">Studio Rules & Agreement</h3>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setIsContractStep(false)}
+            className="flex items-center gap-1"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back
+          </Button>
+        </div>
+        
+        {/* Summary Card */}
+        <Card className="bg-muted/30">
+          <CardHeader className="pb-3">
+            <CardTitle>Booking Summary</CardTitle>
+            <CardDescription>
+              {selectedService?.name} • {selectedDuration && `${selectedDuration / 60} hours`} • {selectedDate && formatDate(selectedDate)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Service Rate</span>
+                <span>{formatPrice(selectedService?.price || 0)}/hr</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Duration</span>
+                <span>{selectedDuration && `${selectedDuration / 60} hours`}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t font-medium">
+                <span>Total Amount</span>
+                <span>{formatPrice((bookingData?.amount || 0))}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <div className="bg-background border rounded-lg p-1">
+          {/* Contract Requirements Component */}
+          <ContractRequirement
+            contractId={1} // Would use service specific contract in production
+            entityType="booking"
+            entityId={undefined} // Will be set after booking is created
+            email={bookingData?.email || ""}
+            name={bookingData?.name || ""}
+            onContractSigned={handleContractSigned}
+            onCheckExistingSignature={false}
+          />
+        </div>
+      </div>
+    );
+  }
+  
   // If we're at the payment step, show the payment options and form
   if (isPaymentStep) {
     return (
@@ -370,13 +440,13 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setIsPaymentStep(false)}
+            onClick={() => { 
+              setIsPaymentStep(false);
+              setIsContractStep(true);
+            }}
             className="flex items-center gap-1"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-arrow-left">
-              <path d="m12 19-7-7 7-7"/>
-              <path d="M19 12H5"/>
-            </svg>
+            <ArrowLeft className="h-4 w-4 mr-1" />
             Back
           </Button>
         </div>
