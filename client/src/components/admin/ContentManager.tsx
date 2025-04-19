@@ -42,16 +42,22 @@ export default function ContentManager() {
   
   return (
     <div className="space-y-6">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <div className="overflow-x-auto pb-2">
-          <TabsList className="w-full justify-start">
-            <TabsTrigger value="tracks" className="px-4">Music Portfolio</TabsTrigger>
-            <TabsTrigger value="samples" className="px-4">Samples</TabsTrigger>
-            <TabsTrigger value="beats" className="px-4">Beat Marketplace</TabsTrigger>
-            <TabsTrigger value="beats-by-genre" className="px-4">Beats by Genre</TabsTrigger>
-            <TabsTrigger value="schedule" className="px-4">Weekly Schedule</TabsTrigger>
-            <TabsTrigger value="services" className="px-4">Services</TabsTrigger>
-            <TabsTrigger value="contracts" className="px-4">
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Content Management</CardTitle>
+          <CardDescription>Manage your portfolio, beats, samples, and other content</CardDescription>
+        </CardHeader>
+      </Card>
+      
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <div className="overflow-x-auto pb-2 border-b">
+          <TabsList className="w-full justify-start bg-background mb-4">
+            <TabsTrigger value="tracks" className="px-4 py-3 data-[state=active]:bg-muted">Music Portfolio</TabsTrigger>
+            <TabsTrigger value="samples" className="px-4 py-3 data-[state=active]:bg-muted">Samples</TabsTrigger>
+            <TabsTrigger value="beats" className="px-4 py-3 data-[state=active]:bg-muted">Beat Marketplace</TabsTrigger>
+            <TabsTrigger value="beats-by-genre" className="px-4 py-3 data-[state=active]:bg-muted">Beats by Genre</TabsTrigger>
+            <TabsTrigger value="services" className="px-4 py-3 data-[state=active]:bg-muted">Services</TabsTrigger>
+            <TabsTrigger value="contracts" className="px-4 py-3 data-[state=active]:bg-muted">
               <FileText className="h-4 w-4 mr-2" />
               Contracts
             </TabsTrigger>
@@ -74,9 +80,7 @@ export default function ContentManager() {
           <BeatsByGenreManager />
         </TabsContent>
         
-        <TabsContent value="schedule">
-          <ScheduleManager />
-        </TabsContent>
+        {/* We don't need a separate schedule tab here since it's already in the main tabs */}
         
         <TabsContent value="services">
           <ServicesManager />
@@ -616,144 +620,171 @@ function BeatsManager() {
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Beat Marketplace</CardTitle>
-          <CardDescription>Upload and manage beats for sale</CardDescription>
+          <CardDescription>Upload MP3s, WAVs and stem packs for sale</CardDescription>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="bg-gradient-to-r from-primary to-primary/80">
               <PlusCircle className="h-4 w-4 mr-2" />
-              Add Beat
+              Upload New Beat
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>
-                {selectedBeat ? "Edit Beat" : "Add New Beat"}
+                {selectedBeat ? "Edit Beat" : "Upload New Beat"}
               </DialogTitle>
               <DialogDescription>
-                Upload a new beat to your marketplace.
+                Upload MP3, WAV or stem packs to sell in your marketplace
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
-              <div className="grid gap-2">
-                <Label htmlFor="title">Title</Label>
-                <Input 
-                  id="title" 
-                  placeholder="Enter beat title" 
-                  value={formData.title}
-                  onChange={(e) => setFormData({...formData, title: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea 
-                  id="description" 
-                  placeholder="Describe your beat" 
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                />
-              </div>
+            
+            <div className="grid gap-6 py-4 max-h-[70vh] overflow-y-auto pr-2">
+              {/* File Upload Section */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="genre">Genre</Label>
-                  <Select 
-                    value={formData.genre} 
-                    onValueChange={(value) => setFormData({...formData, genre: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select genre" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Hip Hop">Hip Hop</SelectItem>
-                      <SelectItem value="R&B">R&B</SelectItem>
-                      <SelectItem value="Pop">Pop</SelectItem>
-                      <SelectItem value="Trap">Trap</SelectItem>
-                      <SelectItem value="Drill">Drill</SelectItem>
-                      <SelectItem value="EDM">EDM</SelectItem>
-                      <SelectItem value="Rock">Rock</SelectItem>
-                      <SelectItem value="Jazz">Jazz</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="md:col-span-2 grid gap-2">
+                  <Label>Preview Audio (30-60 second clip)</Label>
+                  <FileUploader
+                    description="Upload a short MP3/WAV preview for customers to hear"
+                    accept="audio/mpeg,audio/wav,.mp3,.wav"
+                    maxSize={20}
+                    onFileSelected={simulatePreviewUpload}
+                    uploading={isPreviewUploading}
+                    uploadProgress={previewUploadProgress}
+                    uploadSuccess={formData.previewUrl !== ""}
+                    className="border-2 border-dashed p-6 rounded-lg"
+                  />
+                  
+                  {formData.previewUrl && (
+                    <div className="bg-muted/20 p-3 rounded-md mt-2">
+                      <audio src={formData.previewUrl} controls className="w-full" />
+                    </div>
+                  )}
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="bpm">BPM</Label>
-                  <Input 
-                    id="bpm" 
-                    type="number" 
-                    placeholder="120" 
-                    value={formData.bpm}
-                    onChange={(e) => setFormData({...formData, bpm: parseInt(e.target.value) || 0})}
+                
+                <div className="md:col-span-2 grid gap-2 mt-4">
+                  <Label>Full Audio File or Stem Pack</Label>
+                  <FileUploader
+                    description="Upload the full MP3/WAV or ZIP/RAR stem pack (delivered to buyers)"
+                    accept="audio/mpeg,audio/wav,application/zip,application/x-rar-compressed,.mp3,.wav,.zip,.rar"
+                    maxSize={200}
+                    onFileSelected={simulateFullAudioUpload}
+                    uploading={isFullAudioUploading}
+                    uploadProgress={fullAudioUploadProgress}
+                    uploadSuccess={formData.fullAudioUrl !== ""}
+                    className="border-2 border-dashed p-6 rounded-lg"
                   />
                 </div>
               </div>
               
-              <FileUploader
-                label="Preview Audio (MP3/WAV)"
-                description="Upload a preview version (30-60 seconds)"
-                accept="audio/mpeg,audio/wav,.mp3,.wav"
-                maxSize={20}
-                onFileSelected={simulatePreviewUpload}
-                uploading={isPreviewUploading}
-                uploadProgress={previewUploadProgress}
-                uploadSuccess={formData.previewUrl !== ""}
-                className="border border-dashed p-4 rounded-lg"
-              />
-              {formData.previewUrl && (
-                <div className="bg-muted/20 p-3 rounded-md">
-                  <audio src={formData.previewUrl} controls className="w-full" />
-                </div>
+              {/* Beat Information */}
+              {(formData.previewUrl || formData.fullAudioUrl) && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="title">Beat Title</Label>
+                      <Input 
+                        id="title" 
+                        placeholder="Enter beat title" 
+                        value={formData.title}
+                        onChange={(e) => setFormData({...formData, title: e.target.value})}
+                      />
+                    </div>
+                    
+                    <div className="grid gap-2">
+                      <Label htmlFor="genre">Genre</Label>
+                      <Select 
+                        value={formData.genre} 
+                        onValueChange={(value) => setFormData({...formData, genre: value})}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select genre" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Hip Hop">Hip Hop</SelectItem>
+                          <SelectItem value="R&B">R&B</SelectItem>
+                          <SelectItem value="Pop">Pop</SelectItem>
+                          <SelectItem value="Trap">Trap</SelectItem>
+                          <SelectItem value="Drill">Drill</SelectItem>
+                          <SelectItem value="EDM">EDM</SelectItem>
+                          <SelectItem value="Rock">Rock</SelectItem>
+                          <SelectItem value="Jazz">Jazz</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="md:col-span-2">
+                      <div className="grid gap-2">
+                        <Label htmlFor="description">Description</Label>
+                        <Textarea 
+                          id="description" 
+                          placeholder="Describe your beat" 
+                          value={formData.description}
+                          onChange={(e) => setFormData({...formData, description: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid gap-2">
+                      <Label htmlFor="bpm">BPM</Label>
+                      <Input 
+                        id="bpm" 
+                        type="number" 
+                        placeholder="120" 
+                        value={formData.bpm}
+                        onChange={(e) => setFormData({...formData, bpm: parseInt(e.target.value) || 0})}
+                      />
+                    </div>
+                    
+                    <div className="grid gap-2">
+                      <Label htmlFor="price">Base Price ($)</Label>
+                      <Input 
+                        id="price" 
+                        type="number" 
+                        placeholder="29.99" 
+                        value={formData.price / 100}
+                        onChange={(e) => setFormData({...formData, price: Math.round(parseFloat(e.target.value) * 100) || 0})}
+                      />
+                      <p className="text-xs text-muted-foreground">Starting price for the basic license</p>
+                    </div>
+                    
+                    <div className="grid gap-2">
+                      <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
+                      <Input 
+                        id="imageUrl" 
+                        placeholder="Enter image URL" 
+                        value={formData.imageUrl}
+                        onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center gap-2 mt-4">
+                      <Checkbox 
+                        id="featured" 
+                        checked={formData.featured}
+                        onCheckedChange={(checked) => 
+                          setFormData({...formData, featured: checked === true})
+                        }
+                      />
+                      <Label htmlFor="featured">Feature this beat on the homepage</Label>
+                    </div>
+                  </div>
+                </>
               )}
-              
-              <FileUploader
-                label="Full Audio File or Stem Pack"
-                description="Upload the MP3/WAV or ZIP/RAR stem pack (delivered to buyers)"
-                accept="audio/mpeg,audio/wav,application/zip,application/x-rar-compressed,.mp3,.wav,.zip,.rar"
-                maxSize={200}
-                onFileSelected={simulateFullAudioUpload}
-                uploading={isFullAudioUploading}
-                uploadProgress={fullAudioUploadProgress}
-                uploadSuccess={formData.fullAudioUrl !== ""}
-                className="border border-dashed p-4 rounded-lg"
-              />
-              
-              <div className="grid gap-2">
-                <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
-                <Input 
-                  id="imageUrl" 
-                  placeholder="Enter image URL" 
-                  value={formData.imageUrl}
-                  onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="price">Base Price ($)</Label>
-                <Input 
-                  id="price" 
-                  type="number" 
-                  placeholder="29.99" 
-                  value={formData.price / 100}
-                  onChange={(e) => setFormData({...formData, price: Math.round(parseFloat(e.target.value) * 100) || 0})}
-                />
-                <p className="text-xs text-muted-foreground">This is the starting price for the basic license</p>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Input 
-                  id="featured" 
-                  type="checkbox" 
-                  className="w-4 h-4"
-                  checked={formData.featured}
-                  onChange={(e) => setFormData({...formData, featured: e.target.checked})}
-                />
-                <Label htmlFor="featured">Feature this beat on the homepage</Label>
-              </div>
             </div>
+            
             <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetForm}>Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleAddOrUpdate}>
+              <Button variant="outline" onClick={() => {
+                setShowAddDialog(false);
+                resetForm();
+              }}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleAddOrUpdate}
+                disabled={!formData.previewUrl || !formData.fullAudioUrl || !formData.title || !formData.description || !formData.genre}
+                className="bg-gradient-to-r from-primary to-primary/80 ml-2"
+              >
                 {selectedBeat ? "Update Beat" : "Add Beat"}
               </Button>
             </DialogFooter>
