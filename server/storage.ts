@@ -8,7 +8,8 @@ import {
   beats, type Beat, type InsertBeat,
   beatPurchases, type BeatPurchase, type InsertBeatPurchase,
   contracts, type Contract, type InsertContract,
-  contractSignatures, type ContractSignature, type InsertContractSignature
+  contractSignatures, type ContractSignature, type InsertContractSignature,
+  feedbacks, type Feedback, type InsertFeedback
 } from "@shared/schema";
 
 export interface IStorage {
@@ -60,6 +61,16 @@ export interface IStorage {
   createTimeSlot(timeSlot: InsertTimeSlot): Promise<TimeSlot>;
   bookTimeSlot(id: number, bookingId: number): Promise<TimeSlot | undefined>;
   releaseTimeSlot(id: number): Promise<TimeSlot | undefined>;
+  // Bulk time slot creation for schedule management
+  createWeeklySchedule(
+    startDate: Date, 
+    endDate: Date, 
+    dailyStartTime: string, 
+    dailyEndTime: string, 
+    slotDuration: number, 
+    daysOfWeek: number[]
+  ): Promise<TimeSlot[]>;
+  deleteTimeSlotsByDateRange(startDate: Date, endDate: Date): Promise<boolean>;
   
   // Beats
   getAllBeats(): Promise<Beat[]>;
@@ -98,6 +109,21 @@ export interface IStorage {
   getContractSignatureByEntityAndEmail(relatedEntityType: string, relatedEntityId: number, email: string): Promise<ContractSignature | undefined>;
   createContractSignature(signature: InsertContractSignature): Promise<ContractSignature>;
   verifyContractSigned(contractId: number, email: string): Promise<boolean>;
+  
+  // Feedback and Ratings
+  getAllFeedbacks(): Promise<Feedback[]>;
+  getFeedback(id: number): Promise<Feedback | undefined>;
+  getFeedbacksByBooking(bookingId: number): Promise<Feedback[]>;
+  getFeedbacksByBeatPurchase(beatPurchaseId: number): Promise<Feedback[]>;
+  getFeedbacksByServiceType(serviceType: string): Promise<Feedback[]>;
+  createFeedback(feedback: InsertFeedback): Promise<Feedback>;
+  updateFeedbackStatus(id: number, status: string): Promise<Feedback | undefined>;
+  deleteFeedback(id: number): Promise<boolean>;
+  getFeedbackStats(): Promise<{ 
+    averageRating: number; 
+    totalFeedbacks: number;
+    ratingDistribution: Record<string, number>;
+  }>;
 }
 
 export class MemStorage implements IStorage {
@@ -111,6 +137,7 @@ export class MemStorage implements IStorage {
   private beatPurchases: Map<number, BeatPurchase>;
   private contracts: Map<number, Contract>;
   private contractSignatures: Map<number, ContractSignature>;
+  private feedbacks: Map<number, Feedback>;
   
   private userCurrentId: number;
   private serviceCurrentId: number;
@@ -122,6 +149,7 @@ export class MemStorage implements IStorage {
   private beatPurchaseCurrentId: number;
   private contractCurrentId: number;
   private contractSignatureCurrentId: number;
+  private feedbackCurrentId: number;
 
   constructor() {
     this.users = new Map();
@@ -134,6 +162,7 @@ export class MemStorage implements IStorage {
     this.beatPurchases = new Map();
     this.contracts = new Map();
     this.contractSignatures = new Map();
+    this.feedbacks = new Map();
     
     this.userCurrentId = 1;
     this.serviceCurrentId = 1;
@@ -145,6 +174,7 @@ export class MemStorage implements IStorage {
     this.beatPurchaseCurrentId = 1;
     this.contractCurrentId = 1;
     this.contractSignatureCurrentId = 1;
+    this.feedbackCurrentId = 1;
     
     // Add default admin user
     this.createUser({
@@ -826,6 +856,172 @@ export class MemStorage implements IStorage {
   async verifyContractSigned(contractId: number, email: string): Promise<boolean> {
     const signatures = await this.getContractSignaturesByContract(contractId);
     return signatures.some(sig => sig.customerEmail === email && sig.agreedToTerms);
+  }
+
+  // Feedback and ratings
+  async getAllFeedbacks(): Promise<Feedback[]> {
+    return Array.from(this.feedbacks.values());
+  }
+
+  async getFeedback(id: number): Promise<Feedback | undefined> {
+    return this.feedbacks.get(id);
+  }
+
+  async getFeedbacksByBooking(bookingId: number): Promise<Feedback[]> {
+    return Array.from(this.feedbacks.values()).filter(
+      feedback => feedback.bookingId === bookingId
+    );
+  }
+
+  async getFeedbacksByBeatPurchase(beatPurchaseId: number): Promise<Feedback[]> {
+    return Array.from(this.feedbacks.values()).filter(
+      feedback => feedback.beatPurchaseId === beatPurchaseId
+    );
+  }
+
+  async getFeedbacksByServiceType(serviceType: string): Promise<Feedback[]> {
+    return Array.from(this.feedbacks.values()).filter(
+      feedback => feedback.serviceType === serviceType
+    );
+  }
+
+  async createFeedback(feedback: InsertFeedback): Promise<Feedback> {
+    const id = this.feedbackCurrentId++;
+    const now = new Date();
+    const newFeedback: Feedback = {
+      ...feedback,
+      id,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.feedbacks.set(id, newFeedback);
+    return newFeedback;
+  }
+
+  async updateFeedbackStatus(id: number, status: string): Promise<Feedback | undefined> {
+    const feedback = this.feedbacks.get(id);
+    if (!feedback) return undefined;
+
+    const updatedFeedback = {
+      ...feedback,
+      status,
+      updatedAt: new Date()
+    };
+    this.feedbacks.set(id, updatedFeedback);
+    return updatedFeedback;
+  }
+
+  async deleteFeedback(id: number): Promise<boolean> {
+    return this.feedbacks.delete(id);
+  }
+
+  async getFeedbackStats(): Promise<{ 
+    averageRating: number; 
+    totalFeedbacks: number;
+    ratingDistribution: Record<string, number>;
+  }> {
+    const feedbacks = Array.from(this.feedbacks.values()).filter(
+      feedback => feedback.status === "active"
+    );
+    
+    if (feedbacks.length === 0) {
+      return {
+        averageRating: 0,
+        totalFeedbacks: 0,
+        ratingDistribution: {
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 0,
+          "5": 0
+        }
+      };
+    }
+
+    const totalRating = feedbacks.reduce((sum, feedback) => sum + feedback.rating, 0);
+    const averageRating = totalRating / feedbacks.length;
+
+    const ratingDistribution: Record<string, number> = {
+      "1": 0,
+      "2": 0,
+      "3": 0,
+      "4": 0,
+      "5": 0
+    };
+
+    feedbacks.forEach(feedback => {
+      const rating = feedback.rating.toString();
+      ratingDistribution[rating] = (ratingDistribution[rating] || 0) + 1;
+    });
+
+    return {
+      averageRating,
+      totalFeedbacks: feedbacks.length,
+      ratingDistribution
+    };
+  }
+
+  // Schedule management
+  async createWeeklySchedule(
+    startDate: Date, 
+    endDate: Date, 
+    dailyStartTime: string, 
+    dailyEndTime: string, 
+    slotDuration: number, 
+    daysOfWeek: number[]
+  ): Promise<TimeSlot[]> {
+    const createdSlots: TimeSlot[] = [];
+    const [startHour, startMinute] = dailyStartTime.split(':').map(Number);
+    const [endHour, endMinute] = dailyEndTime.split(':').map(Number);
+    
+    const current = new Date(startDate);
+    while (current <= endDate) {
+      const dayOfWeek = current.getDay(); // 0 = Sunday, 1 = Monday, etc.
+      
+      // Check if this day of the week should be included
+      if (daysOfWeek.includes(dayOfWeek)) {
+        // Create slots for this day
+        const slotStart = new Date(current);
+        slotStart.setHours(startHour, startMinute, 0, 0);
+        
+        const slotEnd = new Date(current);
+        slotEnd.setHours(endHour, endMinute, 0, 0);
+        
+        // Create time slots for this day
+        while (slotStart < slotEnd) {
+          const timeSlot = await this.createTimeSlot({
+            date: new Date(slotStart),
+            available: true
+          });
+          
+          createdSlots.push(timeSlot);
+          
+          // Move to next slot
+          slotStart.setMinutes(slotStart.getMinutes() + slotDuration);
+        }
+      }
+      
+      // Move to next day
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return createdSlots;
+  }
+  
+  async deleteTimeSlotsByDateRange(startDate: Date, endDate: Date): Promise<boolean> {
+    let deletedAny = false;
+    
+    for (const [id, slot] of this.timeSlots.entries()) {
+      if (slot.date >= startDate && slot.date <= endDate) {
+        // Only delete if the slot is not booked
+        if (!slot.bookingId) {
+          this.timeSlots.delete(id);
+          deletedAny = true;
+        }
+      }
+    }
+    
+    return deletedAny;
   }
 }
 

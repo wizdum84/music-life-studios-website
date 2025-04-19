@@ -273,3 +273,23 @@ export type InsertContract = z.infer<typeof insertContractSchema>;
 
 export type ContractSignature = typeof contractSignatures.$inferSelect;
 export type InsertContractSignature = z.infer<typeof insertContractSignatureSchema>;
+
+// Feedback and Ratings
+export const feedbacks = pgTable("feedbacks", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id"),
+  bookingId: integer("booking_id"),
+  beatPurchaseId: integer("beat_purchase_id"),
+  rating: integer("rating").notNull(), // 1-5 star rating
+  comment: text("comment"),
+  serviceType: text("service_type").notNull(), // 'session', 'mixing', 'mastering', 'beat'
+  status: text("status").default("active"), // 'active', 'hidden', 'flagged'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertFeedbackSchema = createInsertSchema(feedbacks)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+
+export type Feedback = typeof feedbacks.$inferSelect;
+export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
