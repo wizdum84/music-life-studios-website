@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { 
   Dialog, 
   DialogContent, 
@@ -26,7 +28,7 @@ import {
   DialogClose
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarIcon, PlusCircle, Music, Calendar as CalendarIcon2, Clock, Edit, Trash2, FileText } from "lucide-react";
+import { CalendarIcon, PlusCircle, Music, Calendar, Clock, Edit, Trash2, FileText } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import FileUploader from "./FileUploader";
@@ -1107,7 +1109,24 @@ function BeatsByGenreManager() {
   const [previewUploadProgress, setPreviewUploadProgress] = useState(0);
   const [isFullAudioUploading, setIsFullAudioUploading] = useState(false);
   const [fullAudioUploadProgress, setFullAudioUploadProgress] = useState(0);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    title: string;
+    description: string;
+    genre: string;
+    bpm: number;
+    price: number;
+    previewUrl: string;
+    fullAudioUrl: string;
+    imageUrl: string;
+    featured: boolean;
+    licensingOptions: {
+      basic: { price: number; description: string };
+      premium: { price: number; description: string };
+      exclusive: { price: number; description: string };
+    };
+    tags: string[];
+    contractUrl: string;
+  }>({
     title: "",
     description: "",
     genre: "hip-hop",
@@ -1416,7 +1435,7 @@ function BeatsByGenreManager() {
                   <Checkbox 
                     id="featured" 
                     checked={formData.featured}
-                    onCheckedChange={(checked) => setFormData({...formData, featured: checked === true})}
+                    onCheckedChange={(checked: boolean | "indeterminate") => setFormData({...formData, featured: checked === true})}
                   />
                   <Label htmlFor="featured">Feature this beat in the marketplace</Label>
                 </div>
