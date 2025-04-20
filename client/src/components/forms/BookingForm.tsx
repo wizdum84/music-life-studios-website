@@ -339,23 +339,11 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
   // Form submission
   const onSubmit = async (data: FormData) => {
     try {
-      console.log("Form submitted with data:", data);
-      
       // Store booking data for later submission after payment
       setBookingData(data);
       
-      // React state updates are asynchronous, so we log the current value
-      // but then force the contract step to be true and ensure its re-render
-      console.log("Current isContractStep value before update:", isContractStep);
-      
-      // Move to contract step first using a callback to check the state after update
+      // Move to contract step
       setIsContractStep(true);
-      
-      // Use setTimeout to check the state after the update is processed
-      setTimeout(() => {
-        console.log("isContractStep after setTimeout:", isContractStep);
-      }, 0);
-      
     } catch (error) {
       console.error("Error creating booking:", error);
       toast({
@@ -385,7 +373,6 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
   }
   
   // If we're at the contract step, show contract requirements
-  console.log("Checking isContractStep condition:", isContractStep);
   if (isContractStep) {
     return (
       <div className="space-y-6">
@@ -429,9 +416,6 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
         </Card>
         
         <div className="bg-background border rounded-lg p-1">
-          {/* Debug info */}
-          {console.log("Contract step rendering with bookingData:", bookingData)}
-          
           {/* Studio Rules Contract Component */}
           <ContractRequirement
             contractId={4} // Studio Rules Contract ID
