@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Separator } from "@/components/ui/separator";
 import {
   Card,
   CardContent,
@@ -636,7 +637,50 @@ export default function BookingForm({
             />
           </div>
           
-          {selectedDate && (
+          {/* For mixing services - show estimated completion time */}
+          {isMixingService && selectedDuration && (
+            <div className="p-4 bg-muted/40 rounded-lg">
+              <h4 className="font-medium mb-2 flex items-center">
+                <Clock className="h-4 w-4 mr-2" />
+                Estimated Completion Time
+              </h4>
+              <p className="text-muted-foreground">
+                {selectedDuration <= 180 
+                  ? `${Math.ceil(selectedDuration / 60 * 2)} days` 
+                  : selectedDuration <= 360 
+                    ? "2-3 weeks" 
+                    : "3-4 weeks"}
+              </p>
+              
+              {/* Price breakdown */}
+              <div className="mt-4 pt-4 border-t border-border">
+                <h4 className="font-medium mb-2">Price Breakdown</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>
+                      {selectedDuration === 360 
+                        ? "EP (6 songs)" 
+                        : selectedDuration === 480 
+                          ? "Album (8-10 songs)" 
+                          : `${selectedDuration / 60} ${selectedDuration === 60 ? 'song' : 'songs'}`}
+                    </span>
+                    <span>{formatPrice(selectedService?.price || 0)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium pt-2 border-t border-border">
+                    <span>Total</span>
+                    <span>{formatPrice(selectedDuration / 60 * (selectedService?.price || 0))}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>25% Deposit Required</span>
+                    <span>{formatPrice(selectedDuration / 60 * (selectedService?.price || 0) * 0.25)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* For recording services - show time selection */}
+          {selectedDate && !isMixingService && (
             <div>
               <h4 className="font-medium mb-2">Select Time</h4>
               {availableTimes.length > 0 ? (
