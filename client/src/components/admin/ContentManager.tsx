@@ -401,7 +401,9 @@ function BeatsManager() {
   // Genres for selection
   const genres = [
     { value: "all", label: "All Genres" },
-    { value: "urban", label: "Hip Hop/Rap/Trap/R&B/Pop" },
+    { value: "rap-hiphop", label: "Rap & Hip Hop" },
+    { value: "trap", label: "Trap" },
+    { value: "rnb", label: "R&B" },
     { value: "other", label: "Everything Else" }
   ];
   
@@ -672,7 +674,9 @@ function BeatsManager() {
                           <SelectValue placeholder="Select genre" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="urban">Hip Hop/Rap/Trap/R&B/Pop</SelectItem>
+                          <SelectItem value="rap-hiphop">Rap & Hip Hop</SelectItem>
+                          <SelectItem value="trap">Trap</SelectItem>
+                          <SelectItem value="rnb">R&B</SelectItem>
                           <SelectItem value="other">Everything Else</SelectItem>
                         </SelectContent>
                       </Select>
