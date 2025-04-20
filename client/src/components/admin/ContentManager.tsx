@@ -916,6 +916,7 @@ function SamplesManager() {
   const [uploadError, setUploadError] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [fileType, setFileType] = useState<string>("mp3");
+  const [activeCategory, setActiveCategory] = useState<string>("all");
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -927,10 +928,15 @@ function SamplesManager() {
   });
   
   // Fetch all tracks that are samples
-  const { data: samples = [], isLoading } = useQuery<Track[]>({
+  const { data: allSamples = [], isLoading } = useQuery<Track[]>({
     queryKey: ['/api/tracks'],
     select: (tracks) => tracks.filter(track => track.type === 'sample')
   });
+  
+  // Filter samples by category
+  const samples = activeCategory === 'all' 
+    ? allSamples 
+    : allSamples.filter(sample => sample.category === activeCategory);
   
   // Add sample mutation
   const addSampleMutation = useMutation({
