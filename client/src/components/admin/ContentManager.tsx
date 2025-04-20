@@ -49,81 +49,33 @@ export default function ContentManager() {
         </CardHeader>
       </Card>
       
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <div className="border-b">
-          <div className="overflow-x-auto custom-scrollbar pb-2">
-            <TabsList className="w-full md:w-auto inline-flex p-1 bg-muted/20 mb-4">
-              <TabsTrigger 
-                value="tracks" 
-                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                <Music className="h-4 w-4 mr-2" />
-                Music Portfolio
-              </TabsTrigger>
-              
-              <TabsTrigger 
-                value="samples" 
-                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                <span className="flex items-center">
-                  <Music className="h-4 w-4 mr-2" />
-                  Samples
-                </span>
-              </TabsTrigger>
-              
-              <TabsTrigger 
-                value="beats" 
-                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                <span className="flex items-center">
-                  <Music className="h-4 w-4 mr-2" />
-                  Beat Marketplace
-                </span>
-              </TabsTrigger>
-              
-              <TabsTrigger 
-                value="services" 
-                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                <span className="flex items-center">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Services
-                </span>
-              </TabsTrigger>
-              
-              <TabsTrigger 
-                value="contracts" 
-                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                <span className="flex items-center">
-                  <FileText className="h-4 w-4 mr-2" />
-                  Contracts
-                </span>
-              </TabsTrigger>
-            </TabsList>
-          </div>
-        </div>
+      <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-6 bg-card border mt-2">
+          <TabsTrigger value="tracks">Portfolio Tracks</TabsTrigger>
+          <TabsTrigger value="samples">Sample Library</TabsTrigger>
+          <TabsTrigger value="beats">Beat Marketplace</TabsTrigger>
+          <TabsTrigger value="contracts">Contracts</TabsTrigger>
+          <TabsTrigger value="schedule">Schedule</TabsTrigger>
+        </TabsList>
         
-        <TabsContent value="tracks">
+        <TabsContent value="tracks" className="mt-0">
           <TracksManager />
         </TabsContent>
         
-        <TabsContent value="samples">
+        <TabsContent value="samples" className="mt-0">
           <SamplesManager />
         </TabsContent>
         
-        <TabsContent value="beats">
+        <TabsContent value="beats" className="mt-0">
           <BeatsManager />
         </TabsContent>
         
-        {/* Moved beats by genre into main beats manager */}
-        
-        <TabsContent value="services">
-          <ServicesManager />
+        <TabsContent value="contracts" className="mt-0">
+          <ContractManager />
         </TabsContent>
         
-        <TabsContent value="contracts">
-          <ContractManager />
+        <TabsContent value="schedule" className="mt-0">
+          <ScheduleManager />
         </TabsContent>
       </Tabs>
     </div>
@@ -134,19 +86,18 @@ function TracksManager() {
   const { toast } = useToast();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    type: "",
+    type: "track",
     audioUrl: "",
     imageUrl: ""
   });
   
-  // Fetch all tracks
-  const { data: tracks = [], isLoading } = useQuery<Track[]>({
+  // Fetch all tracks that are not samples
+  const { data: allTracks = [], isLoading } = useQuery<Track[]>({
     queryKey: ['/api/tracks'],
+    select: (tracks) => tracks.filter(track => track.type === 'track')
   });
   
   // Add track mutation
@@ -157,13 +108,7 @@ function TracksManager() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/tracks'] });
       setShowAddDialog(false);
-      setFormData({
-        title: "",
-        description: "",
-        type: "",
-        audioUrl: "",
-        imageUrl: ""
-      });
+      resetForm();
       toast({
         title: "Track added successfully",
       });
@@ -197,49 +142,28 @@ function TracksManager() {
     }
   });
   
-  // Simulate audio file upload
+  // Simulate file upload
   const simulateFileUpload = (file: File) => {
-    setIsUploading(true);
-    setUploadProgress(0);
+    const fakeUrl = `https://storage.musiclifestudios.com/tracks/${file.name.replace(/\s+/g, '-').toLowerCase()}`;
     
-    // Simulate progress
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(interval);
-          return 95;
-        }
-        return prev + 5;
-      });
-    }, 200);
+    // Update form data with the URL
+    setFormData(prev => ({
+      ...prev,
+      audioUrl: fakeUrl,
+      title: prev.title || file.name.split('.')[0].replace(/-/g, ' ').replace(/_/g, ' ')
+    }));
     
-    // Simulate completion after 3 seconds
-    setTimeout(() => {
-      clearInterval(interval);
-      setUploadProgress(100);
-      setIsUploading(false);
-      
-      // Create a fake URL for demo purposes
-      const fakeUrl = `https://storage.musiclifestudios.com/${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      // Update form data with the URL
-      setFormData(prev => ({
-        ...prev,
-        audioUrl: fakeUrl
-      }));
-      
-      toast({
-        title: "File uploaded successfully",
-        description: `${file.name} has been uploaded`,
-      });
-    }, 3000);
+    toast({
+      title: "File uploaded successfully",
+      description: `${file.name} has been uploaded`,
+    });
   };
   
   const resetForm = () => {
     setFormData({
       title: "",
       description: "",
-      type: "",
+      type: "track",
       audioUrl: "",
       imageUrl: ""
     });
@@ -248,7 +172,7 @@ function TracksManager() {
   
   const handleAddOrUpdate = () => {
     // Basic validation
-    if (!formData.title || !formData.description || !formData.type || !formData.audioUrl) {
+    if (!formData.title || !formData.description || !formData.audioUrl) {
       toast({
         title: "Missing required fields",
         description: "Please fill in all required fields",
@@ -264,7 +188,7 @@ function TracksManager() {
         id: selectedTrack.id
       };
       
-      // Replace with actual update logic
+      // Implement update logic
       toast({
         title: "Track updated successfully",
       });
@@ -280,28 +204,28 @@ function TracksManager() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Music Portfolio</CardTitle>
-          <CardDescription>Manage your portfolio of work samples</CardDescription>
+          <CardTitle>Portfolio Tracks</CardTitle>
+          <CardDescription>Manage tracks showcasing your studio work</CardDescription>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="bg-gradient-to-r from-primary to-primary/80">
               <PlusCircle className="h-4 w-4 mr-2" />
-              Add Sample
+              Add Track
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                {selectedTrack ? "Edit Sample" : "Add New Sample"}
+                {selectedTrack ? "Edit Track" : "Add New Track"}
               </DialogTitle>
               <DialogDescription>
-                Upload a music sample to showcase your work in your portfolio.
+                Add a track to showcase your studio work
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="title">Title</Label>
+                <Label htmlFor="title">Track Title</Label>
                 <Input 
                   id="title" 
                   placeholder="Enter track title" 
@@ -313,40 +237,21 @@ function TracksManager() {
                 <Label htmlFor="description">Description</Label>
                 <Textarea 
                   id="description" 
-                  placeholder="Describe your work" 
+                  placeholder="Describe this track" 
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="type">Type</Label>
-                <Select 
-                  value={formData.type} 
-                  onValueChange={(value) => setFormData({...formData, type: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="recording">Recording</SelectItem>
-                    <SelectItem value="mixing">Mixing</SelectItem>
-                    <SelectItem value="production">Production</SelectItem>
-                    <SelectItem value="mastering">Mastering</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Upload Audio File</Label>
+                <FileUploader
+                  description="Upload MP3 or WAV file"
+                  accept=".mp3,.wav,audio/*"
+                  maxSize={30}
+                  onFileSelected={simulateFileUpload}
+                  className="border-2 border-dashed p-6 rounded-lg"
+                />
               </div>
-              
-              <FileUploader
-                label="Audio File"
-                description="Upload the audio sample (MP3, WAV)"
-                accept="audio/*"
-                maxSize={100}
-                onFileSelected={simulateFileUpload}
-                uploading={isUploading}
-                uploadProgress={uploadProgress}
-                uploadSuccess={formData.audioUrl !== ""}
-              />
-              
               <div className="grid gap-2">
                 <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
                 <Input 
@@ -358,11 +263,12 @@ function TracksManager() {
               </div>
             </div>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetForm}>Cancel</Button>
-              </DialogClose>
+              <Button variant="outline" onClick={() => {
+                setShowAddDialog(false);
+                resetForm();
+              }}>Cancel</Button>
               <Button onClick={handleAddOrUpdate}>
-                {selectedTrack ? "Update Sample" : "Add Sample"}
+                {selectedTrack ? "Update Track" : "Add Track"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -373,62 +279,78 @@ function TracksManager() {
           <div className="flex justify-center py-8">
             <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
           </div>
-        ) : tracks.length === 0 ? (
+        ) : allTracks.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <Music className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
-            <p>No music samples uploaded yet.</p>
+            <p>No tracks added yet.</p>
             <Button className="mt-4" variant="outline" onClick={() => setShowAddDialog(true)}>
-              Add Your First Sample
+              Add Your First Track
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tracks.map((track) => (
+          <div className="space-y-6">
+            {allTracks.map((track) => (
               <Card key={track.id} className="overflow-hidden">
-                <div 
-                  className="h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
-                  style={{
-                    backgroundImage: track.imageUrl ? `url(${track.imageUrl})` : undefined,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center'
-                  }}
-                >
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <div className="text-center text-white">
-                      <h3 className="font-semibold">{track.title}</h3>
-                      <span className="text-xs bg-primary px-2 py-0.5 rounded">
-                        {track.type.charAt(0).toUpperCase() + track.type.slice(1)}
-                      </span>
+                <div className="flex flex-col md:flex-row">
+                  <div 
+                    className="h-40 md:w-40 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
+                    style={{
+                      backgroundImage: track.imageUrl ? `url(${track.imageUrl})` : undefined,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center'
+                    }}
+                  >
+                    {!track.imageUrl && <Music className="h-12 w-12 text-muted-foreground/50" />}
+                  </div>
+                  <div className="flex-1 p-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold">{track.title}</h3>
+                        <p className="text-sm text-muted-foreground">{track.description}</p>
+                      </div>
+                      <div className="flex space-x-2 mt-4 md:mt-0">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => {
+                            setSelectedTrack(track);
+                            setFormData({
+                              title: track.title,
+                              description: track.description,
+                              type: track.type,
+                              audioUrl: track.audioUrl || "",
+                              imageUrl: track.imageUrl || ""
+                            });
+                            setShowAddDialog(true);
+                          }}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="text-destructive"
+                          onClick={() => {
+                            if (confirm("Are you sure you want to delete this track?")) {
+                              deleteTrackMutation.mutate(track.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <audio 
+                        src={track.audioUrl} 
+                        controls 
+                        className="w-full" 
+                      />
                     </div>
                   </div>
                 </div>
-                
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground line-clamp-2">{track.description}</p>
-                  <div className="mt-4 flex justify-between items-center">
-                    <audio 
-                      src={track.audioUrl} 
-                      controls 
-                      className="w-full h-8" 
-                    />
-                  </div>
-                </CardContent>
-                
-                <CardFooter className="flex justify-end gap-2 p-4 pt-0">
-                  <Button size="sm" variant="ghost">
-                    <Edit className="h-4 w-4 mr-1" />
-                    Edit
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    className="text-destructive"
-                    onClick={() => deleteTrackMutation.mutate(track.id)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete
-                  </Button>
-                </CardFooter>
               </Card>
             ))}
           </div>
@@ -446,6 +368,7 @@ function BeatsManager() {
   const [isFullAudioUploading, setIsFullAudioUploading] = useState(false);
   const [previewUploadProgress, setPreviewUploadProgress] = useState(0);
   const [fullAudioUploadProgress, setFullAudioUploadProgress] = useState(0);
+  const [activeGenre, setActiveGenre] = useState<string>("all");
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -466,9 +389,21 @@ function BeatsManager() {
   });
   
   // Fetch all beats
-  const { data: beats = [], isLoading } = useQuery<Beat[]>({
+  const { data: allBeats = [], isLoading } = useQuery<Beat[]>({
     queryKey: ['/api/beats'],
   });
+  
+  // Filter beats by genre
+  const beats = activeGenre === 'all' 
+    ? allBeats 
+    : allBeats.filter(beat => beat.genre === activeGenre);
+    
+  // Genres for selection
+  const genres = [
+    { value: "all", label: "All Genres" },
+    { value: "urban", label: "Hip Hop/Rap/Trap/R&B/Pop" },
+    { value: "other", label: "Everything Else" }
+  ];
   
   // Add beat mutation
   const addBeatMutation = useMutation({
@@ -737,14 +672,8 @@ function BeatsManager() {
                           <SelectValue placeholder="Select genre" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Hip Hop">Hip Hop</SelectItem>
-                          <SelectItem value="R&B">R&B</SelectItem>
-                          <SelectItem value="Pop">Pop</SelectItem>
-                          <SelectItem value="Trap">Trap</SelectItem>
-                          <SelectItem value="Drill">Drill</SelectItem>
-                          <SelectItem value="EDM">EDM</SelectItem>
-                          <SelectItem value="Rock">Rock</SelectItem>
-                          <SelectItem value="Jazz">Jazz</SelectItem>
+                          <SelectItem value="urban">Hip Hop/Rap/Trap/R&B/Pop</SelectItem>
+                          <SelectItem value="other">Everything Else</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -773,15 +702,18 @@ function BeatsManager() {
                     </div>
                     
                     <div className="grid gap-2">
-                      <Label htmlFor="price">Base Price ($)</Label>
+                      <Label htmlFor="price">Price ($)</Label>
                       <Input 
                         id="price" 
                         type="number" 
+                        step="0.01"
                         placeholder="29.99" 
-                        value={formData.price / 100}
-                        onChange={(e) => setFormData({...formData, price: Math.round(parseFloat(e.target.value) * 100) || 0})}
+                        value={(formData.price / 100).toFixed(2)}
+                        onChange={(e) => {
+                          const price = parseFloat(e.target.value) * 100;
+                          setFormData({...formData, price: Math.round(price)});
+                        }}
                       />
-                      <p className="text-xs text-muted-foreground">Starting price for the basic license</p>
                     </div>
                     
                     <div className="grid gap-2">
@@ -794,7 +726,7 @@ function BeatsManager() {
                       />
                     </div>
                     
-                    <div className="flex items-center gap-2 mt-4">
+                    <div className="flex items-center space-x-2">
                       <Checkbox 
                         id="featured" 
                         checked={formData.featured}
@@ -802,24 +734,24 @@ function BeatsManager() {
                           setFormData({...formData, featured: checked === true})
                         }
                       />
-                      <Label htmlFor="featured">Feature this beat on the homepage</Label>
+                      <label
+                        htmlFor="featured"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        Feature this beat on the marketplace
+                      </label>
                     </div>
                   </div>
                 </>
               )}
             </div>
-            
             <DialogFooter>
-              <Button variant="outline" onClick={() => {
-                setShowAddDialog(false);
-                resetForm();
-              }}>
-                Cancel
-              </Button>
+              <DialogClose asChild>
+                <Button variant="outline" onClick={resetForm}>Cancel</Button>
+              </DialogClose>
               <Button 
                 onClick={handleAddOrUpdate}
-                disabled={!formData.previewUrl || !formData.fullAudioUrl || !formData.title || !formData.description || !formData.genre}
-                className="bg-gradient-to-r from-primary to-primary/80 ml-2"
+                disabled={!formData.title || !formData.description || !formData.genre || !formData.previewUrl || !formData.fullAudioUrl}
               >
                 {selectedBeat ? "Update Beat" : "Add Beat"}
               </Button>
@@ -832,7 +764,7 @@ function BeatsManager() {
           <div className="flex justify-center py-8">
             <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
           </div>
-        ) : beats.length === 0 ? (
+        ) : beats.length === 0 && activeGenre === 'all' ? (
           <div className="text-center py-8 text-muted-foreground">
             <Music className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
             <p>No beats uploaded yet.</p>
@@ -841,66 +773,98 @@ function BeatsManager() {
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {beats.map((beat) => (
-              <Card key={beat.id} className="overflow-hidden">
-                <div 
-                  className="h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
-                  style={{
-                    backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center'
-                  }}
+          <>
+            <div className="mb-6">
+              <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
+                {genres.map(genre => (
+                  <Button
+                    key={genre.value}
+                    variant={activeGenre === genre.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setActiveGenre(genre.value)}
+                    className={activeGenre === genre.value ? 
+                      "bg-primary text-primary-foreground" : ""}
+                  >
+                    {genre.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            
+            {beats.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No beats found in the "{genres.find(g => g.value === activeGenre)?.label}" genre.</p>
+                <Button 
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => setActiveGenre('all')}
                 >
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <div className="text-center text-white">
-                      <h3 className="font-semibold">{beat.title}</h3>
-                      <div className="flex gap-2 justify-center mt-1">
-                        <span className="text-xs bg-primary px-2 py-0.5 rounded">
-                          {beat.genre}
-                        </span>
-                        {beat.featured && (
-                          <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded">
-                            Featured
-                          </span>
-                        )}
+                  View All Genres
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {beats.map((beat) => (
+                  <Card key={beat.id} className="overflow-hidden">
+                    <div 
+                      className="h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
+                      style={{
+                        backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }}
+                    >
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="text-center text-white">
+                          <h3 className="font-semibold">{beat.title}</h3>
+                          <div className="flex gap-2 justify-center mt-1">
+                            <span className="text-xs bg-primary px-2 py-0.5 rounded">
+                              {beat.genre}
+                            </span>
+                            {beat.featured && (
+                              <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded">
+                                Featured
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-                
-                <CardContent className="p-4">
-                  <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">{beat.bpm} BPM</span>
-                    <span className="text-sm font-bold">${beat.price / 100}</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground line-clamp-2">{beat.description}</p>
-                  <div className="mt-4">
-                    <audio 
-                      src={beat.previewUrl} 
-                      controls 
-                      className="w-full h-8" 
-                    />
-                  </div>
-                </CardContent>
-                
-                <CardFooter className="flex justify-end gap-2 p-4 pt-0">
-                  <Button size="sm" variant="ghost">
-                    <Edit className="h-4 w-4 mr-1" />
-                    Edit
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    className="text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
+                    
+                    <CardContent className="p-4">
+                      <div className="flex justify-between mb-2">
+                        <span className="text-sm font-medium">{beat.bpm} BPM</span>
+                        <span className="text-sm font-bold">${beat.price / 100}</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground line-clamp-2">{beat.description}</p>
+                      <div className="mt-4">
+                        <audio 
+                          src={beat.previewUrl} 
+                          controls 
+                          className="w-full h-8" 
+                        />
+                      </div>
+                    </CardContent>
+                    
+                    <CardFooter className="flex justify-end gap-2 p-4 pt-0">
+                      <Button size="sm" variant="ghost">
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -1177,82 +1141,49 @@ function SamplesManager() {
                           <SelectItem value="drums">Drums</SelectItem>
                           <SelectItem value="bass">Bass</SelectItem>
                           <SelectItem value="melody">Melody</SelectItem>
-                          <SelectItem value="effect">Sound Effects</SelectItem>
-                          <SelectItem value="stem">Stem</SelectItem>
+                          <SelectItem value="effect">Effects</SelectItem>
+                          <SelectItem value="stem">Stems</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     
                     <div className="md:col-span-2">
-                      <div className="grid gap-2">
-                        <Label htmlFor="description">Description</Label>
-                        <Textarea 
-                          id="description" 
-                          placeholder="Describe your sample" 
-                          value={formData.description}
-                          onChange={(e) => setFormData({...formData, description: e.target.value})}
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="grid gap-2">
-                      <Label htmlFor="sampleType">File Type</Label>
-                      <Select
-                        value={formData.sampleType}
-                        onValueChange={(value) => setFormData({...formData, sampleType: value})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select file type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="mp3">MP3 File</SelectItem>
-                          <SelectItem value="wav">WAV File</SelectItem>
-                          <SelectItem value="stem">Stem Pack</SelectItem>
-                          <SelectItem value="other">Other Format</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="grid gap-2">
-                      <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
-                      <Input 
-                        id="imageUrl" 
-                        placeholder="Enter image URL" 
-                        value={formData.imageUrl}
-                        onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea 
+                        id="description" 
+                        placeholder="Describe this sample" 
+                        value={formData.description}
+                        onChange={(e) => setFormData({...formData, description: e.target.value})}
+                        className="min-h-[100px]"
                       />
                     </div>
                     
-                    {uploadedFile && formData.audioUrl && (
-                      <div className="md:col-span-2 bg-muted/30 p-4 rounded-md">
-                        <div className="grid gap-2">
-                          <Label>Audio Preview</Label>
-                          {formData.sampleType !== 'stem' ? (
-                            <audio 
-                              src={formData.audioUrl} 
-                              controls 
-                              className="w-full" 
-                            />
-                          ) : (
-                            <div className="flex items-center space-x-2 text-sm">
-                              <FileText className="h-4 w-4" />
-                              <span>{uploadedFile?.name} (Stem Pack - not previewable)</span>
-                            </div>
-                          )}
+                    <div className="md:col-span-2">
+                      <div className="bg-muted/20 p-3 rounded-md mt-2">
+                        <div className="mb-2 text-sm font-medium flex items-center gap-2">
+                          <Badge>{fileTypeDisplay(fileType)}</Badge>
+                          {uploadedFile && <span>{uploadedFile.name}</span>}
                         </div>
+                        {formData.audioUrl && (
+                          <audio src={formData.audioUrl} controls className="w-full" />
+                        )}
                       </div>
-                    )}
+                    </div>
                   </>
                 )}
               </div>
             </div>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetForm}>Cancel</Button>
-              </DialogClose>
+              <Button variant="outline" onClick={() => {
+                setShowAddDialog(false);
+                resetForm();
+              }}>
+                Cancel
+              </Button>
               <Button 
                 onClick={handleAddOrUpdate}
-                disabled={!formData.audioUrl || !formData.title || !formData.description}
+                disabled={!formData.title || !formData.description || !formData.audioUrl}
+                className="bg-gradient-to-r from-primary to-primary/80 ml-2"
               >
                 {selectedSample ? "Update Sample" : "Add Sample"}
               </Button>
@@ -1260,869 +1191,94 @@ function SamplesManager() {
           </DialogContent>
         </Dialog>
       </CardHeader>
+      
       <CardContent>
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
-          </div>
-        ) : samples.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <div className="space-y-4">
-              <Music className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <div>
-                <p className="font-medium">No samples uploaded yet</p>
-                <p className="text-sm text-muted-foreground mb-4">Upload MP3s, WAVs, or Stem packs to showcase your work</p>
-                <Button 
-                  size="lg" 
-                  className="bg-gradient-to-r from-primary to-primary/80"
-                  onClick={() => setShowAddDialog(true)}
-                >
-                  <PlusCircle className="h-5 w-5 mr-2" />
-                  Upload Your First Sample
-                </Button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="mb-6">
-              <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
-                {categories.map(category => (
-                  <Button
-                    key={category.value}
-                    variant={activeCategory === category.value ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setActiveCategory(category.value)}
-                    className={activeCategory === category.value ? 
-                      "bg-primary text-primary-foreground" : ""}
-                  >
-                    {category.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {samples.map((sample) => (
-              <Card key={sample.id} className="overflow-hidden">
-                <div 
-                  className="h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
-                  style={{
-                    backgroundImage: sample.imageUrl ? `url(${sample.imageUrl})` : undefined,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center'
-                  }}
-                >
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <div className="text-center text-white">
-                      <h3 className="font-semibold">{sample.title}</h3>
-                      <div className="flex items-center justify-center space-x-2 mt-1">
-                        <span className="text-xs bg-primary px-2 py-0.5 rounded">
-                          {fileTypeDisplay(sample.sampleType || 'mp3')}
-                        </span>
-                        {sample.category && (
-                          <span className="text-xs bg-black/50 px-2 py-0.5 rounded-sm">
-                            {sample.category}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground line-clamp-2">{sample.description}</p>
-                  <div className="mt-4 flex justify-between items-center">
-                    {sample.sampleType !== 'stem' ? (
-                      <audio 
-                        src={sample.audioUrl} 
-                        controls 
-                        className="w-full h-8" 
-                      />
-                    ) : (
-                      <div className="w-full flex items-center justify-between bg-muted/30 px-3 py-2 rounded">
-                        <div className="flex items-center space-x-2">
-                          <FileText className="h-4 w-4" />
-                          <span className="text-sm">Stem Pack</span>
-                        </div>
-                        <Button variant="outline" size="sm">
-                          Download
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-                
-                <CardFooter className="flex justify-end gap-2 p-4 pt-0">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      setSelectedSample(sample);
-                      setFormData({
-                        title: sample.title,
-                        description: sample.description,
-                        type: "sample",
-                        audioUrl: sample.audioUrl,
-                        imageUrl: sample.imageUrl || "",
-                        category: sample.category || "general",
-                        sampleType: sample.sampleType || "mp3"
-                      });
-                      setShowAddDialog(true);
-                    }}
-                  >
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit
-                  </Button>
-                  <Button 
-                    variant="destructive" 
-                    size="sm"
-                    onClick={() => {
-                      if (confirm("Are you sure you want to delete this sample?")) {
-                        deleteSampleMutation.mutate(sample.id);
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </CardFooter>
-              </Card>
+        <div className="mb-6">
+          <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
+            {categories.map(category => (
+              <Button
+                key={category.value}
+                variant={activeCategory === category.value ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveCategory(category.value)}
+                className={activeCategory === category.value ? 
+                  "bg-primary text-primary-foreground" : ""}
+              >
+                {category.label}
+              </Button>
             ))}
           </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function BeatsByGenreManager() {
-  const { toast } = useToast();
-  const [genre, setGenre] = useState("hip-hop");
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [selectedBeat, setSelectedBeat] = useState<Beat | null>(null);
-  const [isPreviewUploading, setIsPreviewUploading] = useState(false);
-  const [previewUploadProgress, setPreviewUploadProgress] = useState(0);
-  const [isFullAudioUploading, setIsFullAudioUploading] = useState(false);
-  const [fullAudioUploadProgress, setFullAudioUploadProgress] = useState(0);
-  const [formData, setFormData] = useState<{
-    title: string;
-    description: string;
-    genre: string;
-    bpm: number;
-    price: number;
-    previewUrl: string;
-    fullAudioUrl: string;
-    imageUrl: string;
-    featured: boolean;
-    licensingOptions: {
-      basic: { price: number; description: string };
-      premium: { price: number; description: string };
-      exclusive: { price: number; description: string };
-    };
-    tags: string[];
-    contractUrl: string;
-  }>({
-    title: "",
-    description: "",
-    genre: "hip-hop",
-    bpm: 120,
-    price: 2999, // $29.99
-    previewUrl: "",
-    fullAudioUrl: "",
-    imageUrl: "",
-    featured: false,
-    licensingOptions: {
-      basic: { price: 2999, description: "Basic license" },
-      premium: { price: 6999, description: "Premium license" },
-      exclusive: { price: 19999, description: "Exclusive license" }
-    },
-    tags: [],
-    contractUrl: ""
-  });
-  
-  // Fetch all beats
-  const { data: allBeats = [], isLoading } = useQuery<Beat[]>({
-    queryKey: ['/api/beats'],
-  });
-  
-  // Filter beats by selected genre
-  const filteredBeats = allBeats.filter(beat => beat.genre === genre);
-  
-  // Genres for selection
-  const genres = [
-    { value: "hip-hop", label: "Hip Hop" },
-    { value: "rnb", label: "R&B" },
-    { value: "pop", label: "Pop" },
-    { value: "trap", label: "Trap" },
-    { value: "dance", label: "Dance" },
-    { value: "reggaeton", label: "Reggaeton" },
-    { value: "drill", label: "Drill" },
-    { value: "afrobeat", label: "Afrobeat" },
-    { value: "lofi", label: "Lo-Fi" },
-    { value: "rock", label: "Rock" },
-    { value: "electronic", label: "Electronic" },
-    { value: "other", label: "Other" }
-  ];
-  
-  // Add beat mutation
-  const addBeatMutation = useMutation({
-    mutationFn: async (beat: any) => {
-      return apiRequest("POST", "/api/beats", beat);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/beats'] });
-      setShowAddDialog(false);
-      resetForm();
-      toast({
-        title: "Beat added successfully",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error adding beat",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-  
-  // Simulate preview file upload
-  const simulatePreviewUpload = (file: File) => {
-    setIsPreviewUploading(true);
-    setPreviewUploadProgress(0);
-    
-    // Simulate progress
-    const interval = setInterval(() => {
-      setPreviewUploadProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(interval);
-          return 95;
-        }
-        return prev + 5;
-      });
-    }, 200);
-    
-    // Simulate completion after 3 seconds
-    setTimeout(() => {
-      clearInterval(interval);
-      setPreviewUploadProgress(100);
-      setIsPreviewUploading(false);
-      
-      // Create a fake URL for demo purposes
-      const fakeUrl = `https://storage.musiclifestudios.com/beats/${genre}/preview-${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      // Update form data with the URL
-      setFormData(prev => ({
-        ...prev,
-        previewUrl: fakeUrl
-      }));
-      
-      toast({
-        title: "Preview uploaded successfully",
-        description: `${file.name} has been uploaded`,
-      });
-    }, 3000);
-  };
-  
-  // Simulate full audio file upload
-  const simulateFullAudioUpload = (file: File) => {
-    setIsFullAudioUploading(true);
-    setFullAudioUploadProgress(0);
-    
-    // Simulate progress
-    const interval = setInterval(() => {
-      setFullAudioUploadProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(interval);
-          return 95;
-        }
-        return prev + 5;
-      });
-    }, 250);
-    
-    // Simulate completion after 4 seconds
-    setTimeout(() => {
-      clearInterval(interval);
-      setFullAudioUploadProgress(100);
-      setIsFullAudioUploading(false);
-      
-      // Create a fake URL for demo purposes
-      const fakeUrl = `https://storage.musiclifestudios.com/beats/${genre}/full-${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      // Update form data with the URL
-      setFormData(prev => ({
-        ...prev,
-        fullAudioUrl: fakeUrl
-      }));
-      
-      toast({
-        title: "Full audio uploaded successfully",
-        description: `${file.name} has been uploaded`,
-      });
-    }, 4000);
-  };
-  
-  const resetForm = () => {
-    setFormData({
-      title: "",
-      description: "",
-      genre: genre,
-      bpm: 120,
-      price: 2999,
-      previewUrl: "",
-      fullAudioUrl: "",
-      imageUrl: "",
-      featured: false,
-      licensingOptions: {
-        basic: { price: 2999, description: "Basic license" },
-        premium: { price: 6999, description: "Premium license" },
-        exclusive: { price: 19999, description: "Exclusive license" }
-      },
-      tags: [],
-      contractUrl: ""
-    });
-    setSelectedBeat(null);
-  };
-  
-  const handleAddOrUpdate = () => {
-    // Basic validation
-    if (!formData.title || !formData.description || !formData.genre || !formData.previewUrl || !formData.fullAudioUrl) {
-      toast({
-        title: "Missing required fields",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (selectedBeat) {
-      // Update existing beat
-      // Replace with actual update logic
-      toast({
-        title: "Beat updated successfully",
-      });
-      setShowAddDialog(false);
-      resetForm();
-    } else {
-      // Add new beat
-      addBeatMutation.mutate(formData);
-    }
-  };
-  
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Beats by Genre</CardTitle>
-          <CardDescription>Upload and manage your beats by genre</CardDescription>
         </div>
-        <div className="flex space-x-2">
-          <Select 
-            value={genre} 
-            onValueChange={setGenre}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select genre" />
-            </SelectTrigger>
-            <SelectContent>
-              {genres.map(g => (
-                <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          
-          <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-            <DialogTrigger asChild>
-              <Button>
-                <PlusCircle className="h-4 w-4 mr-2" />
-                Add {genres.find(g => g.value === genre)?.label} Beat
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[600px]">
-              <DialogHeader>
-                <DialogTitle>
-                  {selectedBeat ? "Edit Beat" : `Add New ${genres.find(g => g.value === genre)?.label} Beat`}
-                </DialogTitle>
-                <DialogDescription>
-                  Upload a new beat to your marketplace in the {genres.find(g => g.value === genre)?.label} genre.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="title">Title</Label>
-                  <Input 
-                    id="title" 
-                    placeholder="Enter beat title" 
-                    value={formData.title}
-                    onChange={(e) => setFormData({...formData, title: e.target.value})}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea 
-                    id="description" 
-                    placeholder="Describe your beat" 
-                    value={formData.description}
-                    onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="bpm">BPM</Label>
-                    <Input 
-                      id="bpm" 
-                      type="number" 
-                      placeholder="120" 
-                      value={formData.bpm}
-                      onChange={(e) => setFormData({...formData, bpm: parseInt(e.target.value) || 0})}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="price">Base Price ($)</Label>
-                    <Input 
-                      id="price" 
-                      type="number" 
-                      step="0.01"
-                      placeholder="29.99" 
-                      value={(formData.price / 100).toFixed(2)}
-                      onChange={(e) => {
-                        const price = parseFloat(e.target.value) * 100;
-                        setFormData({...formData, price: Math.round(price)});
-                      }}
-                    />
-                  </div>
-                </div>
-                
-                <FileUploader
-                  label="Preview Audio"
-                  description="Upload a short preview of your beat (MP3)"
-                  accept="audio/mp3,audio/mpeg"
-                  maxSize={10}
-                  onFileSelected={simulatePreviewUpload}
-                  uploading={isPreviewUploading}
-                  uploadProgress={previewUploadProgress}
-                  uploadSuccess={formData.previewUrl !== ""}
-                />
-                
-                <FileUploader
-                  label="Full Audio Track"
-                  description="Upload the full beat (to be sold)"
-                  accept="audio/*"
-                  maxSize={100}
-                  onFileSelected={simulateFullAudioUpload}
-                  uploading={isFullAudioUploading}
-                  uploadProgress={fullAudioUploadProgress}
-                  uploadSuccess={formData.fullAudioUrl !== ""}
-                />
-                
-                <div className="grid gap-2">
-                  <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
-                  <Input 
-                    id="imageUrl" 
-                    placeholder="Enter image URL" 
-                    value={formData.imageUrl}
-                    onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                  />
-                </div>
-                
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="featured" 
-                    checked={formData.featured}
-                    onCheckedChange={(checked: boolean | "indeterminate") => setFormData({...formData, featured: checked === true})}
-                  />
-                  <Label htmlFor="featured">Feature this beat in the marketplace</Label>
-                </div>
-                
-                <div className="grid gap-2">
-                  <Label htmlFor="tags">Tags (comma separated)</Label>
-                  <Input 
-                    id="tags" 
-                    placeholder="e.g. dark, melodic, 808s" 
-                    value={formData.tags.join(', ')}
-                    onChange={(e) => {
-                      const tagArray: string[] = e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag);
-                      setFormData({...formData, tags: tagArray});
-                    }}
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline" onClick={resetForm}>Cancel</Button>
-                </DialogClose>
-                <Button onClick={handleAddOrUpdate}>
-                  {selectedBeat ? "Update Beat" : "Add Beat"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </CardHeader>
-      <CardContent>
+        
         {isLoading ? (
           <div className="flex justify-center py-8">
             <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
           </div>
-        ) : filteredBeats.length === 0 ? (
+        ) : samples.length === 0 && activeCategory === 'all' ? (
           <div className="text-center py-8 text-muted-foreground">
             <Music className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
-            <p>No {genres.find(g => g.value === genre)?.label} beats uploaded yet.</p>
+            <p>No samples uploaded yet.</p>
             <Button className="mt-4" variant="outline" onClick={() => setShowAddDialog(true)}>
-              Add Your First {genres.find(g => g.value === genre)?.label} Beat
+              Upload Your First Sample
+            </Button>
+          </div>
+        ) : samples.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <p>No samples found in the "{categories.find(c => c.value === activeCategory)?.label}" category.</p>
+            <Button 
+              variant="outline"
+              className="mt-4"
+              onClick={() => setActiveCategory('all')}
+            >
+              View All Categories
             </Button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredBeats.map((beat) => (
-              <Card key={beat.id} className="overflow-hidden">
-                <div 
-                  className="h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
-                  style={{
-                    backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center'
-                  }}
-                >
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <div className="text-center text-white">
-                      <h3 className="font-semibold">{beat.title}</h3>
-                      <span className="text-xs bg-primary px-2 py-0.5 rounded">
-                        {genres.find(g => g.value === beat.genre)?.label} • {beat.bpm} BPM
-                      </span>
-                    </div>
+            {samples.map((sample) => (
+              <Card key={sample.id} className="overflow-hidden">
+                <div className="p-4 border-b">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-semibold">{sample.title}</h3>
+                    <Badge variant="outline">{fileTypeDisplay(sample.sampleType || 'other')}</Badge>
                   </div>
-                </div>
-                
-                <CardContent className="p-4">
-                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{beat.description}</p>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <Badge variant={beat.featured ? "default" : "outline"}>
-                        {beat.featured ? "Featured" : "Standard"}
-                      </Badge>
-                    </div>
-                    <div className="text-md font-semibold">
-                      ${(beat.price / 100).toFixed(2)}
-                    </div>
-                  </div>
-                  <div className="mt-2">
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{sample.description}</p>
+                  <div>
                     <audio 
-                      src={beat.previewUrl} 
+                      src={sample.audioUrl} 
                       controls 
                       className="w-full h-8" 
                     />
                   </div>
-                </CardContent>
+                </div>
                 
-                <CardFooter className="flex justify-end gap-2 p-4 pt-0">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      setSelectedBeat(beat);
-                      setFormData({
-                        title: beat.title,
-                        description: beat.description,
-                        genre: beat.genre,
-                        bpm: beat.bpm,
-                        price: beat.price,
-                        previewUrl: beat.previewUrl,
-                        fullAudioUrl: beat.fullAudioUrl,
-                        imageUrl: beat.imageUrl || "",
-                        featured: beat.featured || false,
-                        licensingOptions: {
-                          basic: { price: 2999, description: "Basic license" },
-                          premium: { price: 6999, description: "Premium license" },
-                          exclusive: { price: 19999, description: "Exclusive license" },
-                          ...(typeof beat.licensingOptions === 'object' ? beat.licensingOptions : {})
-                        },
-                        tags: Array.isArray(beat.tags) ? beat.tags : [],
-                        contractUrl: beat.contractUrl || ""
-                      });
-                      setShowAddDialog(true);
-                    }}
-                  >
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit
-                  </Button>
-                  <Button 
-                    variant="destructive" 
-                    size="sm"
-                    onClick={() => {
-                      if (confirm("Are you sure you want to delete this beat?")) {
-                        // Implement delete logic
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete
-                  </Button>
-                </CardFooter>
+                <div className="bg-muted/10 px-4 py-3 flex justify-between items-center">
+                  <Badge variant="secondary">
+                    {categories.find(c => c.value === sample.category)?.label || 'General'}
+                  </Badge>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost">
+                      <Edit className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      className="text-destructive"
+                      onClick={() => {
+                        if (confirm("Are you sure you want to delete this sample?")) {
+                          deleteSampleMutation.mutate(sample.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
               </Card>
             ))}
           </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ServicesManager() {
-  const { toast } = useToast();
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    price: 9900, // $99.00
-    duration: 60, // 60 minutes
-  });
-  
-  // Fetch all services
-  const { data: services = [], isLoading } = useQuery<Service[]>({
-    queryKey: ['/api/services'],
-  });
-  
-  // Add service mutation
-  const addServiceMutation = useMutation({
-    mutationFn: async (service: any) => {
-      return apiRequest("POST", "/api/services", service);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/services'] });
-      setShowAddDialog(false);
-      resetForm();
-      toast({
-        title: "Service added successfully",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error adding service",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-  
-  // Update service mutation
-  const updateServiceMutation = useMutation({
-    mutationFn: async ({ id, service }: { id: number; service: any }) => {
-      return apiRequest("PUT", `/api/services/${id}`, service);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/services'] });
-      setShowAddDialog(false);
-      resetForm();
-      toast({
-        title: "Service updated successfully",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error updating service",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-  
-  // Delete service mutation
-  const deleteServiceMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return apiRequest("DELETE", `/api/services/${id}`, {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/services'] });
-      toast({
-        title: "Service deleted successfully",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error deleting service",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-  
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      description: "",
-      price: 9900,
-      duration: 60,
-    });
-    setSelectedService(null);
-  };
-  
-  const handleEdit = (service: Service) => {
-    setSelectedService(service);
-    setFormData({
-      name: service.name,
-      description: service.description,
-      price: service.price,
-      duration: service.duration,
-    });
-    setShowAddDialog(true);
-  };
-  
-  const handleAddOrUpdate = () => {
-    // Basic validation
-    if (!formData.name || !formData.description) {
-      toast({
-        title: "Missing required fields",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (selectedService) {
-      // Update existing service
-      updateServiceMutation.mutate({
-        id: selectedService.id,
-        service: formData,
-      });
-    } else {
-      // Add new service
-      addServiceMutation.mutate(formData);
-    }
-  };
-  
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Services</CardTitle>
-          <CardDescription>Manage your service offerings</CardDescription>
-        </div>
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <PlusCircle className="h-4 w-4 mr-2" />
-              Add Service
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {selectedService ? "Edit Service" : "Add New Service"}
-              </DialogTitle>
-              <DialogDescription>
-                Add or edit a service that clients can book.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="name">Service Name</Label>
-                <Input 
-                  id="name" 
-                  placeholder="e.g., Recording Session" 
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea 
-                  id="description" 
-                  placeholder="Describe the service" 
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="price">Price ($)</Label>
-                  <Input 
-                    id="price" 
-                    type="number" 
-                    placeholder="99.00" 
-                    value={formData.price / 100}
-                    onChange={(e) => setFormData({...formData, price: Math.round(parseFloat(e.target.value) * 100) || 0})}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="duration">Duration (minutes)</Label>
-                  <Input 
-                    id="duration" 
-                    type="number" 
-                    placeholder="60" 
-                    value={formData.duration}
-                    onChange={(e) => setFormData({...formData, duration: parseInt(e.target.value) || 0})}
-                  />
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetForm}>Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleAddOrUpdate}>
-                {selectedService ? "Update Service" : "Add Service"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
-          </div>
-        ) : services.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Calendar className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
-            <p>No services added yet.</p>
-            <Button className="mt-4" variant="outline" onClick={() => setShowAddDialog(true)}>
-              Add Your First Service
-            </Button>
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {services.map((service) => (
-                <TableRow key={service.id}>
-                  <TableCell className="font-medium">{service.name}</TableCell>
-                  <TableCell className="max-w-md truncate">{service.description}</TableCell>
-                  <TableCell>${service.price / 100}</TableCell>
-                  <TableCell>{service.duration} minutes</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(service)}>
-                        <Edit className="h-4 w-4 mr-1" />
-                        Edit
-                      </Button>
-                      <Button 
-                        size="sm" 
-                        variant="ghost" 
-                        className="text-destructive"
-                        onClick={() => deleteServiceMutation.mutate(service.id)}
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         )}
       </CardContent>
     </Card>
