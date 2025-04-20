@@ -88,7 +88,9 @@ const PricingCard = ({
         </ul>
         
         <Button asChild className="w-full bg-primary hover:bg-primary-600">
-          <Link href="/booking">{buttonText}</Link>
+          <Link href={`/booking?type=${service.name.toLowerCase().includes("mixing") ? "mixing" : "recording"}`}>
+            {buttonText}
+          </Link>
         </Button>
       </div>
     </div>

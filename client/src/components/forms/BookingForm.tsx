@@ -202,6 +202,19 @@ export default function BookingForm({
     form.setValue("timeSlotId", timeSlot.id);
   };
   
+  // Handle date selection for mixing services (no time slot needed)
+  useEffect(() => {
+    if (isMixingService && selectedDate) {
+      // For mixing services, we just need the date without a specific time
+      const dateWithNoon = new Date(selectedDate);
+      dateWithNoon.setHours(12, 0, 0, 0); // Set to noon
+      form.setValue("date", dateWithNoon.toISOString());
+      
+      // Use a placeholder time slot ID that will be handled differently on the server
+      form.setValue("timeSlotId", -1);
+    }
+  }, [isMixingService, selectedDate, form]);
+  
   // Calculate total price
   const calculateTotal = () => {
     if (!selectedService || !selectedDuration) return 0;
@@ -621,7 +634,9 @@ export default function BookingForm({
             <Calendar
               mode="single"
               selected={selectedDate}
-              onSelect={(date) => date && handleDateSelect(date)}
+              onSelect={(date) => {
+                if (date) handleDateSelect(date);
+              }}
               disabled={(date) => {
                 // Can't select dates in the past
                 const today = new Date();
@@ -835,8 +850,9 @@ export default function BookingForm({
           className="w-full bg-primary hover:bg-primary-600 py-6 text-base"
           disabled={
             !selectedService || 
-            !selectedTime || 
+            (!isMixingService && !selectedTime) || 
             !selectedDuration || 
+            (isMixingService && !selectedDate) ||
             form.formState.isSubmitting
           }
         >

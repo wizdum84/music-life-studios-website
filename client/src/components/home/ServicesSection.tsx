@@ -48,7 +48,9 @@ const ServiceCard = ({ service }: { service: Service }) => {
       </CardContent>
       <CardFooter className="px-6 pb-6">
         <Button asChild className="w-full bg-primary hover:bg-primary-600">
-          <Link href="/booking">{getButtonText()}</Link>
+          <Link href={`/booking?type=${service.name.toLowerCase().includes("mixing") ? "mixing" : "recording"}`}>
+            {getButtonText()}
+          </Link>
         </Button>
       </CardFooter>
     </Card>
