@@ -44,24 +44,64 @@ export default function ContentManager() {
     <div className="space-y-6">
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Content Management</CardTitle>
-          <CardDescription>Manage your portfolio, beats, samples, and other content</CardDescription>
+          <CardTitle>Content Manager</CardTitle>
+          <CardDescription>Manage your portfolio tracks, samples, beats, and contracts</CardDescription>
         </CardHeader>
       </Card>
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <div className="overflow-x-auto pb-2 border-b">
-          <TabsList className="w-full justify-start bg-background mb-4">
-            <TabsTrigger value="tracks" className="px-4 py-3 data-[state=active]:bg-muted">Music Portfolio</TabsTrigger>
-            <TabsTrigger value="samples" className="px-4 py-3 data-[state=active]:bg-muted">Samples</TabsTrigger>
-            <TabsTrigger value="beats" className="px-4 py-3 data-[state=active]:bg-muted">Beat Marketplace</TabsTrigger>
-            <TabsTrigger value="beats-by-genre" className="px-4 py-3 data-[state=active]:bg-muted">Beats by Genre</TabsTrigger>
-            <TabsTrigger value="services" className="px-4 py-3 data-[state=active]:bg-muted">Services</TabsTrigger>
-            <TabsTrigger value="contracts" className="px-4 py-3 data-[state=active]:bg-muted">
-              <FileText className="h-4 w-4 mr-2" />
-              Contracts
-            </TabsTrigger>
-          </TabsList>
+        <div className="border-b">
+          <div className="overflow-x-auto custom-scrollbar pb-2">
+            <TabsList className="w-full md:w-auto inline-flex p-1 bg-muted/20 mb-4">
+              <TabsTrigger 
+                value="tracks" 
+                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                <Music className="h-4 w-4 mr-2" />
+                Music Portfolio
+              </TabsTrigger>
+              
+              <TabsTrigger 
+                value="samples" 
+                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                <span className="flex items-center">
+                  <Music className="h-4 w-4 mr-2" />
+                  Samples
+                </span>
+              </TabsTrigger>
+              
+              <TabsTrigger 
+                value="beats" 
+                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                <span className="flex items-center">
+                  <Music className="h-4 w-4 mr-2" />
+                  Beat Marketplace
+                </span>
+              </TabsTrigger>
+              
+              <TabsTrigger 
+                value="services" 
+                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                <span className="flex items-center">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Services
+                </span>
+              </TabsTrigger>
+              
+              <TabsTrigger 
+                value="contracts" 
+                className="px-4 py-2.5 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                <span className="flex items-center">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Contracts
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </div>
         
         <TabsContent value="tracks">
@@ -76,11 +116,7 @@ export default function ContentManager() {
           <BeatsManager />
         </TabsContent>
         
-        <TabsContent value="beats-by-genre">
-          <BeatsByGenreManager />
-        </TabsContent>
-        
-        {/* We don't need a separate schedule tab here since it's already in the main tabs */}
+        {/* Moved beats by genre into main beats manager */}
         
         <TabsContent value="services">
           <ServicesManager />
@@ -1057,18 +1093,29 @@ function SamplesManager() {
     }
   };
   
+  // Category filter buttons
+  const categories = [
+    { value: "all", label: "All Samples" },
+    { value: "drums", label: "Drums" },
+    { value: "vocals", label: "Vocals" },
+    { value: "bass", label: "Bass" },
+    { value: "melody", label: "Melody" },
+    { value: "effect", label: "Effects" },
+    { value: "stem", label: "Stems" }
+  ];
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Samples Manager</CardTitle>
-          <CardDescription>Upload and manage your audio samples</CardDescription>
+          <CardTitle>Sample Library</CardTitle>
+          <CardDescription>Manage your collection of audio samples</CardDescription>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary/80">
               <PlusCircle className="h-4 w-4 mr-2" />
-              Upload New Sample
+              Upload Sample
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl">
@@ -1231,7 +1278,25 @@ function SamplesManager() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <>
+            <div className="mb-6">
+              <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
+                {categories.map(category => (
+                  <Button
+                    key={category.value}
+                    variant={activeCategory === category.value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setActiveCategory(category.value)}
+                    className={activeCategory === category.value ? 
+                      "bg-primary text-primary-foreground" : ""}
+                  >
+                    {category.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {samples.map((sample) => (
               <Card key={sample.id} className="overflow-hidden">
                 <div 
@@ -1319,6 +1384,7 @@ function SamplesManager() {
               </Card>
             ))}
           </div>
+          </>
         )}
       </CardContent>
     </Card>
