@@ -179,6 +179,11 @@ export function BraintreePaymentForm({
 }
 
 export default function BookingForm({ services, timeSlots }: BookingFormProps) {
+  // Adding console logs to track component rendering
+  console.log("BookingForm component rendering");
+  
+  // Add a state to force render
+  const [forceRender, setForceRender] = useState(0);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<TimeSlot | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<number | null>(null);
@@ -336,22 +341,32 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
     setIsPaymentStep(true);
   };
   
-  // Form submission
-  const onSubmit = async (data: FormData) => {
-    try {
-      // Store booking data for later submission after payment
-      setBookingData(data);
-      
-      // Move to contract step
+  // Add a useEffect to watch for bookingData changes
+  useEffect(() => {
+    if (bookingData) {
+      console.log("BookingData changed, triggering contract step");
+      // Ensure payment step is false
+      setIsPaymentStep(false);
+      // Set contract step to true
       setIsContractStep(true);
-    } catch (error) {
-      console.error("Error creating booking:", error);
-      toast({
-        title: "Error",
-        description: "Failed to process your booking. Please try again.",
-        variant: "destructive"
-      });
+      // Force render
+      setForceRender(prev => prev + 1);
+      
+      // Scroll to top
+      const container = document.getElementById("booking-form-container");
+      if (container) {
+        console.log("Container found, scrolling to top");
+        container.scrollTo(0, 0);
+      }
     }
+  }, [bookingData]);
+  
+  // Form submission
+  const onSubmit = (data: FormData) => {
+    console.log("Form submitted successfully with data:", data);
+    
+    // Just set the booking data, the useEffect will handle the rest
+    setBookingData(data);
   };
   
   // If booking is complete, show confirmation
@@ -372,8 +387,10 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
     );
   }
   
+  console.log("Current rendering state:", { isContractStep, isPaymentStep, forceRender });
+  
   // If we're at the contract step, show contract requirements
-  if (isContractStep) {
+  if (isContractStep || (bookingData && !isPaymentStep)) {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center mb-2">

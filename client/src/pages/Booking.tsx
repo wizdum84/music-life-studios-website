@@ -45,7 +45,7 @@ export default function Booking() {
             </p>
           </div>
           
-          <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6 md:p-8 text-foreground">
+          <div id="booking-form-container" className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6 md:p-8 text-foreground">
             {isLoading ? (
               <div className="flex justify-center items-center py-20">
                 <Loader2 className="w-10 h-10 text-primary animate-spin" />
