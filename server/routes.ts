@@ -4,12 +4,9 @@ import { storage } from "./storage";
 import { insertBookingSchema, insertMessageSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import session from "express-session";
-import MemoryStore from "memorystore";
-import passport from "passport";
-import { Strategy as LocalStrategy } from "passport-local";
 import * as braintreeService from "./services/braintree";
 import * as emailService from "./services/email";
+import { setupAuth } from "./auth";
 
 // Create default contracts if they don't exist
 async function ensureContractsExist() {
@@ -112,60 +109,9 @@ By signing this agreement, you acknowledge that you understand and will abide by
 export async function registerRoutes(app: Express): Promise<Server> {
   // Ensure all contracts exist when the server starts
   await ensureContractsExist();
-  // Session setup for admin authentication
-  const MemoryStoreSession = MemoryStore(session);
   
-  app.use(
-    session({
-      secret: process.env.SESSION_SECRET || "soundcraft-session-secret",
-      resave: false,
-      saveUninitialized: false,
-      store: new MemoryStoreSession({
-        checkPeriod: 86400000, // Prune expired entries every 24h
-      }),
-      cookie: { maxAge: 24 * 60 * 60 * 1000 }, // 24 hours
-    })
-  );
-  
-  // Set up passport for authentication
-  app.use(passport.initialize());
-  app.use(passport.session());
-  
-  // Configure passport to use local strategy
-  passport.use(
-    new LocalStrategy(async (username, password, done) => {
-      try {
-        const user = await storage.getUserByUsername(username);
-        if (!user) {
-          return done(null, false, { message: "Incorrect username" });
-        }
-        
-        // In a real app, you would compare hashed passwords
-        if (user.password !== password) {
-          return done(null, false, { message: "Incorrect password" });
-        }
-        
-        return done(null, user);
-      } catch (err) {
-        return done(err);
-      }
-    })
-  );
-  
-  // Serialize user for session
-  passport.serializeUser((user: any, done) => {
-    done(null, user.id);
-  });
-  
-  // Deserialize user from session
-  passport.deserializeUser(async (id: number, done) => {
-    try {
-      const user = await storage.getUser(id);
-      done(null, user);
-    } catch (err) {
-      done(err);
-    }
-  });
+  // Set up authentication with the new auth module
+  setupAuth(app);
   
   // Authentication middleware
   const isAuthenticated = (req: Request, res: Response, next: any) => {
@@ -176,28 +122,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
   
   // API routes
-  
-  // Authentication routes
-  app.post("/api/login", passport.authenticate("local"), (req, res) => {
-    res.json({ message: "Login successful", user: req.user });
-  });
-  
-  app.post("/api/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) {
-        return res.status(500).json({ message: "Error logging out" });
-      }
-      res.json({ message: "Logged out successfully" });
-    });
-  });
-  
-  app.get("/api/check-auth", (req, res) => {
-    if (req.isAuthenticated()) {
-      res.json({ authenticated: true, user: req.user });
-    } else {
-      res.json({ authenticated: false });
-    }
-  });
   
   // Services API
   app.get("/api/services", async (req, res) => {
