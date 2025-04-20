@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Helmet } from "react-helmet";
 import { Loader2 } from "lucide-react";
@@ -6,6 +6,22 @@ import BookingForm from "@/components/forms/BookingForm";
 import { Service, TimeSlot } from "@shared/schema";
 
 export default function Booking() {
+  // Get service type from URL parameters
+  const [preselectedServiceId, setPreselectedServiceId] = useState<number | null>(null);
+  const [serviceType, setServiceType] = useState<'recording' | 'mixing' | null>(null);
+  
+  // Extract service type from URL on component mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const type = urlParams.get('type');
+    
+    if (type === 'mixing' || type === 'mastering' || type === 'mixing-mastering') {
+      setServiceType('mixing');
+    } else if (type === 'recording') {
+      setServiceType('recording');
+    }
+  }, []);
+
   const [startDate] = useState(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -22,6 +38,26 @@ export default function Booking() {
   const { data: services, isLoading: isLoadingServices } = useQuery<Service[]>({
     queryKey: ['/api/services'],
   });
+  
+  // Auto-select service when services are loaded
+  useEffect(() => {
+    if (services && serviceType && !preselectedServiceId) {
+      const matchingService = services.find(service => {
+        if (serviceType === 'mixing') {
+          return service.name.toLowerCase().includes('mixing') || 
+                service.name.toLowerCase().includes('mastering');
+        } else if (serviceType === 'recording') {
+          return service.name.toLowerCase().includes('recording') || 
+                service.name.toLowerCase().includes('session');
+        }
+        return false;
+      });
+      
+      if (matchingService) {
+        setPreselectedServiceId(matchingService.id);
+      }
+    }
+  }, [services, serviceType, preselectedServiceId]);
   
   const { data: timeSlots, isLoading: isLoadingTimeSlots } = useQuery<TimeSlot[]>({
     queryKey: ['/api/time-slots', { startDate: startDate.toISOString(), endDate: endDate.toISOString() }],
@@ -53,7 +89,9 @@ export default function Booking() {
             ) : (
               <BookingForm 
                 services={services || []} 
-                timeSlots={timeSlots || []} 
+                timeSlots={timeSlots || []}
+                preselectedServiceId={preselectedServiceId}
+                serviceType={serviceType}
               />
             )}
           </div>

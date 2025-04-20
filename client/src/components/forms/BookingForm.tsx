@@ -80,19 +80,33 @@ type FormData = z.infer<typeof formSchema>;
 interface BookingFormProps {
   services: Service[];
   timeSlots: TimeSlot[];
+  preselectedServiceId?: number | null;
+  serviceType?: 'recording' | 'mixing' | null;
 }
 
-export default function BookingForm({ services, timeSlots }: BookingFormProps) {
+export default function BookingForm({ 
+  services, 
+  timeSlots, 
+  preselectedServiceId = null,
+  serviceType = null
+}: BookingFormProps) {
   // State machine for the booking process
   const [currentStep, setCurrentStep] = useState<'form' | 'contract' | 'payment' | 'confirmation'>('form');
   
   // Form data state
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<TimeSlot | null>(null);
-  const [selectedServiceId, setSelectedServiceId] = useState<number | null>(null);
+  const [selectedServiceId, setSelectedServiceId] = useState<number | null>(preselectedServiceId);
   const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [availableTimes, setAvailableTimes] = useState<TimeSlot[]>([]);
   const [bookingData, setBookingData] = useState<FormData | null>(null);
+  
+  // Service type flags
+  const isMixingService = serviceType === 'mixing' || 
+    (selectedServiceId && services.some(s => 
+      s.id === selectedServiceId && 
+      (s.name.toLowerCase().includes('mixing') || s.name.toLowerCase().includes('mastering'))
+    ));
   
   // Payment state
   const [contractSigned, setContractSigned] = useState(false);
