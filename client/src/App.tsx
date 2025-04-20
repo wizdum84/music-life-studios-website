@@ -12,6 +12,8 @@ import CompletePayment from "@/pages/CompletePayment";
 import Analytics from "@/pages/Analytics";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+import { AuthProvider } from "@/hooks/use-auth";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 function Router() {
   return (
@@ -21,8 +23,8 @@ function Router() {
       <Route path="/beats" component={Beats} />
       <Route path="/complete-payment" component={CompletePayment} />
       <Route path="/admin/login" component={AdminLogin} />
-      <Route path="/admin" component={Admin} />
-      <Route path="/analytics" component={Analytics} />
+      <ProtectedRoute path="/admin" component={Admin} adminOnly={true} />
+      <ProtectedRoute path="/analytics" component={Analytics} adminOnly={true} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -31,14 +33,16 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex flex-col min-h-screen">
-        <Navbar />
-        <main className="flex-grow">
-          <Router />
-        </main>
-        <Footer />
-      </div>
-      <Toaster />
+      <AuthProvider>
+        <div className="flex flex-col min-h-screen">
+          <Navbar />
+          <main className="flex-grow">
+            <Router />
+          </main>
+          <Footer />
+        </div>
+        <Toaster />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
