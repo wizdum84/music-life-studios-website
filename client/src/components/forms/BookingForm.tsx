@@ -569,14 +569,29 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="60">1 hour</SelectItem>
-                    <SelectItem value="120">2 hours</SelectItem>
-                    <SelectItem value="180">3 hours</SelectItem>
-                    <SelectItem value="240">4 hours</SelectItem>
-                    <SelectItem value="300">5 hours</SelectItem>
-                    <SelectItem value="360">6 hours</SelectItem>
-                    <SelectItem value="420">7 hours</SelectItem>
-                    <SelectItem value="480">8 hours</SelectItem>
+                    {selectedService && (selectedService.name.toLowerCase().includes("mixing") || 
+                      selectedService.name.toLowerCase().includes("mastering")) ? (
+                      <>
+                        <SelectItem value="60">1 song</SelectItem>
+                        <SelectItem value="120">2 songs</SelectItem>
+                        <SelectItem value="180">3 songs</SelectItem>
+                        <SelectItem value="240">4 songs</SelectItem>
+                        <SelectItem value="300">5 songs</SelectItem>
+                        <SelectItem value="360">EP (6 songs)</SelectItem>
+                        <SelectItem value="480">Album (8-10 songs)</SelectItem>
+                      </>
+                    ) : (
+                      <>
+                        <SelectItem value="60">1 hour</SelectItem>
+                        <SelectItem value="120">2 hours</SelectItem>
+                        <SelectItem value="180">3 hours</SelectItem>
+                        <SelectItem value="240">4 hours</SelectItem>
+                        <SelectItem value="300">5 hours</SelectItem>
+                        <SelectItem value="360">6 hours</SelectItem>
+                        <SelectItem value="420">7 hours</SelectItem>
+                        <SelectItem value="480">8 hours</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -702,12 +717,21 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
             
             <div className="flex justify-between mb-2">
               <span>{selectedService.name} ({formatTime(new Date(selectedTime.date))}, {formatDate(selectedDate!)})</span>
-              <span>${selectedService.price / 100}/hour</span>
+              <span>${selectedService.price / 100}/{selectedService && (selectedService.name.toLowerCase().includes("mixing") || selectedService.name.toLowerCase().includes("mastering")) ? 'song' : 'hour'}</span>
             </div>
             
             <div className="flex justify-between mb-2">
-              <span>Duration</span>
-              <span>{selectedDuration / 60} hours</span>
+              {selectedService && (selectedService.name.toLowerCase().includes("mixing") || selectedService.name.toLowerCase().includes("mastering")) ? (
+                <>
+                  <span>Number of Songs</span>
+                  <span>{selectedDuration / 60} {selectedDuration === 60 ? 'song' : 'songs'}</span>
+                </>
+              ) : (
+                <>
+                  <span>Duration</span>
+                  <span>{selectedDuration / 60} {selectedDuration === 60 ? 'hour' : 'hours'}</span>
+                </>
+              )}
             </div>
             
             <div className="flex justify-between font-medium border-t border-muted pt-2 mt-2">
@@ -763,7 +787,10 @@ export default function BookingForm({ services, timeSlots }: BookingFormProps) {
           ) : (
             <>
               <FileText className="mr-2 h-4 w-4" />
-              Continue to Studio Rules
+              {selectedService && (selectedService.name.toLowerCase().includes("mixing") || 
+                selectedService.name.toLowerCase().includes("mastering")) ? 
+                "Continue to Mixing Agreement" : 
+                "Continue to Studio Rules"}
             </>
           )}
         </Button>
