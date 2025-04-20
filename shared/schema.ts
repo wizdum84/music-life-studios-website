@@ -7,6 +7,7 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  role: text("role").default("user"), // user, admin
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -67,6 +68,7 @@ export const bookings = pgTable("bookings", {
   paymentIntentId: text("payment_intent_id"),
   paymentStatus: text("payment_status").default("unpaid"), // unpaid, deposit_paid, paid
   amount: integer("amount").notNull(), // In cents
+  tipAmount: integer("tip_amount").default(0), // Optional tip amount in cents
   transactionId: text("transaction_id"),  // Braintree transaction ID
   paymentMethod: text("payment_method"),  // card, paypal, etc.
   paymentErrorMessage: text("payment_error_message"), // Error message if payment failed
