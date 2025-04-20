@@ -11,20 +11,17 @@ import { Strategy as LocalStrategy } from "passport-local";
 import * as braintreeService from "./services/braintree";
 import * as emailService from "./services/email";
 
-// Create default studio rules contract if it doesn't exist
-async function ensureStudioRulesExist() {
+// Create default contracts if they don't exist
+async function ensureContractsExist() {
   try {
     // Check if we already have a studio rules contract
     const existingRules = await storage.getContractsByCategory("studio_rules");
     
-    if (existingRules && existingRules.length > 0) {
-      return; // We already have studio rules
-    }
-    
-    // Create default studio rules contract
-    await storage.createContract({
-      title: "Studio Rules & Policies",
-      description: `MUSIC LIFE STUDIOS - STUDIO RULES & POLICIES
+    if (!existingRules || existingRules.length === 0) {
+      // Create default studio rules contract
+      await storage.createContract({
+        title: "Studio Rules & Policies",
+        description: `MUSIC LIFE STUDIOS - STUDIO RULES & POLICIES
 
 BOOKING & CANCELLATION:
 - A 25% non-refundable deposit is required to secure all bookings.
@@ -52,20 +49,69 @@ POST-SESSION:
 - Major revisions may incur additional costs.
 
 By signing this agreement, you acknowledge you have read and agree to comply with all studio rules and policies.`,
-      fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/studio_rules.pdf",
-      fileType: "pdf",
-      category: "studio_rules",
-    });
+        fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/studio_rules.pdf",
+        fileType: "pdf",
+        category: "studio_rules",
+      });
+      
+      console.log("Default studio rules contract created");
+    }
     
-    console.log("Default studio rules contract created");
+    // Check if we already have a mixing & mastering contract
+    const existingMixingContracts = await storage.getContractsByCategory("mixing_mastering");
+    
+    if (!existingMixingContracts || existingMixingContracts.length === 0) {
+      // Create default mixing & mastering contract
+      await storage.createContract({
+        title: "Mixing & Mastering Agreement",
+        description: `MUSIC LIFE STUDIOS - MIXING & MASTERING AGREEMENT
+
+FILE REQUIREMENTS:
+- All audio files must be provided as WAV or AIFF files (minimum 44.1kHz, 24-bit).
+- Files should be properly labeled (e.g., "01_Kick.wav", "02_Snare.wav").
+- All files must be consolidated from the start of the project to ensure proper alignment.
+- Include a rough mix reference if available.
+- Please include notes on your creative vision for the final product.
+
+REVISION POLICY:
+- Two rounds of revisions are included in the base price.
+- Additional revision rounds will be charged at 25% of the original fee per round.
+- Minor tweaks count as a single revision if submitted together.
+- Revision requests must be specific and detailed.
+
+TIMELINE & DELIVERY:
+- Standard turnaround time is 5-7 business days per track from receipt of complete files.
+- Rush service is available for an additional fee, subject to availability.
+- Final files will be delivered as WAV (44.1kHz, 24-bit) and MP3 (320kbps).
+- Files will be delivered via secure download link.
+
+RIGHTS & USAGE:
+- You retain all rights to your original composition and recordings.
+- Music Life Studios retains the right to use the mixed/mastered tracks for promotional purposes.
+- We may list your project in our portfolio unless you explicitly request otherwise.
+- Stems and individual track exports are available for an additional fee.
+
+PAYMENT TERMS:
+- A 50% non-refundable deposit is required to secure your booking for mixing/mastering services.
+- The remaining balance is due before the final files are delivered.
+- No refunds will be issued after the mixing/mastering process has begun.
+
+By signing this agreement, you acknowledge that you understand and will abide by this mixing and mastering agreement.`,
+        fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/mixing_mastering.pdf",
+        fileType: "pdf",
+        category: "mixing_mastering",
+      });
+      
+      console.log("Default mixing & mastering contract created");
+    }
   } catch (error) {
-    console.error("Error creating default studio rules contract:", error);
+    console.error("Error creating default contracts:", error);
   }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Ensure studio rules exist when the server starts
-  await ensureStudioRulesExist();
+  // Ensure all contracts exist when the server starts
+  await ensureContractsExist();
   // Session setup for admin authentication
   const MemoryStoreSession = MemoryStore(session);
   

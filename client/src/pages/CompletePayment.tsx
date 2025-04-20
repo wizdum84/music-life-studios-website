@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Check, CreditCard, DollarSign } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
-import { BraintreePaymentForm } from "@/components/forms/BookingForm";
+import { BraintreePaymentForm } from "@/components/forms/BraintreePaymentForm";
 
 // Form schema for searching a booking
 const searchSchema = z.object({
