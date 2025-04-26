@@ -10,8 +10,11 @@ import {
   Contract, InsertContract,
   ContractSignature, InsertContractSignature,
   Feedback, InsertFeedback,
+  Promotion, InsertPromotion,
+  LoyaltyRecord, InsertLoyaltyRecord,
   users, services, tracks, bookings, messages, timeSlots,
-  beats, beatPurchases, contracts, contractSignatures, feedbacks
+  beats, beatPurchases, contracts, contractSignatures, feedbacks,
+  promotions, loyaltyRecords
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, gte, lte, desc, sql, asc } from "drizzle-orm";

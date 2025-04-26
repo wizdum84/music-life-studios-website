@@ -2,18 +2,38 @@ import { pgTable, text, serial, integer, boolean, timestamp, json } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// User schema (admin users)
+// User schema (admin users and customers)
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
+  email: text("email").notNull().unique(),
   password: text("password").notNull(),
-  role: text("role").default("user"), // user, admin
+  role: text("role").default("customer"), // customer, admin
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  phone: text("phone"),
+  sessionCount: integer("session_count").default(0).notNull(),
+  loyaltyPoints: integer("loyalty_points").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastLogin: timestamp("last_login"),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
+export const insertUserSchema = createInsertSchema(users)
+  .omit({ 
+    id: true, 
+    sessionCount: true, 
+    loyaltyPoints: true, 
+    createdAt: true, 
+    lastLogin: true 
+  })
+  .extend({
+    email: z.string().email("Please enter a valid email"),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    phone: z.string().optional(),
+    role: z.enum(["customer", "admin"]).default("customer"),
+  });
 
 // Services schema
 export const services = pgTable("services", {
@@ -58,9 +78,11 @@ export const insertTrackSchema = createInsertSchema(tracks).pick({
 // Bookings schema
 export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id"), // Link to user if they're registered
   serviceId: integer("service_id").notNull(),
   name: text("name").notNull(),
   email: text("email").notNull(),
+  phone: text("phone"),
   date: timestamp("date").notNull(),
   duration: integer("duration").notNull(), // In minutes
   details: text("details"),
@@ -75,6 +97,7 @@ export const bookings = pgTable("bookings", {
   paymentMetadata: json("payment_metadata"), // Additional payment information
   discountCode: text("discount_code"), // Discount code applied to booking
   discountAmount: integer("discount_amount"), // Discount amount in cents
+  loyaltyApplied: boolean("loyalty_applied").default(false), // Whether this is a free loyalty session
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -89,12 +112,15 @@ export const insertBookingSchema = createInsertSchema(bookings)
     paymentErrorMessage: true,
     paymentMetadata: true,
     discountCode: true,
-    discountAmount: true
+    discountAmount: true,
+    loyaltyApplied: true
   })
   .extend({
+    userId: z.number().optional(),
     serviceId: z.number(),
     name: z.string().min(2, "Name must be at least 2 characters"),
     email: z.string().email("Please enter a valid email"),
+    phone: z.string().optional(),
     date: z.string().or(z.date()),
     duration: z.number(),
     details: z.string().optional(),
@@ -299,3 +325,64 @@ export const insertFeedbackSchema = createInsertSchema(feedbacks)
 
 export type Feedback = typeof feedbacks.$inferSelect;
 export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
+
+// Promotions schema
+export const promotions = pgTable("promotions", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  code: text("code").notNull().unique(),
+  discountType: text("discount_type").notNull(), // percentage, fixed
+  discountValue: integer("discount_value").notNull(), // Either percentage or amount in cents
+  minPurchase: integer("min_purchase"), // Minimum purchase amount in cents
+  maxDiscount: integer("max_discount"), // Maximum discount amount in cents
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  active: boolean("active").default(true),
+  usageLimit: integer("usage_limit"), // Maximum number of times the promo can be used
+  usageCount: integer("usage_count").default(0), // Number of times the promo has been used
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPromotionSchema = createInsertSchema(promotions)
+  .omit({ id: true, usageCount: true, createdAt: true })
+  .extend({
+    title: z.string().min(2, "Title must be at least 2 characters"),
+    description: z.string().min(10, "Description must be at least 10 characters"),
+    code: z.string().min(3, "Code must be at least 3 characters"),
+    discountType: z.enum(["percentage", "fixed"]),
+    discountValue: z.number().min(1, "Discount value must be at least 1"),
+    minPurchase: z.number().optional(),
+    maxDiscount: z.number().optional(),
+    startDate: z.string().or(z.date()),
+    endDate: z.string().or(z.date()),
+    active: z.boolean().default(true),
+    usageLimit: z.number().optional(),
+  });
+
+export type Promotion = typeof promotions.$inferSelect;
+export type InsertPromotion = z.infer<typeof insertPromotionSchema>;
+
+// User loyalty records schema (for tracking loyalty program activity)
+export const loyaltyRecords = pgTable("loyalty_records", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  bookingId: integer("booking_id"),
+  action: text("action").notNull(), // session_completed, reward_earned, reward_used
+  pointsChange: integer("points_change").notNull(), // Positive for earned, negative for used
+  description: text("description").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertLoyaltyRecordSchema = createInsertSchema(loyaltyRecords)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    userId: z.number(),
+    bookingId: z.number().optional(),
+    action: z.enum(["session_completed", "reward_earned", "reward_used"]),
+    pointsChange: z.number(),
+    description: z.string().min(2, "Description must be at least 2 characters"),
+  });
+
+export type LoyaltyRecord = typeof loyaltyRecords.$inferSelect;
+export type InsertLoyaltyRecord = z.infer<typeof insertLoyaltyRecordSchema>;
