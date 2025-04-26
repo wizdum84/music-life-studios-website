@@ -30,6 +30,11 @@ export default function AdminLogin() {
   const [location, navigate] = useLocation();
   const { user, isLoading, loginMutation } = useAuth();
   
+  // Scroll to top on component mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+  
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {

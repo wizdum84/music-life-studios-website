@@ -6,12 +6,31 @@ import AdminDashboard from "@/components/admin/AdminDashboard";
 import BookingManager from "@/components/admin/BookingManager";
 import ContentManager from "@/components/admin/ContentManager";
 import ScheduleManager from "@/components/admin/ScheduleManager";
-import { Loader2, BarChart2 } from "lucide-react";
+import { Loader2, BarChart2, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/hooks/use-toast";
 
 export default function Admin() {
   const [location, navigate] = useLocation();
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, logoutMutation } = useAuth();
+  
+  // Scroll to top on component mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+  
+  const handleLogout = () => {
+    logoutMutation.mutate(undefined, {
+      onSuccess: () => {
+        navigate('/');
+        toast({
+          title: "Logged out",
+          description: "You have been successfully logged out.",
+        });
+      }
+    });
+  };
   
   useEffect(() => {
     if (!isLoading && !user) {
@@ -56,13 +75,34 @@ export default function Admin() {
               </p>
             </div>
             
-            <a 
-              href="/analytics" 
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors w-full md:w-auto"
-            >
-              <BarChart2 size={18} />
-              <span className="font-medium">Business Analytics</span>
-            </a>
+            <div className="flex flex-col md:flex-row gap-2">
+              <a 
+                href="/analytics" 
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors w-full md:w-auto"
+              >
+                <BarChart2 size={18} />
+                <span className="font-medium">Business Analytics</span>
+              </a>
+              
+              <Button 
+                variant="outline" 
+                className="inline-flex items-center justify-center gap-2 w-full md:w-auto"
+                onClick={handleLogout}
+                disabled={logoutMutation.isPending}
+              >
+                {logoutMutation.isPending ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Logging out...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogOut size={18} />
+                    <span>Logout</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </header>
         
