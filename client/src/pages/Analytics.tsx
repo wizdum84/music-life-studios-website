@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
+import { Loader2 } from "lucide-react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, AreaChart, Area
@@ -76,11 +79,36 @@ export default function Analytics() {
   // State for filtering data
   const [period, setPeriod] = useState("30days");
   const [currentTab, setCurrentTab] = useState("overview");
+  const [location, navigate] = useLocation();
+  const { user, isLoading } = useAuth();
+  
+  // Check if user is admin
+  useEffect(() => {
+    if (!isLoading && !user) {
+      navigate('/admin/login');
+    } else if (!isLoading && user && user.role !== 'admin') {
+      navigate('/');
+    }
+  }, [user, isLoading, navigate]);
   
   // Scroll to top when page loads
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+  
+  // Show loading state while checking auth
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      </div>
+    );
+  }
+  
+  // Don't render anything if not logged in or not admin
+  if (!user || user.role !== 'admin') {
+    return null;
+  }
   
   // Fetch required data
   const { data: bookings = [] } = useQuery<Booking[]>({

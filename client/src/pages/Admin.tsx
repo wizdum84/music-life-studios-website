@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Helmet } from "react-helmet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,19 +7,17 @@ import BookingManager from "@/components/admin/BookingManager";
 import ContentManager from "@/components/admin/ContentManager";
 import ScheduleManager from "@/components/admin/ScheduleManager";
 import { Loader2, BarChart2 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Admin() {
   const [location, navigate] = useLocation();
-  
-  const { data: authData, isLoading } = useQuery({
-    queryKey: ['/api/check-auth'],
-  });
+  const { user, isLoading } = useAuth();
   
   useEffect(() => {
-    if (!isLoading && authData && !authData.authenticated) {
+    if (!isLoading && !user) {
       navigate('/admin/login');
     }
-  }, [authData, isLoading, navigate]);
+  }, [user, isLoading, navigate]);
   
   if (isLoading) {
     return (
@@ -30,8 +27,17 @@ export default function Admin() {
     );
   }
   
-  if (!authData || !authData.authenticated) {
+  if (!user) {
     return null; // Will redirect in useEffect
+  }
+  
+  if (user.role !== 'admin') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
+        <p className="mt-2 text-gray-600">You don't have admin privileges to access this page.</p>
+      </div>
+    );
   }
   
   return (

@@ -63,7 +63,7 @@ export default function AdminLogin() {
         <title>Admin Login | Music Life Studios</title>
       </Helmet>
       
-      <div className="flex items-center justify-center min-h-[80vh]">
+      <div className="flex items-center justify-center pt-16 pb-16">
         <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-md dark:bg-gray-800">
           <div className="text-center">
             <h1 className="text-2xl font-bold">Admin Login</h1>
