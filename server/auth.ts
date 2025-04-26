@@ -60,10 +60,19 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        const user = await storage.getUserByUsername(username);
+        // Try to find user by username first
+        let user = await storage.getUserByUsername(username);
+        
+        // If not found, try by email (username field might contain an email)
+        if (!user && username.includes('@')) {
+          user = await storage.getUserByEmail(username);
+        }
+        
         if (!user || !(await comparePasswords(password, user.password))) {
           return done(null, false);
         } else {
+          // Update login time and return the user
+          await storage.updateUserLoginTime(user.id);
           return done(null, user);
         }
       } catch (err) {
@@ -94,13 +103,24 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ error: "Username already exists" });
       }
 
+      // Check if email is provided and already exists
+      if (req.body.email) {
+        const existingEmail = await storage.getUserByEmail(req.body.email);
+        if (existingEmail) {
+          return res.status(400).json({ error: "Email already in use" });
+        }
+      }
+
       // Hash password
       const hashedPassword = await hashPassword(req.body.password);
 
-      // Create user
+      // Create user with loyalty program fields initialized
       const user = await storage.createUser({
         ...req.body,
         password: hashedPassword,
+        loyaltyPoints: 0,
+        sessionCount: 0,
+        lastLogin: new Date(),
       });
 
       // Log in the user

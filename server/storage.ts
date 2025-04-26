@@ -29,7 +29,27 @@ export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, userData: Partial<User>): Promise<User | undefined>;
+  updateUserLoginTime(id: number): Promise<User | undefined>;
+  updateUserLoyaltyPoints(id: number, points: number): Promise<User | undefined>;
+  incrementUserSessionCount(id: number): Promise<User | undefined>;
+  getUserBookings(userId: number): Promise<Booking[]>;
+  
+  // Loyalty Program
+  getLoyaltyRecords(userId: number): Promise<LoyaltyRecord[]>;
+  createLoyaltyRecord(record: InsertLoyaltyRecord): Promise<LoyaltyRecord>;
+  
+  // Promotions
+  getAllPromotions(): Promise<Promotion[]>;
+  getActivePromotions(): Promise<Promotion[]>;
+  getPromotion(id: number): Promise<Promotion | undefined>;
+  getPromotionByCode(code: string): Promise<Promotion | undefined>;
+  createPromotion(promotion: InsertPromotion): Promise<Promotion>;
+  updatePromotion(id: number, promotion: Partial<InsertPromotion>): Promise<Promotion | undefined>;
+  incrementPromotionUsage(id: number): Promise<Promotion | undefined>;
+  deactivatePromotion(id: number): Promise<Promotion | undefined>;
   
   // Services
   getAllServices(): Promise<Service[]>;
@@ -163,9 +183,58 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    return result[0];
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const result = await db.insert(users).values(insertUser).returning();
     return result[0];
+  }
+
+  async updateUser(id: number, userData: Partial<User>): Promise<User | undefined> {
+    const result = await db.update(users).set(userData).where(eq(users.id, id)).returning();
+    return result[0];
+  }
+
+  async updateUserLoginTime(id: number): Promise<User | undefined> {
+    const result = await db.update(users)
+      .set({ lastLogin: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async updateUserLoyaltyPoints(id: number, points: number): Promise<User | undefined> {
+    const user = await this.getUser(id);
+    if (!user) return undefined;
+    
+    const newPoints = user.loyaltyPoints + points;
+    const result = await db.update(users)
+      .set({ loyaltyPoints: newPoints })
+      .where(eq(users.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async incrementUserSessionCount(id: number): Promise<User | undefined> {
+    const user = await this.getUser(id);
+    if (!user) return undefined;
+    
+    const newCount = (user.sessionCount || 0) + 1;
+    const result = await db.update(users)
+      .set({ sessionCount: newCount })
+      .where(eq(users.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getUserBookings(userId: number): Promise<Booking[]> {
+    return db.select()
+      .from(bookings)
+      .where(eq(bookings.userId, userId))
+      .orderBy(desc(bookings.createdAt));
   }
 
   // Services
@@ -293,7 +362,7 @@ export class DatabaseStorage implements IStorage {
 
   async markMessageAsRead(id: number): Promise<Message | undefined> {
     const result = await db.update(messages)
-      .set({ isRead: true })
+      .set({ read: true })
       .where(eq(messages.id, id))
       .returning();
     return result[0];
@@ -698,6 +767,76 @@ export class DatabaseStorage implements IStorage {
       totalFeedbacks: allFeedbacks.length,
       ratingDistribution
     };
+  }
+
+  // Loyalty Program
+  async getLoyaltyRecords(userId: number): Promise<LoyaltyRecord[]> {
+    return db.select()
+      .from(loyaltyRecords)
+      .where(eq(loyaltyRecords.userId, userId))
+      .orderBy(desc(loyaltyRecords.createdAt));
+  }
+
+  async createLoyaltyRecord(record: InsertLoyaltyRecord): Promise<LoyaltyRecord> {
+    const result = await db.insert(loyaltyRecords).values(record).returning();
+    return result[0];
+  }
+
+  // Promotions
+  async getAllPromotions(): Promise<Promotion[]> {
+    return db.select().from(promotions).orderBy(desc(promotions.createdAt));
+  }
+
+  async getActivePromotions(): Promise<Promotion[]> {
+    const now = new Date();
+    return db.select()
+      .from(promotions)
+      .where(
+        and(
+          eq(promotions.active, true),
+          lte(promotions.startDate, now),
+          gte(promotions.endDate, now)
+        )
+      )
+      .orderBy(desc(promotions.createdAt));
+  }
+
+  async getPromotion(id: number): Promise<Promotion | undefined> {
+    const result = await db.select().from(promotions).where(eq(promotions.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getPromotionByCode(code: string): Promise<Promotion | undefined> {
+    const result = await db.select().from(promotions).where(eq(promotions.code, code)).limit(1);
+    return result[0];
+  }
+
+  async createPromotion(promotion: InsertPromotion): Promise<Promotion> {
+    const result = await db.insert(promotions).values(promotion).returning();
+    return result[0];
+  }
+
+  async updatePromotion(id: number, promotion: Partial<InsertPromotion>): Promise<Promotion | undefined> {
+    const result = await db.update(promotions).set(promotion).where(eq(promotions.id, id)).returning();
+    return result[0];
+  }
+
+  async incrementPromotionUsage(id: number): Promise<Promotion | undefined> {
+    const result = await db.update(promotions)
+      .set({ 
+        usageCount: sql`${promotions.usageCount} + 1` 
+      })
+      .where(eq(promotions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deactivatePromotion(id: number): Promise<Promotion | undefined> {
+    const result = await db.update(promotions)
+      .set({ active: false })
+      .where(eq(promotions.id, id))
+      .returning();
+    return result[0];
   }
 }
 
