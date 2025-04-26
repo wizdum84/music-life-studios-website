@@ -18,3 +18,13 @@ export function formatPrice(price: number, currency: string = "USD") {
     minimumFractionDigits: 2,
   }).format(price / 100)
 }
+
+/**
+ * Scroll to the top of the page smoothly
+ */
+export function scrollToTop() {
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth'
+  });
+}

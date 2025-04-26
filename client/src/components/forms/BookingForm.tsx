@@ -716,8 +716,8 @@ export default function BookingForm({
             </div>
           )}
           
-          {/* For recording services - show time selection - but not for recording service */}
-          {selectedDate && !isMixingService && !isRecordingService && (
+          {/* For recording services - show time selection */}
+          {selectedDate && !isMixingService && (
             <div>
               <h4 className="font-medium mb-2">Select Time</h4>
               {availableTimes.length > 0 ? (
