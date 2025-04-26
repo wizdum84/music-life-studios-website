@@ -14,19 +14,39 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { lazy, Suspense } from "react";
+import { Loader2 } from "lucide-react";
+
+// Lazy-loaded account pages
+const AccountLogin = lazy(() => import("@/pages/AccountLogin"));
+const AccountRegister = lazy(() => import("@/pages/AccountRegister"));
+const Account = lazy(() => import("@/pages/Account"));
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/booking" component={Booking} />
-      <Route path="/beats" component={Beats} />
-      <Route path="/complete-payment" component={CompletePayment} />
-      <Route path="/admin/login" component={AdminLogin} />
-      <ProtectedRoute path="/admin" component={Admin} adminOnly={true} />
-      <ProtectedRoute path="/analytics" component={Analytics} adminOnly={true} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <Switch>
+        <Route path="/" component={Home} />
+        <Route path="/booking" component={Booking} />
+        <Route path="/beats" component={Beats} />
+        <Route path="/complete-payment" component={CompletePayment} />
+        <Route path="/account/login">
+          {() => <AccountLogin />}
+        </Route>
+        <Route path="/account/register">
+          {() => <AccountRegister />}
+        </Route>
+        <ProtectedRoute path="/account" component={() => <Account />} adminOnly={false} />
+        <Route path="/admin/login" component={AdminLogin} />
+        <ProtectedRoute path="/admin" component={Admin} adminOnly={true} />
+        <ProtectedRoute path="/analytics" component={Analytics} adminOnly={true} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 

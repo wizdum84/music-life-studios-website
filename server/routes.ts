@@ -377,6 +377,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Get bookings for logged in user
+  app.get("/api/user/bookings", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const bookings = await storage.getUserBookings(userId);
+      res.json(bookings);
+    } catch (error) {
+      console.error("Error fetching user bookings:", error);
+      res.status(500).json({ error: "Failed to fetch user bookings" });
+    }
+  });
+  
   app.get("/api/bookings/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -1184,6 +1196,260 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // User loyalty program endpoints
+  app.get("/api/user/loyalty", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const loyaltyRecords = await storage.getLoyaltyRecords(userId);
+      const user = await storage.getUser(userId);
+      
+      res.json({
+        points: user?.loyaltyPoints || 0,
+        sessionCount: user?.sessionCount || 0,
+        records: loyaltyRecords
+      });
+    } catch (error) {
+      console.error("Error fetching loyalty info:", error);
+      res.status(500).json({ error: "Failed to fetch loyalty information" });
+    }
+  });
+
+  // Admin loyalty program management
+  app.post("/api/admin/loyalty/rewards", isAuthenticated, async (req, res) => {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      const { userId, points, reason, bookingId } = req.body;
+      
+      if (!userId || !points) {
+        return res.status(400).json({ error: "User ID and points are required" });
+      }
+      
+      // Update user's loyalty points
+      await storage.updateUserLoyaltyPoints(userId, points);
+      
+      // Create loyalty record
+      const record = await storage.createLoyaltyRecord({
+        userId,
+        points,
+        reason: reason || "Admin manual adjustment",
+        bookingId: bookingId || null,
+        createdAt: new Date()
+      });
+      
+      res.json({ message: "Loyalty points added successfully", record });
+    } catch (error) {
+      console.error("Error adding loyalty points:", error);
+      res.status(500).json({ error: "Failed to add loyalty points" });
+    }
+  });
+
+  // Reward loyalty points when a booking is completed
+  app.post("/api/bookings/:id/complete", isAuthenticated, async (req, res) => {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      const bookingId = parseInt(req.params.id);
+      const booking = await storage.getBooking(bookingId);
+      
+      if (!booking) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+      
+      // Update booking status to completed
+      await storage.updateBooking(bookingId, { status: "completed" });
+      
+      // If the booking has a user ID, add loyalty points and increment session count
+      if (booking.userId) {
+        // Calculate points based on booking amount (1 point per $10 spent)
+        const pointsEarned = Math.floor(booking.amount / 10);
+        
+        // Update user's loyalty points
+        await storage.updateUserLoyaltyPoints(booking.userId, pointsEarned);
+        
+        // Increment session count
+        await storage.incrementUserSessionCount(booking.userId);
+        
+        // Record loyalty transaction
+        await storage.createLoyaltyRecord({
+          userId: booking.userId,
+          points: pointsEarned,
+          reason: `Completed booking #${bookingId}`,
+          bookingId,
+          createdAt: new Date()
+        });
+        
+        // Check if user has reached 5 sessions for free reward
+        const user = await storage.getUser(booking.userId);
+        if (user && user.sessionCount % 5 === 0) {
+          // Create a loyalty record for the free session reward
+          await storage.createLoyaltyRecord({
+            userId: booking.userId,
+            points: 0, // No points but tracking the reward
+            reason: `Free 3-hour session reward (every 5 sessions)`,
+            bookingId: null,
+            createdAt: new Date()
+          });
+          
+          return res.json({ 
+            message: "Booking completed and loyalty reward earned!", 
+            pointsEarned,
+            rewardEarned: true,
+            sessionCount: user.sessionCount
+          });
+        }
+        
+        return res.json({ 
+          message: "Booking completed and loyalty points added!", 
+          pointsEarned,
+          sessionCount: user ? user.sessionCount : null
+        });
+      }
+      
+      res.json({ message: "Booking completed" });
+    } catch (error) {
+      console.error("Error completing booking:", error);
+      res.status(500).json({ error: "Failed to complete booking" });
+    }
+  });
+
+  // Promotions endpoints
+  app.get("/api/promotions/active", async (req, res) => {
+    try {
+      const promotions = await storage.getActivePromotions();
+      res.json(promotions);
+    } catch (error) {
+      console.error("Error fetching active promotions:", error);
+      res.status(500).json({ error: "Failed to fetch active promotions" });
+    }
+  });
+
+  app.post("/api/promotions/verify", async (req, res) => {
+    const { code } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ error: "Promotion code is required" });
+    }
+    
+    try {
+      const promotion = await storage.getPromotionByCode(code);
+      
+      if (!promotion) {
+        return res.status(404).json({ error: "Invalid promotion code" });
+      }
+      
+      if (!promotion.active) {
+        return res.status(400).json({ error: "This promotion is no longer active" });
+      }
+      
+      const now = new Date();
+      if (promotion.startDate > now || promotion.endDate < now) {
+        return res.status(400).json({ error: "This promotion is not valid at this time" });
+      }
+      
+      if (promotion.usageLimit && promotion.usageCount >= promotion.usageLimit) {
+        return res.status(400).json({ error: "This promotion has reached its usage limit" });
+      }
+      
+      res.json({
+        valid: true,
+        promotion: {
+          id: promotion.id,
+          code: promotion.code,
+          title: promotion.title,
+          description: promotion.description,
+          discountType: promotion.discountType,
+          discountValue: promotion.discountValue,
+          minPurchase: promotion.minPurchase,
+          maxDiscount: promotion.maxDiscount
+        }
+      });
+    } catch (error) {
+      console.error("Error verifying promotion:", error);
+      res.status(500).json({ error: "Failed to verify promotion code" });
+    }
+  });
+
+  // Admin promotions management
+  app.get("/api/admin/promotions", isAuthenticated, async (req, res) => {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      const promotions = await storage.getAllPromotions();
+      res.json(promotions);
+    } catch (error) {
+      console.error("Error fetching promotions:", error);
+      res.status(500).json({ error: "Failed to fetch promotions" });
+    }
+  });
+
+  app.post("/api/admin/promotions", isAuthenticated, async (req, res) => {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    try {
+      const promotion = await storage.createPromotion({
+        ...req.body,
+        usageCount: 0,
+        createdAt: new Date()
+      });
+      
+      res.status(201).json(promotion);
+    } catch (error) {
+      console.error("Error creating promotion:", error);
+      res.status(500).json({ error: "Failed to create promotion" });
+    }
+  });
+
+  app.patch("/api/admin/promotions/:id", isAuthenticated, async (req, res) => {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    const { id } = req.params;
+    
+    try {
+      const promotion = await storage.updatePromotion(parseInt(id), req.body);
+      
+      if (!promotion) {
+        return res.status(404).json({ error: "Promotion not found" });
+      }
+      
+      res.json(promotion);
+    } catch (error) {
+      console.error("Error updating promotion:", error);
+      res.status(500).json({ error: "Failed to update promotion" });
+    }
+  });
+
+  app.delete("/api/admin/promotions/:id", isAuthenticated, async (req, res) => {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    const { id } = req.params;
+    
+    try {
+      const promotion = await storage.deactivatePromotion(parseInt(id));
+      
+      if (!promotion) {
+        return res.status(404).json({ error: "Promotion not found" });
+      }
+      
+      res.json({ message: "Promotion deactivated successfully" });
+    } catch (error) {
+      console.error("Error deactivating promotion:", error);
+      res.status(500).json({ error: "Failed to deactivate promotion" });
     }
   });
 

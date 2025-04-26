@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X } from "lucide-react";
+import { Menu, X, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { STUDIO_INFO } from "@/lib/constants";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [location] = useLocation();
+  const { user } = useAuth();
   
   // Handle scroll event to add shadow to navbar
   useEffect(() => {
@@ -46,7 +48,7 @@ export default function Navbar() {
         </div>
         
         {/* Desktop Navigation */}
-        <div className="hidden md:flex items-center space-x-8">
+        <div className="hidden md:flex items-center space-x-6">
           {isHomePage ? (
             <>
               <a href="#services" className="font-medium hover:text-primary transition-colors">Services</a>
@@ -66,9 +68,25 @@ export default function Navbar() {
               <Link href="/beats" className="font-medium hover:text-primary transition-colors">Beats & Licensing</Link>
             </>
           )}
-          <Button asChild className="bg-primary hover:bg-primary-600">
-            <Link href="/booking">Book Now</Link>
-          </Button>
+          
+          <div className="flex items-center space-x-2">
+            {user ? (
+              <Button variant="outline" size="sm" asChild className="flex items-center">
+                <Link href="/account">
+                  <User className="h-4 w-4 mr-2" />
+                  My Account
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/account/login">Member Login</Link>
+              </Button>
+            )}
+            
+            <Button asChild className="bg-primary hover:bg-primary-600">
+              <Link href="/booking">Book Now</Link>
+            </Button>
+          </div>
         </div>
         
         {/* Mobile menu button */}
