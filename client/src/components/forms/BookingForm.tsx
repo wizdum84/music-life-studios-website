@@ -167,6 +167,8 @@ export default function BookingForm({
     if (selectedServiceId) {
       const service = services.find(s => s.id === selectedServiceId);
       if (service) {
+        console.log(`Service selected: ${service.name} (ID: ${service.id})`);
+        
         const durationMinutes = selectedDuration || 120; // Default to 2 hours
         const hours = durationMinutes / 60;
         const amount = service.price * hours;
@@ -186,6 +188,11 @@ export default function BookingForm({
   const handleServiceChange = (value: string) => {
     const serviceId = parseInt(value);
     setSelectedServiceId(serviceId);
+    
+    // Debug service selection
+    const service = services.find(s => s.id === serviceId);
+    console.log(`Service changed to: ${service?.name} (ID: ${serviceId})`);
+    console.log(`Recording service? ${service?.name.toLowerCase().includes('recording') || service?.name.toLowerCase().includes('session')}`);
   };
   
   // Handle duration selection

@@ -66,10 +66,11 @@ export function ContractRequirement({
         // Fetch contract details
         const response = await apiRequest("GET", `/api/contracts/${contractId}`);
         if (!response.ok) {
-          throw new Error("Failed to fetch contract");
+          throw new Error(`Failed to fetch contract with ID ${contractId}`);
         }
         
         const data = await response.json();
+        console.log(`Contract ${contractId} loaded successfully:`, data);
         setContract(data);
       } catch (err) {
         console.error("Error fetching contract data:", err);
