@@ -380,7 +380,13 @@ export default function BookingForm({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setCurrentStep('form')}
+            onClick={() => {
+              setCurrentStep('form');
+              window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+              });
+            }}
             className="flex items-center gap-1"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
@@ -437,7 +443,13 @@ export default function BookingForm({
           <Button 
             variant="outline" 
             size="sm" 
-            onClick={() => setCurrentStep('contract')}
+            onClick={() => {
+              setCurrentStep('contract');
+              window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+              });
+            }}
             className="flex items-center gap-1"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
@@ -509,7 +521,13 @@ export default function BookingForm({
                   <Button 
                     variant={tipAmount === 0 ? "default" : "outline"} 
                     size="sm" 
-                    onClick={() => setTipAmount(0)}
+                    onClick={() => {
+                      setTipAmount(0);
+                      window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                      });
+                    }}
                     className="text-xs py-1 h-auto"
                   >
                     No Tip
@@ -517,7 +535,13 @@ export default function BookingForm({
                   <Button 
                     variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.10) ? "default" : "outline"} 
                     size="sm" 
-                    onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.10))}
+                    onClick={() => {
+                      setTipAmount(Math.round((bookingData?.amount || 0) * 0.10));
+                      window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                      });
+                    }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
                     <span>10%</span>
@@ -526,7 +550,13 @@ export default function BookingForm({
                   <Button 
                     variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.15) ? "default" : "outline"} 
                     size="sm" 
-                    onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.15))}
+                    onClick={() => {
+                      setTipAmount(Math.round((bookingData?.amount || 0) * 0.15));
+                      window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                      });
+                    }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
                     <span>15%</span>
@@ -535,7 +565,13 @@ export default function BookingForm({
                   <Button 
                     variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.20) ? "default" : "outline"} 
                     size="sm" 
-                    onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.20))}
+                    onClick={() => {
+                      setTipAmount(Math.round((bookingData?.amount || 0) * 0.20));
+                      window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                      });
+                    }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
                     <span>20%</span>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { scrollToTop } from "@/lib/utils";
 import { Contract } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -125,6 +126,10 @@ export function ContractRequirement({
         description: "The contract has been signed successfully.",
         variant: "default"
       });
+      
+      // Scroll to top before calling onContractSigned
+      scrollToTop();
+      
       onContractSigned();
     } catch (err: any) {
       console.error("Error signing contract:", err);
