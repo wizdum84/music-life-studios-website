@@ -108,6 +108,12 @@ export default function BookingForm({
       s.id === selectedServiceId && 
       (s.name.toLowerCase().includes('mixing') || s.name.toLowerCase().includes('mastering'))
     ));
+    
+  const isRecordingService = serviceType === 'recording' || 
+    (selectedServiceId && services.some(s => 
+      s.id === selectedServiceId && 
+      (s.name.toLowerCase().includes('recording') || s.name.toLowerCase().includes('session'))
+    ));
   
   // Payment state
   const [contractSigned, setContractSigned] = useState(false);
@@ -312,10 +318,14 @@ export default function BookingForm({
     let contractTitle = "Studio Rules & Agreement";
     
     // If service is mixing/mastering, use different contract
-    if (selectedService?.name.toLowerCase().includes("mixing") || 
-        selectedService?.name.toLowerCase().includes("mastering")) {
+    if (isMixingService) {
       contractId = 5; // Use mixing/mastering contract
       contractTitle = "Mixing & Mastering Agreement";
+    } 
+    // For recording sessions, make sure we use the studio rules contract
+    else if (isRecordingService) {
+      contractId = 4; // Studio Rules Contract ID
+      contractTitle = "Studio Rules & Agreement";
     }
     
     return (
