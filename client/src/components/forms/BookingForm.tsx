@@ -889,10 +889,7 @@ export default function BookingForm({
           ) : (
             <>
               <FileText className="mr-2 h-4 w-4" />
-              {selectedService && (selectedService.name.toLowerCase().includes("mixing") || 
-                selectedService.name.toLowerCase().includes("mastering")) ? 
-                "Continue to Mixing Agreement" : 
-                "Continue to Studio Rules"}
+              Continue to Book
             </>
           )}
         </Button>

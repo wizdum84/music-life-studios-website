@@ -261,7 +261,7 @@ export function ContractRequirement({
                 Signing...
               </span>
             ) : (
-              "Sign and Continue"
+              "I Agree & Continue"
             )}
           </Button>
         </div>

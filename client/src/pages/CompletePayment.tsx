@@ -260,7 +260,8 @@ export default function CompletePayment() {
                   }}
                   className="text-xs py-1 h-auto"
                 >
-                  10% ({formatPrice(remainingAmount * 0.10)})
+                  <span>10%</span>
+                  <span className="text-xs text-muted-foreground">{formatPrice(remainingAmount * 0.10)}</span>
                 </Button>
                 <Button 
                   variant={tipAmount === Math.round(remainingAmount * 0.15) ? "default" : "outline"} 
@@ -271,9 +272,10 @@ export default function CompletePayment() {
                     tipForm.setValue("tipAmount", tip15);
                     setTipAmount(tip15);
                   }}
-                  className="text-xs py-1 h-auto"
+                  className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                 >
-                  15% ({formatPrice(remainingAmount * 0.15)})
+                  <span>15%</span>
+                  <span className="text-xs text-muted-foreground">{formatPrice(remainingAmount * 0.15)}</span>
                 </Button>
                 <Button 
                   variant={tipAmount === Math.round(remainingAmount * 0.20) ? "default" : "outline"} 
@@ -284,9 +286,10 @@ export default function CompletePayment() {
                     tipForm.setValue("tipAmount", tip20);
                     setTipAmount(tip20);
                   }}
-                  className="text-xs py-1 h-auto"
+                  className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                 >
-                  20% ({formatPrice(remainingAmount * 0.20)})
+                  <span>20%</span>
+                  <span className="text-xs text-muted-foreground">{formatPrice(remainingAmount * 0.20)}</span>
                 </Button>
               </div>
               
