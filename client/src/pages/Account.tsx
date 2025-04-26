@@ -34,6 +34,7 @@ import {
   CreditCard, 
   Gift, 
   History, 
+  Loader2,
   LogOut, 
   Star, 
   User as UserIcon 
@@ -61,14 +62,14 @@ export default function Account() {
   }, [user, navigate, logoutMutation.isPending]);
 
   // Fetch user bookings
-  const { data: bookings = [] } = useQuery<Booking[]>({
+  const { data: bookings = [], isLoading: isLoadingBookings } = useQuery<Booking[]>({
     queryKey: ["/api/user/bookings"],
     queryFn: getQueryFn(),
     enabled: !!user,
   });
 
   // Fetch loyalty data
-  const { data: loyaltyData = { records: [], points: 0, sessionCount: 0 } } = useQuery<{ 
+  const { data: loyaltyData = { records: [], points: 0, sessionCount: 0 }, isLoading: isLoadingLoyalty } = useQuery<{ 
     records: LoyaltyRecord[],
     points: number,
     sessionCount: number
@@ -82,7 +83,7 @@ export default function Account() {
   const loyaltyRecords = loyaltyData.records || [];
 
   // Fetch service information for bookings
-  const { data: services = [] } = useQuery<Service[]>({
+  const { data: services = [], isLoading: isLoadingServices } = useQuery<Service[]>({
     queryKey: ["/api/services"],
     queryFn: getQueryFn(),
   });
@@ -101,8 +102,12 @@ export default function Account() {
   };
 
   if (!user) {
-    return null; // Or a loading spinner
+    return null; // Protected route takes care of this
   }
+  
+  // Check if data is loading
+  const isLoading = isLoadingBookings || isLoadingLoyalty || isLoadingServices;
+  
 
   // Calculate loyalty program progress
   const sessionCount = loyaltyData.sessionCount || user.sessionCount || 0;
@@ -161,6 +166,15 @@ export default function Account() {
           Log Out
         </Button>
       </div>
+      
+      {isLoading && (
+        <div className="flex items-center justify-center p-8">
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Loading your account data...</p>
+          </div>
+        </div>
+      )}
       
       <Tabs defaultValue="overview" value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
@@ -501,7 +515,7 @@ export default function Account() {
                       {loyaltyRecords.map((record) => (
                         <TableRow key={record.id}>
                           <TableCell>
-                            {format(new Date(record.createdAt), "MMM d, yyyy")}
+                            {record.createdAt ? format(new Date(record.createdAt), "MMM d, yyyy") : "N/A"}
                           </TableCell>
                           <TableCell>
                             {record.action === "session_completed" && "Session Completed"}
