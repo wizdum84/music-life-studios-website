@@ -314,17 +314,17 @@ export default function BookingForm({
   
   if (currentStep === 'contract' && bookingData) {
     // Determine which contract to show based on the service type
-    let contractId = 4; // Default Studio Rules Contract ID
+    let contractId = 1; // Default Studio Rules Contract ID
     let contractTitle = "Studio Rules & Agreement";
     
     // If service is mixing/mastering, use different contract
     if (isMixingService) {
-      contractId = 5; // Use mixing/mastering contract
+      contractId = 2; // Use mixing/mastering contract
       contractTitle = "Mixing & Mastering Agreement";
     } 
     // For recording sessions, make sure we use the studio rules contract
     else if (isRecordingService) {
-      contractId = 4; // Studio Rules Contract ID
+      contractId = 1; // Studio Rules Contract ID
       contractTitle = "Studio Rules & Agreement";
     }
     
