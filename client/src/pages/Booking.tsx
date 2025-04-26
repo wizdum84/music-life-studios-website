@@ -4,14 +4,18 @@ import { Helmet } from "react-helmet";
 import { Loader2 } from "lucide-react";
 import BookingForm from "@/components/forms/BookingForm";
 import { Service, TimeSlot } from "@shared/schema";
+import { scrollToTop } from "@/lib/utils";
 
 export default function Booking() {
   // Get service type from URL parameters
   const [preselectedServiceId, setPreselectedServiceId] = useState<number | null>(null);
   const [serviceType, setServiceType] = useState<'recording' | 'mixing' | null>(null);
   
-  // Extract service type from URL on component mount
+  // Extract service type from URL on component mount and scroll to top
   useEffect(() => {
+    // Scroll to top when page loads
+    scrollToTop();
+    
     const urlParams = new URLSearchParams(window.location.search);
     const type = urlParams.get('type');
     

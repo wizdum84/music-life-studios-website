@@ -4,6 +4,7 @@ import { Check, Mic, Sliders, Music } from "lucide-react";
 import { Service } from "@shared/schema";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { scrollToTop } from "@/lib/utils";
 
 interface ServicesSectionProps {
   services: Service[];
@@ -48,7 +49,10 @@ const ServiceCard = ({ service }: { service: Service }) => {
       </CardContent>
       <CardFooter className="px-6 pb-6">
         <Button asChild className="w-full bg-primary hover:bg-primary-600">
-          <Link href={`/booking?type=${service.name.toLowerCase().includes("mixing") ? "mixing" : "recording"}`}>
+          <Link 
+            href={`/booking?type=${service.name.toLowerCase().includes("mixing") ? "mixing" : "recording"}`}
+            onClick={() => scrollToTop()}
+          >
             {getButtonText()}
           </Link>
         </Button>
