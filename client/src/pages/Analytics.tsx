@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { scrollToTop } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -93,7 +94,7 @@ export default function Analytics() {
   
   // Scroll to top when page loads
   useEffect(() => {
-    window.scrollTo(0, 0);
+    scrollToTop();
   }, []);
   
   // Show loading state while checking auth

@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { scrollToTop } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -32,7 +33,7 @@ export default function AdminLogin() {
   
   // Scroll to top on component mount
   useEffect(() => {
-    window.scrollTo(0, 0);
+    scrollToTop();
   }, []);
   
   const form = useForm<z.infer<typeof formSchema>>({

@@ -10,6 +10,7 @@ import { Loader2, BarChart2, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
+import { scrollToTop } from "@/lib/utils";
 
 export default function Admin() {
   const [location, navigate] = useLocation();
