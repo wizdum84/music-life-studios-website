@@ -389,6 +389,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Get loyalty data for logged in user
+  app.get("/api/user/loyalty", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.id;
+      // Get loyalty records
+      const loyaltyRecords = await storage.getLoyaltyRecords(userId);
+      
+      // Get user to get session count and points
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json({
+        points: user.loyaltyPoints || 0,
+        sessionCount: user.sessionCount || 0,
+        records: loyaltyRecords
+      });
+    } catch (error) {
+      console.error("Error fetching user loyalty data:", error);
+      res.status(500).json({ error: "Failed to fetch loyalty data" });
+    }
+  });
+  
+  // Get active promotions for members
+  app.get("/api/promotions/active", isAuthenticated, async (req, res) => {
+    try {
+      const promotions = await storage.getActivePromotions();
+      res.json(promotions);
+    } catch (error) {
+      console.error("Error fetching active promotions:", error);
+      res.status(500).json({ error: "Failed to fetch promotions" });
+    }
+  });
+  
   app.get("/api/bookings/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);

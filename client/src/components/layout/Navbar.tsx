@@ -125,9 +125,29 @@ export default function Navbar() {
                 <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Beats & Licensing</Link>
               </>
             )}
-            <Button asChild className="bg-primary hover:bg-primary-600 w-full justify-center">
-              <Link href="/booking">Book Now</Link>
-            </Button>
+            {user ? (
+              <Link 
+                href="/account" 
+                className="flex items-center font-medium py-2 hover:text-primary transition-colors" 
+                onClick={handleLinkClick}
+              >
+                <User className="h-4 w-4 mr-2" />
+                My Account
+              </Link>
+            ) : (
+              <Link 
+                href="/account/login" 
+                className="font-medium py-2 hover:text-primary transition-colors" 
+                onClick={handleLinkClick}
+              >
+                Member Login
+              </Link>
+            )}
+            <div className="pt-2">
+              <Button asChild className="bg-primary hover:bg-primary-600 w-full justify-center">
+                <Link href="/booking">Book Now</Link>
+              </Button>
+            </div>
           </div>
         </div>
       )}

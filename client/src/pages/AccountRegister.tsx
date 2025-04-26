@@ -51,7 +51,11 @@ export default function AccountRegister() {
   async function onSubmit(values: RegisterFormValues) {
     try {
       setIsSubmitting(true);
-      await registerMutation.mutateAsync(values);
+      // Add role as customer
+      await registerMutation.mutateAsync({
+        ...values,
+        role: "customer"
+      });
       toast({
         title: "Registration Successful",
         description: "Welcome to Music Life Studios! Your account has been created.",
