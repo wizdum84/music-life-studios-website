@@ -18,7 +18,7 @@ export default function Admin() {
   
   // Scroll to top on component mount
   useEffect(() => {
-    window.scrollTo(0, 0);
+    scrollToTop();
   }, []);
   
   const handleLogout = () => {
