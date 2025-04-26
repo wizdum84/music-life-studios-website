@@ -1,79 +1,65 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { Link, useLocation } from "wouter";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import PageHeader from "@/components/layout/PageHeader";
-import { Loader2 } from "lucide-react";
 
-const loginSchema = z.object({
-  username: z.string().min(3, { message: "Username must be at least 3 characters long" }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters long" }),
+const formSchema = z.object({
+  username: z.string().min(2, "Username must be at least 2 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
-type LoginFormValues = z.infer<typeof loginSchema>;
-
 export default function AccountLogin() {
-  const [_, setLocation] = useLocation();
-  const { user, loginMutation } = useAuth();
+  const [_, navigate] = useLocation();
+  const { loginMutation } = useAuth();
   const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Redirect if already logged in
-  if (user) {
-    setLocation("/account");
-    return null;
-  }
-
-  const form = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
     defaultValues: {
       username: "",
       password: "",
     },
   });
 
-  async function onSubmit(values: LoginFormValues) {
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    setIsLoading(true);
     try {
-      setIsSubmitting(true);
       await loginMutation.mutateAsync(values);
       toast({
-        title: "Login Successful",
+        title: "Login successful",
         description: "Welcome back to Music Life Studios!",
       });
-      setLocation("/account");
-    } catch (error) {
-      console.error("Login error:", error);
-      toast({
-        title: "Login Failed",
-        description: error instanceof Error ? error.message : "Invalid username or password",
-        variant: "destructive",
-      });
+      navigate("/account");
+    } catch (error: any) {
+      // Error handling is already done in the mutation
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <div className="container py-10">
       <PageHeader 
         title="Member Login" 
-        subtitle="Sign in to access your account, track your loyalty points, and book sessions"
+        subtitle="Access your account and loyalty rewards"
+        centered
       />
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
-        <Card className="shadow-lg">
+      <div className="flex flex-col md:flex-row gap-8 mt-8 max-w-5xl mx-auto">
+        <Card className="flex-1">
           <CardHeader>
-            <CardTitle>Sign In</CardTitle>
+            <CardTitle>Login</CardTitle>
             <CardDescription>
-              Login to your Music Life Studios member account
+              Enter your credentials to access your account
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -86,11 +72,7 @@ export default function AccountLogin() {
                     <FormItem>
                       <FormLabel>Username</FormLabel>
                       <FormControl>
-                        <Input 
-                          placeholder="Enter your username" 
-                          {...field} 
-                          autoComplete="username"
-                        />
+                        <Input placeholder="Enter your username" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -103,99 +85,56 @@ export default function AccountLogin() {
                     <FormItem>
                       <FormLabel>Password</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="password" 
-                          placeholder="Enter your password" 
-                          {...field} 
-                          autoComplete="current-password"
-                        />
+                        <Input type="password" placeholder="Enter your password" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <Button 
-                  type="submit" 
-                  className="w-full" 
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 
-                      Signing In...
-                    </>
-                  ) : (
-                    "Sign In"
-                  )}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? "Logging in..." : "Login"}
                 </Button>
+                <div className="text-center text-sm text-muted-foreground">
+                  <span>Don't have an account? </span>
+                  <Link href="/account/register">
+                    <a className="text-primary hover:underline">Sign up</a>
+                  </Link>
+                </div>
               </form>
             </Form>
           </CardContent>
-          <CardFooter className="flex flex-col space-y-4">
-            <Separator />
-            <div className="text-center w-full">
-              <p className="text-sm text-muted-foreground mb-2">
-                Don't have an account?
-              </p>
-              <Button 
-                variant="outline" 
-                onClick={() => setLocation("/account/register")}
-                className="w-full"
-              >
-                Create Account
-              </Button>
-            </div>
-          </CardFooter>
         </Card>
+        
+        <div className="flex-1 flex flex-col justify-center">
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold">Member Benefits</h2>
+            <ul className="space-y-2">
+              <li className="flex items-start">
+                <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center mr-3 mt-0.5">✓</span>
+                <span>Earn loyalty points with every booking</span>
+              </li>
+              <li className="flex items-start">
+                <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center mr-3 mt-0.5">✓</span>
+                <span>Get a free 3-hour session after every 5 paid sessions</span>
+              </li>
+              <li className="flex items-start">
+                <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center mr-3 mt-0.5">✓</span>
+                <span>Access exclusive member discounts and promotions</span>
+              </li>
+              <li className="flex items-start">
+                <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center mr-3 mt-0.5">✓</span>
+                <span>Track your booking history and session count</span>
+              </li>
+              <li className="flex items-start">
+                <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center mr-3 mt-0.5">✓</span>
+                <span>Receive priority booking for popular time slots</span>
+              </li>
+            </ul>
 
-        <div className="flex flex-col justify-center">
-          <h3 className="text-2xl font-bold mb-4">Member Benefits</h3>
-          <ul className="space-y-4">
-            <li className="flex items-start">
-              <div className="mr-2 mt-1 bg-primary text-primary-foreground p-1 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>
-                <span className="font-medium">Loyalty Rewards</span>
-                <p className="text-muted-foreground">Every five paid sessions earns you a free 3-hour studio session!</p>
-              </div>
-            </li>
-            <li className="flex items-start">
-              <div className="mr-2 mt-1 bg-primary text-primary-foreground p-1 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>
-                <span className="font-medium">Special Promotions</span>
-                <p className="text-muted-foreground">Receive exclusive offers and discounts only available to members</p>
-              </div>
-            </li>
-            <li className="flex items-start">
-              <div className="mr-2 mt-1 bg-primary text-primary-foreground p-1 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>
-                <span className="font-medium">Session History</span>
-                <p className="text-muted-foreground">Track all your past and upcoming sessions in one place</p>
-              </div>
-            </li>
-            <li className="flex items-start">
-              <div className="mr-2 mt-1 bg-primary text-primary-foreground p-1 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>
-                <span className="font-medium">Faster Booking</span>
-                <p className="text-muted-foreground">Your details are saved for quicker checkout when booking sessions</p>
-              </div>
-            </li>
-          </ul>
+            <blockquote className="border-l-4 border-primary p-4 italic bg-muted/50 rounded-sm mt-6">
+              "Join our loyalty program today and experience the best that Music Life Studios has to offer. Where Music is Life!"
+            </blockquote>
+          </div>
         </div>
       </div>
     </div>

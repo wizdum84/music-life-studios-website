@@ -4,9 +4,12 @@ import {
   useMutation,
   UseMutationResult,
 } from "@tanstack/react-query";
-import { User, UserWithoutPassword } from "@shared/schema";
+import { User } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+// Type for user data without password
+type UserWithoutPassword = Omit<User, "password">;
 
 type AuthContextType = {
   user: UserWithoutPassword | null;
@@ -32,7 +35,9 @@ type RegisterData = {
   phone?: string;
 };
 
-export const AuthContext = createContext<AuthContextType | null>(null);
+// Need to ensure this is a stable reference for hot-reloading
+const AuthContext = createContext<AuthContextType | null>(null);
+export { AuthContext };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();

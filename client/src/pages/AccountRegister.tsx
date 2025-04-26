@@ -1,150 +1,94 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { Link, useLocation } from "wouter";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import PageHeader from "@/components/layout/PageHeader";
-import { Loader2 } from "lucide-react";
 
-const registerSchema = z.object({
-  username: z.string().min(3, { message: "Username must be at least 3 characters long" }),
-  email: z.string().email({ message: "Please enter a valid email address" }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters long" }),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
+const formSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  email: z.string().email("Please enter a valid email"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string().min(6, "Password must be at least 6 characters"),
+  firstName: z.string().min(2, "First name must be at least 2 characters").optional(),
+  lastName: z.string().min(2, "Last name must be at least 2 characters").optional(),
   phone: z.string().optional(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
 });
 
-type RegisterFormValues = z.infer<typeof registerSchema>;
+type FormValues = z.infer<typeof formSchema>;
 
 export default function AccountRegister() {
-  const [_, setLocation] = useLocation();
-  const { user, registerMutation } = useAuth();
+  const [_, navigate] = useLocation();
+  const { registerMutation } = useAuth();
   const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Redirect if already logged in
-  if (user) {
-    setLocation("/account");
-    return null;
-  }
-
-  const form = useForm<RegisterFormValues>({
-    resolver: zodResolver(registerSchema),
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
     defaultValues: {
       username: "",
       email: "",
       password: "",
+      confirmPassword: "",
       firstName: "",
       lastName: "",
       phone: "",
     },
   });
 
-  async function onSubmit(values: RegisterFormValues) {
+  const onSubmit = async (values: FormValues) => {
+    setIsLoading(true);
     try {
-      setIsSubmitting(true);
-      // Add role as customer
+      // Remove confirmPassword as it's not part of our API
+      const { confirmPassword, ...registerData } = values;
+      
+      // Set role explicitly to customer
       await registerMutation.mutateAsync({
-        ...values,
+        ...registerData,
         role: "customer"
       });
+      
       toast({
-        title: "Registration Successful",
-        description: "Welcome to Music Life Studios! Your account has been created.",
+        title: "Registration successful",
+        description: "Welcome to Music Life Studios!",
       });
-      setLocation("/account");
-    } catch (error) {
-      console.error("Registration error:", error);
-      toast({
-        title: "Registration Failed",
-        description: error instanceof Error ? error.message : "Failed to create account",
-        variant: "destructive",
-      });
+      
+      navigate("/account");
+    } catch (error: any) {
+      // Error handling is already done in the mutation
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <div className="container py-10">
       <PageHeader 
-        title="Create Member Account" 
-        subtitle="Join our membership program for exclusive benefits and rewards"
+        title="Create Account" 
+        subtitle="Join the Music Life Studios family"
+        centered
       />
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
-        <Card className="shadow-lg">
+      <div className="flex flex-col md:flex-row gap-8 mt-8 max-w-5xl mx-auto">
+        <Card className="flex-1">
           <CardHeader>
             <CardTitle>Sign Up</CardTitle>
             <CardDescription>
-              Create your Music Life Studios member account
+              Create your member account to access exclusive benefits
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="Choose a username" 
-                          {...field} 
-                          autoComplete="username"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="email" 
-                          placeholder="your@email.com" 
-                          {...field} 
-                          autoComplete="email"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="password" 
-                          placeholder="Create a password" 
-                          {...field} 
-                          autoComplete="new-password"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -153,11 +97,7 @@ export default function AccountRegister() {
                       <FormItem>
                         <FormLabel>First Name</FormLabel>
                         <FormControl>
-                          <Input 
-                            placeholder="First Name" 
-                            {...field} 
-                            autoComplete="given-name"
-                          />
+                          <Input placeholder="Your first name" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -170,118 +110,120 @@ export default function AccountRegister() {
                       <FormItem>
                         <FormLabel>Last Name</FormLabel>
                         <FormControl>
-                          <Input 
-                            placeholder="Last Name" 
-                            {...field} 
-                            autoComplete="family-name"
-                          />
+                          <Input placeholder="Your last name" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
-                
                 <FormField
                   control={form.control}
-                  name="phone"
+                  name="username"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Phone Number</FormLabel>
+                      <FormLabel>Username</FormLabel>
                       <FormControl>
-                        <Input 
-                          placeholder="Your phone number" 
-                          {...field} 
-                          autoComplete="tel"
-                        />
+                        <Input placeholder="Create a username" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                
-                <Button 
-                  type="submit" 
-                  className="w-full mt-2" 
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 
-                      Creating Account...
-                    </>
-                  ) : (
-                    "Create Account"
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="Your email address" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
+                />
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone (optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Your phone number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="Create a password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="confirmPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Confirm Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="Confirm your password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? "Creating account..." : "Create Account"}
                 </Button>
+                <div className="text-center text-sm text-muted-foreground">
+                  <span>Already have an account? </span>
+                  <Link href="/account/login">
+                    <a className="text-primary hover:underline">Login</a>
+                  </Link>
+                </div>
               </form>
             </Form>
           </CardContent>
-          <CardFooter className="flex flex-col space-y-4">
-            <Separator />
-            <div className="text-center w-full">
-              <p className="text-sm text-muted-foreground mb-2">
-                Already have an account?
-              </p>
-              <Button 
-                variant="outline" 
-                onClick={() => setLocation("/account/login")}
-                className="w-full"
-              >
-                Sign In
-              </Button>
-            </div>
-          </CardFooter>
         </Card>
+        
+        <div className="flex-1 flex flex-col justify-center">
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold">Why Join Us?</h2>
+            <p className="text-muted-foreground">
+              Becoming a member of Music Life Studios gives you access to exclusive benefits and helps us provide you with a personalized experience.
+            </p>
+            
+            <div className="space-y-4 mt-6">
+              <div className="bg-muted p-4 rounded-lg">
+                <h3 className="font-semibold text-primary mb-2">Loyalty Program</h3>
+                <p>Earn points with every session and get your 5th session free!</p>
+              </div>
+              
+              <div className="bg-muted p-4 rounded-lg">
+                <h3 className="font-semibold text-primary mb-2">Special Promotions</h3>
+                <p>Access member-only discounts and special offers throughout the year.</p>
+              </div>
+              
+              <div className="bg-muted p-4 rounded-lg">
+                <h3 className="font-semibold text-primary mb-2">Track Your Progress</h3>
+                <p>Keep track of your bookings, session history, and manage your appointments easily.</p>
+              </div>
+            </div>
 
-        <div className="flex flex-col justify-center">
-          <h3 className="text-2xl font-bold mb-4">Member Benefits</h3>
-          <ul className="space-y-4">
-            <li className="flex items-start">
-              <div className="mr-2 mt-1 bg-primary text-primary-foreground p-1 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>
-                <span className="font-medium">Loyalty Rewards</span>
-                <p className="text-muted-foreground">Every five paid sessions earns you a free 3-hour studio session!</p>
-              </div>
-            </li>
-            <li className="flex items-start">
-              <div className="mr-2 mt-1 bg-primary text-primary-foreground p-1 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>
-                <span className="font-medium">Special Promotions</span>
-                <p className="text-muted-foreground">Receive exclusive offers and discounts only available to members</p>
-              </div>
-            </li>
-            <li className="flex items-start">
-              <div className="mr-2 mt-1 bg-primary text-primary-foreground p-1 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>
-                <span className="font-medium">Session History</span>
-                <p className="text-muted-foreground">Track all your past and upcoming sessions in one place</p>
-              </div>
-            </li>
-            <li className="flex items-start">
-              <div className="mr-2 mt-1 bg-primary text-primary-foreground p-1 rounded-full">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"></polyline>
-                </svg>
-              </div>
-              <div>
-                <span className="font-medium">Faster Booking</span>
-                <p className="text-muted-foreground">Your details are saved for quicker checkout when booking sessions</p>
-              </div>
-            </li>
-          </ul>
+            <blockquote className="border-l-4 border-primary p-4 italic bg-muted/50 rounded-sm mt-6">
+              "At Music Life Studios, we're more than just a studio - we're a community of passionate musicians and creators. Join us today!"
+            </blockquote>
+          </div>
         </div>
       </div>
     </div>
