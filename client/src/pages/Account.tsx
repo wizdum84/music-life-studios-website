@@ -62,17 +62,24 @@ export default function Account() {
 
   // Fetch user bookings
   const { data: bookings = [] } = useQuery<Booking[]>({
-    queryKey: ["/api/user-bookings"],
+    queryKey: ["/api/user/bookings"],
     queryFn: getQueryFn(),
     enabled: !!user,
   });
 
-  // Fetch loyalty records
-  const { data: loyaltyRecords = [] } = useQuery<LoyaltyRecord[]>({
-    queryKey: ["/api/user-loyalty"],
+  // Fetch loyalty data
+  const { data: loyaltyData = { records: [], points: 0, sessionCount: 0 } } = useQuery<{ 
+    records: LoyaltyRecord[],
+    points: number,
+    sessionCount: number
+  }>({
+    queryKey: ["/api/user/loyalty"],
     queryFn: getQueryFn(),
     enabled: !!user,
   });
+  
+  // Extract loyalty records from the response
+  const loyaltyRecords = loyaltyData.records || [];
 
   // Fetch service information for bookings
   const { data: services = [] } = useQuery<Service[]>({
@@ -98,7 +105,8 @@ export default function Account() {
   }
 
   // Calculate loyalty program progress
-  const sessionCount = user.sessionCount || 0;
+  const sessionCount = loyaltyData.sessionCount || user.sessionCount || 0;
+  const loyaltyPoints = loyaltyData.points || user.loyaltyPoints || 0;
   const progressToNextFree = sessionCount % 5;
   const progressPercentage = (progressToNextFree / 5) * 100;
   const sessionsUntilNextFree = 5 - progressToNextFree;
@@ -330,7 +338,7 @@ export default function Account() {
                   </div>
                   <div className="flex flex-col items-center justify-center p-4 bg-muted/50 rounded-lg">
                     <Star className="h-8 w-8 text-primary mb-2" />
-                    <h3 className="text-2xl font-bold">{user.loyaltyPoints || 0}</h3>
+                    <h3 className="text-2xl font-bold">{loyaltyPoints}</h3>
                     <p className="text-sm text-muted-foreground">Loyalty Points</p>
                   </div>
                 </div>
@@ -456,7 +464,7 @@ export default function Account() {
                     </div>
                     <div className="bg-muted/50 p-4 rounded-lg text-center">
                       <p className="text-sm text-muted-foreground mb-1">Loyalty Points</p>
-                      <p className="text-3xl font-bold">{user.loyaltyPoints || 0}</p>
+                      <p className="text-3xl font-bold">{loyaltyPoints}</p>
                     </div>
                     <div className="bg-muted/50 p-4 rounded-lg text-center">
                       <p className="text-sm text-muted-foreground mb-1">Free Sessions Earned</p>
