@@ -482,25 +482,28 @@ export default function BookingForm({
                     variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.10) ? "default" : "outline"} 
                     size="sm" 
                     onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.10))}
-                    className="text-xs py-1 h-auto"
+                    className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
-                    10% ({formatPrice((bookingData?.amount || 0) * 0.10)})
+                    <span>10%</span>
+                    <span className="text-xs text-muted-foreground">{formatPrice((bookingData?.amount || 0) * 0.10)}</span>
                   </Button>
                   <Button 
                     variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.15) ? "default" : "outline"} 
                     size="sm" 
                     onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.15))}
-                    className="text-xs py-1 h-auto"
+                    className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
-                    15% ({formatPrice((bookingData?.amount || 0) * 0.15)})
+                    <span>15%</span>
+                    <span className="text-xs text-muted-foreground">{formatPrice((bookingData?.amount || 0) * 0.15)}</span>
                   </Button>
                   <Button 
                     variant={tipAmount === Math.round((bookingData?.amount || 0) * 0.20) ? "default" : "outline"} 
                     size="sm" 
                     onClick={() => setTipAmount(Math.round((bookingData?.amount || 0) * 0.20))}
-                    className="text-xs py-1 h-auto"
+                    className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
-                    20% ({formatPrice((bookingData?.amount || 0) * 0.20)})
+                    <span>20%</span>
+                    <span className="text-xs text-muted-foreground">{formatPrice((bookingData?.amount || 0) * 0.20)}</span>
                   </Button>
                 </div>
                 
