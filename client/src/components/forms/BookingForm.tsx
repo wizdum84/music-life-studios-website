@@ -17,6 +17,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Check, ArrowLeft, Clock, DollarSign } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -40,10 +41,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Icons
 import {
-  ArrowLeft,
-  Check,
-  Clock,
-  DollarSign,
   FileText,
   Loader2,
 } from "lucide-react";
@@ -205,10 +202,7 @@ export default function BookingForm({
     form.setValue("duration", duration);
     
     // Scroll to top
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
+    scrollToTop();
   };
   
   // Handle date selection
@@ -217,35 +211,32 @@ export default function BookingForm({
     setSelectedTime(null);
     
     // Scroll to top
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
+    scrollToTop();
   };
   
-  // Handle time selection
+  // Handle time slot selection
   const handleTimeSelect = (timeSlot: TimeSlot) => {
     setSelectedTime(timeSlot);
-    form.setValue("date", new Date(timeSlot.date).toISOString());
     form.setValue("timeSlotId", timeSlot.id);
     
     // Scroll to top
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
+    scrollToTop();
   };
   
-  // Handle date selection for mixing or recording services (no time slot needed for mixing/recording)
+  // Handle date selection for mixing or recording services (no time slot needed for mixing/mastering)
   useEffect(() => {
-    if ((isMixingService || isRecordingService) && selectedDate) {
-      // For mixing/recording services, we just need the date without a specific time
-      const dateWithNoon = new Date(selectedDate);
-      dateWithNoon.setHours(12, 0, 0, 0); // Set to noon
-      form.setValue("date", dateWithNoon.toISOString());
+    if (selectedDate && (isMixingService || isRecordingService)) {
+      // Scroll to top
+      scrollToTop();
       
       // Use a placeholder time slot ID that will be handled differently on the server
       form.setValue("timeSlotId", -1);
+      
+      // Format the date with noon time to make a complete ISO string
+      const dateWithNoon = new Date(selectedDate);
+      dateWithNoon.setHours(12, 0, 0, 0);
+      
+      form.setValue("date", dateWithNoon.toISOString());
       
       console.log(`Date set for ${isRecordingService ? "recording" : "mixing"} service: ${dateWithNoon.toISOString()}`);
     }
@@ -282,10 +273,7 @@ export default function BookingForm({
     setCurrentStep('payment');
     
     // Scroll to top
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
+    scrollToTop();
   };
   
   // Form submission
@@ -293,12 +281,8 @@ export default function BookingForm({
     console.log("Form submitted with data:", data);
     setBookingData(data);
     setCurrentStep('contract');
-    
     // Scroll to top
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
+    scrollToTop();
   };
   
   // Payment completion handler
@@ -309,21 +293,16 @@ export default function BookingForm({
       transactionId,
       paymentStatus: paymentOption === 'deposit' ? 'deposit_paid' : 'paid',
       status: 'confirmed',
-      tipAmount: paymentOption === 'full' ? tipAmount : 0 
     }).then(() => {
-      setBookingComplete(true);
-      setCurrentStep('confirmation');
+      // Scroll to top
+      scrollToTop();
       
       // Reset tip amount if needed
       if (tipAmount > 0) {
         setTipAmount(0);
       }
       
-      // Scroll to top
-      window.scrollTo({
-        top: 0,
-        behavior: 'smooth'
-      });
+      setCurrentStep('confirmation');
     }).catch(error => {
       console.error("Error finalizing booking:", error);
       toast({
@@ -337,10 +316,11 @@ export default function BookingForm({
   console.log("Current step:", currentStep);
   
   // Render based on the current step
-  if (currentStep === 'confirmation' || bookingComplete) {
+  if (currentStep === 'confirmation') {
+    scrollToTop();
     return (
-      <div className="text-center py-8">
-        <div className="mb-4 inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100">
+      <div className="text-center max-w-md mx-auto py-12">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-6">
           <Check className="h-8 w-8 text-green-600" />
         </div>
         <h3 className="text-2xl font-bold mb-2">Booking Confirmed!</h3>
@@ -379,10 +359,7 @@ export default function BookingForm({
             size="sm" 
             onClick={() => {
               setCurrentStep('form');
-              window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-              });
+              scrollToTop();
             }}
             className="flex items-center gap-1"
           >
@@ -399,7 +376,7 @@ export default function BookingForm({
               {selectedService?.name} • {selectedDuration && `${selectedDuration / 60} hours`} • {selectedDate && formatDate(selectedDate)}
             </CardDescription>
           </CardHeader>
-          <CardContent className="pb-3">
+          <CardContent>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Service Rate</span>
@@ -442,10 +419,7 @@ export default function BookingForm({
             size="sm" 
             onClick={() => {
               setCurrentStep('contract');
-              window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-              });
+              scrollToTop();
             }}
             className="flex items-center gap-1"
           >
@@ -462,7 +436,7 @@ export default function BookingForm({
               {selectedService?.name} • {selectedDuration && `${selectedDuration / 60} hours`} • {selectedDate && formatDate(selectedDate)}
             </CardDescription>
           </CardHeader>
-          <CardContent className="pb-3">
+          <CardContent>
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">Service Rate</span>
@@ -520,10 +494,7 @@ export default function BookingForm({
                     size="sm" 
                     onClick={() => {
                       setTipAmount(0);
-                      window.scrollTo({
-                        top: 0,
-                        behavior: 'smooth'
-                      });
+                      scrollToTop();
                     }}
                     className="text-xs py-1 h-auto"
                   >
@@ -534,10 +505,7 @@ export default function BookingForm({
                     size="sm" 
                     onClick={() => {
                       setTipAmount(Math.round((bookingData?.amount || 0) * 0.10));
-                      window.scrollTo({
-                        top: 0,
-                        behavior: 'smooth'
-                      });
+                      scrollToTop();
                     }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
@@ -549,10 +517,7 @@ export default function BookingForm({
                     size="sm" 
                     onClick={() => {
                       setTipAmount(Math.round((bookingData?.amount || 0) * 0.15));
-                      window.scrollTo({
-                        top: 0,
-                        behavior: 'smooth'
-                      });
+                      scrollToTop();
                     }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
@@ -564,10 +529,7 @@ export default function BookingForm({
                     size="sm" 
                     onClick={() => {
                       setTipAmount(Math.round((bookingData?.amount || 0) * 0.20));
-                      window.scrollTo({
-                        top: 0,
-                        behavior: 'smooth'
-                      });
+                      scrollToTop();
                     }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
@@ -580,11 +542,8 @@ export default function BookingForm({
                   <span className="absolute left-3 top-1/2 -translate-y-1/2">$</span>
                   <Input
                     type="number"
+                    className="pl-8"
                     placeholder="Custom amount"
-                    min="0"
-                    step="0.01"
-                    className="pl-8 text-sm"
-                    value={tipAmount > 0 ? (tipAmount / 100).toFixed(2) : ""}
                     onChange={(e) => {
                       const value = e.target.value === "" ? 0 : parseFloat(e.target.value) * 100;
                       setTipAmount(Math.round(value));
@@ -598,10 +557,9 @@ export default function BookingForm({
                   <span>Service Total:</span>
                   <span>{formatPrice(bookingData?.amount || 0)}</span>
                 </div>
-                
                 {tipAmount > 0 && (
-                  <div className="flex justify-between">
-                    <span>Tip:</span>
+                  <div className="flex justify-between text-sm">
+                    <span>Tip Amount:</span>
                     <span>{formatPrice(tipAmount)}</span>
                   </div>
                 )}
@@ -617,7 +575,7 @@ export default function BookingForm({
         
         {/* Braintree Payment Form */}
         <BraintreePaymentForm
-          bookingData={bookingData}
+          bookingData={bookingData!}
           onComplete={handlePaymentComplete}
           isDeposit={paymentOption === 'deposit'}
           tipAmount={paymentOption === 'full' ? tipAmount : 0}
@@ -830,7 +788,7 @@ export default function BookingForm({
             name="phone"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Phone Number <span className="text-muted-foreground text-xs">(Optional)</span></FormLabel>
+                <FormLabel>Phone Number <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
                 <FormControl>
                   <Input placeholder="Your phone number" {...field} />
                 </FormControl>
@@ -838,9 +796,7 @@ export default function BookingForm({
               </FormItem>
             )}
           />
-        </div>
-        
-        <div>
+          
           <FormField
             control={form.control}
             name="email"
@@ -848,7 +804,25 @@ export default function BookingForm({
               <FormItem>
                 <FormLabel>Email Address</FormLabel>
                 <FormControl>
-                  <Input placeholder="your@email.com" {...field} />
+                  <Input placeholder="Your email" type="email" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          
+          <FormField
+            control={form.control}
+            name="details"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Additional Details <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
+                <FormControl>
+                  <Textarea 
+                    placeholder="Please provide any additional details about your booking needs" 
+                    className="min-h-[80px]" 
+                    {...field} 
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -856,116 +830,80 @@ export default function BookingForm({
           />
         </div>
         
-        <FormField
-          control={form.control}
-          name="details"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Project Details</FormLabel>
-              <FormControl>
-                <Textarea 
-                  placeholder="Tell me about your project and any specific requirements" 
-                  className="resize-none" 
-                  rows={4}
-                  {...field} 
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        
-        {selectedService && ((selectedTime && !isRecordingService && !isMixingService) || ((isRecordingService || isMixingService) && selectedDate)) && selectedDuration && (
-          <div className="mb-6 bg-muted/30 p-4 rounded-md">
-            <h4 className="font-medium mb-2">Payment Summary</h4>
-            
-            <div className="flex justify-between mb-2">
-              <span>
-                {selectedService.name} 
-                {(!isRecordingService && !isMixingService && selectedTime && selectedTime.date) ? 
-                  ` (${formatTime(new Date(selectedTime.date))}, ${formatDate(selectedDate!)})` :
-                  selectedDate ? ` (${formatDate(selectedDate)})` : ""
-                }
-              </span>
-              <span>${selectedService.price / 100}/{selectedService && (selectedService.name.toLowerCase().includes("mixing") || selectedService.name.toLowerCase().includes("mastering")) ? 'song' : 'hour'}</span>
-            </div>
-            
-            <div className="flex justify-between mb-2">
-              {selectedService && (selectedService.name.toLowerCase().includes("mixing") || selectedService.name.toLowerCase().includes("mastering")) ? (
-                <>
-                  <span>Number of Songs</span>
-                  <span>{selectedDuration / 60} {selectedDuration === 60 ? 'song' : 'songs'}</span>
-                </>
-              ) : (
-                <>
-                  <span>Duration</span>
-                  <span>{selectedDuration / 60} {selectedDuration === 60 ? 'hour' : 'hours'}</span>
-                </>
-              )}
-            </div>
-            
-            <div className="flex justify-between font-medium border-t border-muted pt-2 mt-2">
-              <span>Total</span>
-              <span>${calculateTotal().toFixed(2)}</span>
-            </div>
-            
-            <div className="flex justify-between text-sm mt-1">
-              <span>Deposit (25%)</span>
-              <span>${(calculateTotal() * 0.25).toFixed(2)}</span>
-            </div>
-          </div>
+        {/* Booking Summary */}
+        {selectedService && selectedDuration && (
+          <Card className="bg-muted/30">
+            <CardHeader className="pb-3">
+              <CardTitle>Booking Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-sm font-medium mb-1">Service</h4>
+                    <p>{selectedService.name}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-medium mb-1">Duration</h4>
+                    <p>
+                      {selectedDuration / 60} {isMixingService 
+                        ? (selectedDuration === 60 ? 'song' : 'songs') 
+                        : (selectedDuration === 60 ? 'hour' : 'hours')
+                      }
+                    </p>
+                  </div>
+                  {selectedDate && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-1">Date</h4>
+                      <p>{formatDate(selectedDate)}</p>
+                    </div>
+                  )}
+                  {selectedTime && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-1">Time</h4>
+                      <p>{formatTime(new Date(selectedTime.date))}</p>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="pt-4 border-t">
+                  <h4 className="font-medium mb-2">Payment Summary</h4>
+                  
+                  <div className="flex justify-between mb-2">
+                    <span>
+                      {selectedService.name} 
+                      {isMixingService 
+                        ? ` (${selectedDuration / 60} ${selectedDuration === 60 ? 'song' : 'songs'})` 
+                        : ` (${selectedDuration / 60} ${selectedDuration === 60 ? 'hour' : 'hours'})`
+                      }
+                    </span>
+                    <span>{formatPrice(selectedDuration / 60 * selectedService.price)}</span>
+                  </div>
+                  
+                  <div className="flex justify-between mb-2 text-muted-foreground text-sm">
+                    <span>Due Today (25% Deposit)</span>
+                    <span>{formatPrice(selectedDuration / 60 * selectedService.price * 0.25)}</span>
+                  </div>
+                  
+                  <div className="flex justify-between text-sm">
+                    <span>Remaining Balance</span>
+                    <span>{formatPrice(selectedDuration / 60 * selectedService.price * 0.75)}</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
         
-        <div className="mb-6">
-          <h4 className="font-medium mb-2">Payment Method</h4>
-          <RadioGroup defaultValue="card" className="flex flex-wrap gap-4">
-            <div className="flex items-center p-3 border border-muted-foreground/20 rounded-md cursor-pointer hover:bg-muted transition-colors">
-              <RadioGroupItem value="card" id="payment-card" className="mr-2" />
-              <label htmlFor="payment-card" className="flex items-center cursor-pointer">
-                <svg viewBox="0 0 24 24" className="h-5 w-5 mr-2 text-blue-600" fill="currentColor">
-                  <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/>
-                </svg>
-                <span>Credit/Debit Card</span>
-              </label>
-            </div>
-            
-            <div className="flex items-center p-3 border border-muted-foreground/20 rounded-md cursor-pointer hover:bg-muted transition-colors opacity-50">
-              <RadioGroupItem value="paypal" id="payment-paypal" className="mr-2" disabled />
-              <label htmlFor="payment-paypal" className="flex items-center cursor-not-allowed">
-                <svg viewBox="0 0 24 24" className="h-5 w-5 mr-2 text-blue-800" fill="currentColor">
-                  <path d="M9.91 13.07H7.58L7.15 15.67H4.5L6.13 5.67H10.13C12.43 5.67 13.42 6.77 13.42 8.4C13.41 11.34 11.95 13.07 9.91 13.07zM9.66 7.67H8.55L7.92 11.07H9.06C10.26 11.07 10.9 10.09 10.9 8.9C10.9 8.03 10.45 7.67 9.66 7.67z"/>
-                  <path d="M19.5 12.4h-3.88l-0.5 3.27H12.5L14.12 5.67H18.13c2.3 0 3.29 1.1 3.29 2.73C21.41 11.34 19.94 12.4 19.5 12.4zM18.24 7.67H17.13L16.37 10.4H17.5c1.21 0 1.85-0.48 1.85-1.67C19.35 8.03 18.9 7.67 18.24 7.67z"/>
-                </svg>
-                <span>PayPal (Coming Soon)</span>
-              </label>
-            </div>
-          </RadioGroup>
+        <div className="flex justify-end">
+          <Button 
+            type="submit" 
+            size="lg"
+            disabled={!selectedServiceId || !selectedDuration || (isRecordingService && !selectedTime && !selectedDate)}
+          >
+            Continue to Contract
+          </Button>
         </div>
-        
-        <Button 
-          type="submit" 
-          className="w-full bg-primary hover:bg-primary-600 py-6 text-base"
-          disabled={
-            !selectedService || 
-            (!isMixingService && !isRecordingService && !selectedTime) || 
-            !selectedDuration || 
-            ((isMixingService || isRecordingService) && !selectedDate) ||
-            form.formState.isSubmitting
-          }
-        >
-          {form.formState.isSubmitting ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <>
-              <FileText className="mr-2 h-4 w-4" />
-              Continue to Book
-            </>
-          )}
-        </Button>
-        
-        <p className="text-sm text-center mt-2 text-muted-foreground">
-          A 25% deposit is required to secure your booking.
-        </p>
       </form>
     </Form>
   );

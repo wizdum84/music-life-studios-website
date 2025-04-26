@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PlayCircle, PauseCircle, Download, ShoppingCart } from "lucide-react";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, scrollToTop } from "@/lib/utils";
 import { ContractRequirement } from "@/components/contracts";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -608,7 +608,7 @@ export default function Beats() {
   
   // Scroll to top when page loads
   useEffect(() => {
-    window.scrollTo(0, 0);
+    scrollToTop();
   }, []);
   
   // Fetch all beats
