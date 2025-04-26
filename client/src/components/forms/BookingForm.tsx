@@ -193,6 +193,12 @@ export default function BookingForm({
     const service = services.find(s => s.id === serviceId);
     console.log(`Service changed to: ${service?.name} (ID: ${serviceId})`);
     console.log(`Recording service? ${service?.name.toLowerCase().includes('recording') || service?.name.toLowerCase().includes('session')}`);
+    
+    // Scroll to top
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
   
   // Handle duration selection
@@ -200,12 +206,24 @@ export default function BookingForm({
     const duration = parseInt(value);
     setSelectedDuration(duration);
     form.setValue("duration", duration);
+    
+    // Scroll to top
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
   
   // Handle date selection
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
     setSelectedTime(null);
+    
+    // Scroll to top
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
   
   // Handle time selection
@@ -213,6 +231,12 @@ export default function BookingForm({
     setSelectedTime(timeSlot);
     form.setValue("date", new Date(timeSlot.date).toISOString());
     form.setValue("timeSlotId", timeSlot.id);
+    
+    // Scroll to top
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
   
   // Handle date selection for mixing or recording services (no time slot needed for mixing/recording)
@@ -259,6 +283,12 @@ export default function BookingForm({
   const handleContractSigned = () => {
     setContractSigned(true);
     setCurrentStep('payment');
+    
+    // Scroll to top
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
   
   // Form submission
@@ -268,10 +298,10 @@ export default function BookingForm({
     setCurrentStep('contract');
     
     // Scroll to top
-    const container = document.getElementById("booking-form-container");
-    if (container) {
-      container.scrollTo(0, 0);
-    }
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
   
   // Payment completion handler
@@ -291,6 +321,12 @@ export default function BookingForm({
       if (tipAmount > 0) {
         setTipAmount(0);
       }
+      
+      // Scroll to top
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
     }).catch(error => {
       console.error("Error finalizing booking:", error);
       toast({
@@ -717,7 +753,7 @@ export default function BookingForm({
           )}
           
           {/* For recording services - show time selection */}
-          {selectedDate && !isMixingService && (
+          {selectedDate && isRecordingService && (
             <div>
               <h4 className="font-medium mb-2">Select Time</h4>
               {availableTimes.length > 0 ? (
