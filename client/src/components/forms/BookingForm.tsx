@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
 import { TimeSlot, Service } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, scrollToTop } from "@/lib/utils";
 
 // UI Components
 import { Button } from "@/components/ui/button";
@@ -195,10 +195,7 @@ export default function BookingForm({
     console.log(`Recording service? ${service?.name.toLowerCase().includes('recording') || service?.name.toLowerCase().includes('session')}`);
     
     // Scroll to top
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    });
+    scrollToTop();
   };
   
   // Handle duration selection
