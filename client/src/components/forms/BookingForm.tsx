@@ -215,18 +215,20 @@ export default function BookingForm({
     form.setValue("timeSlotId", timeSlot.id);
   };
   
-  // Handle date selection for mixing services (no time slot needed)
+  // Handle date selection for mixing or recording services (no time slot needed for mixing/recording)
   useEffect(() => {
-    if (isMixingService && selectedDate) {
-      // For mixing services, we just need the date without a specific time
+    if ((isMixingService || isRecordingService) && selectedDate) {
+      // For mixing/recording services, we just need the date without a specific time
       const dateWithNoon = new Date(selectedDate);
       dateWithNoon.setHours(12, 0, 0, 0); // Set to noon
       form.setValue("date", dateWithNoon.toISOString());
       
       // Use a placeholder time slot ID that will be handled differently on the server
       form.setValue("timeSlotId", -1);
+      
+      console.log(`Date set for ${isRecordingService ? "recording" : "mixing"} service: ${dateWithNoon.toISOString()}`);
     }
-  }, [isMixingService, selectedDate, form]);
+  }, [isMixingService, isRecordingService, selectedDate, form]);
   
   // Calculate total price
   const calculateTotal = () => {
@@ -650,7 +652,7 @@ export default function BookingForm({
             <h4 className="font-medium mb-2">Select Date</h4>
             <Calendar
               mode="single"
-              selected={selectedDate}
+              selected={selectedDate || undefined}
               onSelect={(date) => {
                 if (date) handleDateSelect(date);
               }}
@@ -711,8 +713,8 @@ export default function BookingForm({
             </div>
           )}
           
-          {/* For recording services - show time selection */}
-          {selectedDate && !isMixingService && (
+          {/* For recording services - show time selection - but not for recording service */}
+          {selectedDate && !isMixingService && !isRecordingService && (
             <div>
               <h4 className="font-medium mb-2">Select Time</h4>
               {availableTimes.length > 0 ? (
@@ -801,12 +803,18 @@ export default function BookingForm({
           )}
         />
         
-        {selectedService && selectedTime && selectedDuration && (
+        {selectedService && ((selectedTime && !isRecordingService && !isMixingService) || ((isRecordingService || isMixingService) && selectedDate)) && selectedDuration && (
           <div className="mb-6 bg-muted/30 p-4 rounded-md">
             <h4 className="font-medium mb-2">Payment Summary</h4>
             
             <div className="flex justify-between mb-2">
-              <span>{selectedService.name} ({formatTime(new Date(selectedTime.date))}, {formatDate(selectedDate!)})</span>
+              <span>
+                {selectedService.name} 
+                {(!isRecordingService && !isMixingService && selectedTime && selectedTime.date) ? 
+                  ` (${formatTime(new Date(selectedTime.date))}, ${formatDate(selectedDate!)})` :
+                  selectedDate ? ` (${formatDate(selectedDate)})` : ""
+                }
+              </span>
               <span>${selectedService.price / 100}/{selectedService && (selectedService.name.toLowerCase().includes("mixing") || selectedService.name.toLowerCase().includes("mastering")) ? 'song' : 'hour'}</span>
             </div>
             
@@ -867,9 +875,9 @@ export default function BookingForm({
           className="w-full bg-primary hover:bg-primary-600 py-6 text-base"
           disabled={
             !selectedService || 
-            (!isMixingService && !selectedTime) || 
+            (!isMixingService && !isRecordingService && !selectedTime) || 
             !selectedDuration || 
-            (isMixingService && !selectedDate) ||
+            ((isMixingService || isRecordingService) && !selectedDate) ||
             form.formState.isSubmitting
           }
         >
