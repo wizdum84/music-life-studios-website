@@ -64,7 +64,7 @@ export default function Account() {
   // Fetch user bookings
   const { data: bookings = [], isLoading: isLoadingBookings } = useQuery<Booking[]>({
     queryKey: ["/api/user/bookings"],
-    queryFn: getQueryFn(),
+    queryFn: getQueryFn({ on401: "returnEmptyArray" }),
     enabled: !!user,
   });
 
@@ -75,7 +75,7 @@ export default function Account() {
     sessionCount: number
   }>({
     queryKey: ["/api/user/loyalty"],
-    queryFn: getQueryFn(),
+    queryFn: getQueryFn({ on401: "returnEmptyObject" }),
     enabled: !!user,
   });
   
@@ -85,7 +85,7 @@ export default function Account() {
   // Fetch service information for bookings
   const { data: services = [], isLoading: isLoadingServices } = useQuery<Service[]>({
     queryKey: ["/api/services"],
-    queryFn: getQueryFn(),
+    queryFn: getQueryFn({ on401: "returnEmptyArray" }),
   });
 
   const handleLogout = async () => {

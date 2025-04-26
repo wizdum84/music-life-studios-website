@@ -35,23 +35,32 @@ export async function getBookingPaymentStatus(bookingId: string, email: string) 
   return await response.json();
 }
 
-type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+type UnauthorizedBehavior = "returnNull" | "returnEmptyArray" | "returnEmptyObject" | "throw";
+export function getQueryFn<T>(options?: {
+  on401?: UnauthorizedBehavior;
+}): QueryFunction<T> {
+  return async ({ queryKey }) => {
+    const unauthorizedBehavior = options?.on401 || "throw";
     const res = await fetch(queryKey[0] as string, {
       credentials: "include",
     });
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
+    if (res.status === 401) {
+      if (unauthorizedBehavior === "returnNull") {
+        return null as unknown as T;
+      } else if (unauthorizedBehavior === "returnEmptyArray") {
+        return [] as unknown as T;
+      } else if (unauthorizedBehavior === "returnEmptyObject") {
+        return {} as unknown as T;
+      } else if (unauthorizedBehavior === "throw") {
+        await throwIfResNotOk(res);
+      }
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    return await res.json() as T;
   };
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {
