@@ -8,7 +8,7 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
   password: text("password").notNull(),
-  role: text("role").default("customer"), // customer, admin
+  role: text("role").default("customer").notNull(), // customer, admin
   firstName: text("first_name"),
   lastName: text("last_name"),
   phone: text("phone"),
@@ -88,7 +88,7 @@ export const bookings = pgTable("bookings", {
   details: text("details"),
   status: text("status").notNull().default("pending"), // pending, confirmed, completed, cancelled
   paymentIntentId: text("payment_intent_id"),
-  paymentStatus: text("payment_status").default("unpaid"), // unpaid, deposit_paid, paid
+  paymentStatus: text("payment_status").default("unpaid").notNull(), // unpaid, deposit_paid, paid
   amount: integer("amount").notNull(), // In cents
   tipAmount: integer("tip_amount").default(0), // Optional tip amount in cents
   transactionId: text("transaction_id"),  // Braintree transaction ID
@@ -98,7 +98,7 @@ export const bookings = pgTable("bookings", {
   discountCode: text("discount_code"), // Discount code applied to booking
   discountAmount: integer("discount_amount"), // Discount amount in cents
   loyaltyApplied: boolean("loyalty_applied").default(false), // Whether this is a free loyalty session
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertBookingSchema = createInsertSchema(bookings)
@@ -121,7 +121,7 @@ export const insertBookingSchema = createInsertSchema(bookings)
     name: z.string().min(2, "Name must be at least 2 characters"),
     email: z.string().email("Please enter a valid email"),
     phone: z.string().optional(),
-    date: z.string().or(z.date()),
+    date: z.coerce.date(),
     duration: z.number(),
     details: z.string().optional(),
     amount: z.number(),
@@ -135,8 +135,8 @@ export const messages = pgTable("messages", {
   email: text("email").notNull(),
   subject: text("subject").notNull(),
   message: text("message").notNull(),
-  read: boolean("read").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
+  read: boolean("read").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertMessageSchema = createInsertSchema(messages)
@@ -152,15 +152,16 @@ export const insertMessageSchema = createInsertSchema(messages)
 export const timeSlots = pgTable("time_slots", {
   id: serial("id").primaryKey(),
   date: timestamp("date").notNull(),
-  available: boolean("available").default(true),
+  available: boolean("available").default(true).notNull(),
   bookingId: integer("booking_id"),
 });
 
 export const insertTimeSlotSchema = createInsertSchema(timeSlots)
-  .omit({ id: true, bookingId: true })
+  .omit({ id: true })
   .extend({
-    date: z.string().or(z.date()),
-    available: z.boolean()
+    date: z.coerce.date(),
+    available: z.boolean(),
+    bookingId: z.number().nullable().optional(),
   });
 
 // Types
@@ -194,7 +195,7 @@ export const beats = pgTable("beats", {
   contractUrl: text("contract_url"), // URL to licensing contract PDF
   tags: text("tags").array(), // Keywords for search
   featured: boolean("featured").default(false), // Whether the beat is featured
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertBeatSchema = createInsertSchema(beats)
@@ -208,7 +209,7 @@ export const insertBeatSchema = createInsertSchema(beats)
     imageUrl: z.string().url("Image URL must be a valid URL").optional(),
     bpm: z.number().min(1, "BPM must be at least 1"),
     price: z.number().min(1, "Price must be at least 1 cent"),
-    licensingOptions: z.any(), // We'll validate this on the client side
+    licensingOptions: z.unknown(), // We'll validate this on the client side
     contractUrl: z.string().url("Contract URL must be a valid URL").optional(),
     tags: z.array(z.string()).optional(),
     featured: z.boolean().optional(),
@@ -226,7 +227,7 @@ export const beatPurchases = pgTable("beat_purchases", {
   downloadCount: integer("download_count").default(0), // Number of times downloaded
   contractSigned: boolean("contract_signed").default(false), // Whether the contract has been signed
   contractSignedAt: timestamp("contract_signed_at"), // When the contract was signed
-  purchaseDate: timestamp("purchase_date").defaultNow(),
+  purchaseDate: timestamp("purchase_date").defaultNow().notNull(),
 });
 
 export const insertBeatPurchaseSchema = createInsertSchema(beatPurchases)
@@ -248,13 +249,14 @@ export const contracts = pgTable("contracts", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description").notNull(),
+  content: text("content").default("").notNull(),
   fileUrl: text("file_url").notNull(),
   fileType: text("file_type").notNull().default("pdf"), // pdf, doc, docx
   category: text("category").notNull().default("licensing"), // licensing, services, other
-  version: integer("version").default(1), // Version tracking
-  active: boolean("active").default(true), // Whether this contract is currently active
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  version: integer("version").default(1).notNull(), // Version tracking
+  active: boolean("active").default(true).notNull(), // Whether this contract is currently active
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insertContractSchema = createInsertSchema(contracts)
@@ -262,6 +264,7 @@ export const insertContractSchema = createInsertSchema(contracts)
   .extend({
     title: z.string().min(2, "Title must be at least 2 characters"),
     description: z.string().min(10, "Description must be at least 10 characters"),
+    content: z.string().optional().default(""),
     fileUrl: z.string().url("File URL must be a valid URL"),
     fileType: z.string().default("pdf"),
     category: z.string().default("licensing"),
@@ -278,7 +281,7 @@ export const contractSignatures = pgTable("contract_signatures", {
   agreedToTerms: boolean("agreed_to_terms").notNull().default(false),
   relatedEntityType: text("related_entity_type"), // "beat", "booking", etc.
   relatedEntityId: integer("related_entity_id"), // ID of the related entity
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertContractSignatureSchema = createInsertSchema(contractSignatures)
@@ -312,12 +315,14 @@ export const feedbacks = pgTable("feedbacks", {
   userId: integer("user_id"),
   bookingId: integer("booking_id"),
   beatPurchaseId: integer("beat_purchase_id"),
+  name: text("name"),
+  email: text("email"),
   rating: integer("rating").notNull(), // 1-5 star rating
   comment: text("comment"),
   serviceType: text("service_type").notNull(), // 'session', 'mixing', 'mastering', 'beat'
-  status: text("status").default("active"), // 'active', 'hidden', 'flagged'
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  status: text("status").default("active").notNull(), // 'active', 'hidden', 'flagged'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insertFeedbackSchema = createInsertSchema(feedbacks)
@@ -338,10 +343,10 @@ export const promotions = pgTable("promotions", {
   maxDiscount: integer("max_discount"), // Maximum discount amount in cents
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date").notNull(),
-  active: boolean("active").default(true),
+  active: boolean("active").default(true).notNull(),
   usageLimit: integer("usage_limit"), // Maximum number of times the promo can be used
-  usageCount: integer("usage_count").default(0), // Number of times the promo has been used
-  createdAt: timestamp("created_at").defaultNow(),
+  usageCount: integer("usage_count").default(0).notNull(), // Number of times the promo has been used
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertPromotionSchema = createInsertSchema(promotions)
@@ -354,8 +359,8 @@ export const insertPromotionSchema = createInsertSchema(promotions)
     discountValue: z.number().min(1, "Discount value must be at least 1"),
     minPurchase: z.number().optional(),
     maxDiscount: z.number().optional(),
-    startDate: z.string().or(z.date()),
-    endDate: z.string().or(z.date()),
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
     active: z.boolean().default(true),
     usageLimit: z.number().optional(),
   });
@@ -371,7 +376,7 @@ export const loyaltyRecords = pgTable("loyalty_records", {
   action: text("action").notNull(), // session_completed, reward_earned, reward_used
   pointsChange: integer("points_change").notNull(), // Positive for earned, negative for used
   description: text("description").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertLoyaltyRecordSchema = createInsertSchema(loyaltyRecords)

@@ -899,7 +899,7 @@ export default function BookingForm({
           <Button 
             type="submit" 
             size="lg"
-            disabled={!selectedServiceId || !selectedDuration || (isRecordingService && !selectedTime && !selectedDate)}
+            disabled={Boolean(!selectedServiceId || !selectedDuration || (isRecordingService && !selectedTime && !selectedDate))}
           >
             Continue to Contract
           </Button>

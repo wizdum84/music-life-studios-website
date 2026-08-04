@@ -4,3 +4,12 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+.npm-cache
+.local
+.env
+.env.*
+dev-server.log
+server.err.log
+server.out.log
+gcm-diagnose.log
+artifacts/

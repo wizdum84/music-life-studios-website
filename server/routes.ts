@@ -16,9 +16,7 @@ async function ensureContractsExist() {
     
     if (!existingRules || existingRules.length === 0) {
       // Create default studio rules contract
-      await storage.createContract({
-        title: "Studio Rules & Policies",
-        description: `MUSIC LIFE STUDIOS - STUDIO RULES & POLICIES
+      const description = `MUSIC LIFE STUDIOS - STUDIO RULES & POLICIES
 
 BOOKING & CANCELLATION:
 - A 25% non-refundable deposit is required to secure all bookings.
@@ -45,7 +43,12 @@ POST-SESSION:
 - Minor revisions (up to 3) are included in mixing packages.
 - Major revisions may incur additional costs.
 
-By signing this agreement, you acknowledge you have read and agree to comply with all studio rules and policies.`,
+By signing this agreement, you acknowledge you have read and agree to comply with all studio rules and policies.`;
+
+      await storage.createContract({
+        title: "Studio Rules & Policies",
+        description,
+        content: description,
         fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/studio_rules.pdf",
         fileType: "pdf",
         category: "studio_rules",
@@ -59,9 +62,7 @@ By signing this agreement, you acknowledge you have read and agree to comply wit
     
     if (!existingMixingContracts || existingMixingContracts.length === 0) {
       // Create default mixing & mastering contract
-      await storage.createContract({
-        title: "Mixing & Mastering Agreement",
-        description: `MUSIC LIFE STUDIOS - MIXING & MASTERING AGREEMENT
+      const description = `MUSIC LIFE STUDIOS - MIXING & MASTERING AGREEMENT
 
 FILE REQUIREMENTS:
 - All audio files must be provided as WAV or AIFF files (minimum 44.1kHz, 24-bit).
@@ -93,7 +94,12 @@ PAYMENT TERMS:
 - The remaining balance is due before the final files are delivered.
 - No refunds will be issued after the mixing/mastering process has begun.
 
-By signing this agreement, you acknowledge that you understand and will abide by this mixing and mastering agreement.`,
+By signing this agreement, you acknowledge that you understand and will abide by this mixing and mastering agreement.`;
+
+      await storage.createContract({
+        title: "Mixing & Mastering Agreement",
+        description,
+        content: description,
         fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/mixing_mastering.pdf",
         fileType: "pdf",
         category: "mixing_mastering",
@@ -380,7 +386,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get bookings for logged in user
   app.get("/api/user/bookings", isAuthenticated, async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user!.id;
       const bookings = await storage.getUserBookings(userId);
       res.json(bookings);
     } catch (error) {
@@ -392,7 +398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get loyalty data for logged in user
   app.get("/api/user/loyalty", isAuthenticated, async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user!.id;
       // Get loyalty records
       const loyaltyRecords = await storage.getLoyaltyRecords(userId);
       
@@ -711,7 +717,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Update booking with tip information
         const updatedBooking = await storage.updateBookingTransactionInfo(booking.id, {
           transactionId: result.transaction.id,
-          paymentStatus: booking.paymentStatus,  // Keep the original payment status
+          paymentStatus: booking.paymentStatus || "unpaid",  // Keep the original payment status
           paymentMethod: result.transaction.paymentInstrumentType,
           tipAmount: tipAmount
         });
@@ -780,7 +786,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/contracts", isAuthenticated, async (req, res) => {
     try {
-      const { title, description, fileUrl, fileType, category } = req.body;
+      const { title, description, content, fileUrl, fileType, category } = req.body;
       
       if (!title || !description || !fileUrl) {
         return res.status(400).json({ message: "Missing required fields" });
@@ -789,6 +795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const newContract = await storage.createContract({
         title,
         description,
+        content: content || description,
         fileUrl,
         fileType: fileType || "pdf",
         category: category || "licensing"
@@ -1185,9 +1192,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         beatPurchaseId: beatPurchaseId || null,
         userId: null, // Can be linked to a user if authenticated
         name,
-        email,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        email
       });
       
       res.status(201).json(newFeedback);
@@ -1238,7 +1243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User loyalty program endpoints
   app.get("/api/user/loyalty", isAuthenticated, async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user!.id;
       const loyaltyRecords = await storage.getLoyaltyRecords(userId);
       const user = await storage.getUser(userId);
       
@@ -1255,7 +1260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Admin loyalty program management
   app.post("/api/admin/loyalty/rewards", isAuthenticated, async (req, res) => {
-    if (req.user.role !== "admin") {
+    if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
     
@@ -1272,10 +1277,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create loyalty record
       const record = await storage.createLoyaltyRecord({
         userId,
-        points,
-        reason: reason || "Admin manual adjustment",
-        bookingId: bookingId || null,
-        createdAt: new Date()
+        action: points >= 0 ? "reward_earned" : "reward_used",
+        pointsChange: points,
+        description: reason || "Admin manual adjustment",
+        bookingId: bookingId || undefined
       });
       
       res.json({ message: "Loyalty points added successfully", record });
@@ -1287,7 +1292,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Reward loyalty points when a booking is completed
   app.post("/api/bookings/:id/complete", isAuthenticated, async (req, res) => {
-    if (req.user.role !== "admin") {
+    if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
     
@@ -1316,10 +1321,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Record loyalty transaction
         await storage.createLoyaltyRecord({
           userId: booking.userId,
-          points: pointsEarned,
-          reason: `Completed booking #${bookingId}`,
-          bookingId,
-          createdAt: new Date()
+          action: "session_completed",
+          pointsChange: pointsEarned,
+          description: `Completed booking #${bookingId}`,
+          bookingId
         });
         
         // Check if user has reached 5 sessions for free reward
@@ -1328,10 +1333,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Create a loyalty record for the free session reward
           await storage.createLoyaltyRecord({
             userId: booking.userId,
-            points: 0, // No points but tracking the reward
-            reason: `Free 3-hour session reward (every 5 sessions)`,
-            bookingId: null,
-            createdAt: new Date()
+            action: "reward_earned",
+            pointsChange: 0, // No points but tracking the reward
+            description: `Free 3-hour session reward (every 5 sessions)`,
+            bookingId: undefined
           });
           
           return res.json({ 
@@ -1415,7 +1420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Admin promotions management
   app.get("/api/admin/promotions", isAuthenticated, async (req, res) => {
-    if (req.user.role !== "admin") {
+    if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
     
@@ -1429,16 +1434,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/admin/promotions", isAuthenticated, async (req, res) => {
-    if (req.user.role !== "admin") {
+    if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
     
     try {
-      const promotion = await storage.createPromotion({
-        ...req.body,
-        usageCount: 0,
-        createdAt: new Date()
-      });
+      const promotion = await storage.createPromotion(req.body);
       
       res.status(201).json(promotion);
     } catch (error) {
@@ -1448,7 +1449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/admin/promotions/:id", isAuthenticated, async (req, res) => {
-    if (req.user.role !== "admin") {
+    if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
     
@@ -1469,7 +1470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete("/api/admin/promotions/:id", isAuthenticated, async (req, res) => {
-    if (req.user.role !== "admin") {
+    if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
     

@@ -72,8 +72,8 @@ export default function Booking() {
   return (
     <>
       <Helmet>
-        <title>Book a Session | SoundCraft Studios</title>
-        <meta name="description" content="Book your recording, mixing, or production session at SoundCraft Studios." />
+        <title>Book a Session | Music Life Studios</title>
+        <meta name="description" content="Book your recording, mixing, or production session at Music Life Studios." />
       </Helmet>
       
       <section className="py-20 bg-gradient-to-br from-primary/95 to-secondary/95 text-white">
