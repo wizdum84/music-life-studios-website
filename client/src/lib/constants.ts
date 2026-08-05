@@ -1,8 +1,8 @@
 // Services
 export const SERVICES = {
-  RECORDING: "Recording Session",
+  RECORDING: "Mobile Recording Session",
   MIXING: "Mixing & Mastering",
-  PRODUCTION: "Production & Composition"
+  PRODUCTION: "Custom Producer Package"
 };
 
 // Booking status
@@ -25,7 +25,7 @@ export const STUDIO_INFO = {
   NAME: "Music Life Studios",
   EMAIL: "hello@musiclifestudios.com",
   PHONE: "(310) 555-1234",
-  ADDRESS: "123 Music Avenue, Suite 4B, Los Angeles, CA 90028",
+  ADDRESS: "Mobile sessions, rented locations, and remote mixing/mastering",
   HOURS: {
     WEEKDAY: "10:00 AM - 10:00 PM",
     SATURDAY: "12:00 PM - 8:00 PM",
@@ -51,12 +51,12 @@ export const DEFAULT_AUDIO = {
 
 // Studio equipment
 export const STUDIO_EQUIPMENT = [
-  "SSL Mixing Console",
-  "Pro Tools HDX",
-  "Neumann Microphones",
-  "UA Compressors",
-  "Vintage Synthesizers",
-  "Acoustic Treatment"
+  "Mobile recording setup",
+  "Pro Tools workflow",
+  "Vocal production tools",
+  "Mixing and mastering chain",
+  "Beat production",
+  "Remote session delivery"
 ];
 
 // Color theme (matches theme.json)

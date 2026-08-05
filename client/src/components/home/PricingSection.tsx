@@ -22,12 +22,12 @@ const PricingCard = ({
 }) => {
   // Determine which features are included/excluded
   const allPossibleFeatures = [
-    "Studio recording time",
-    "Basic editing included",
+    "Mobile or arranged recording",
+    "Remote delivery",
     "Digital delivery",
     "Mixing & mastering",
-    "Production assistance",
-    "Session musicians"
+    "Custom beat production",
+    "Project direction"
   ];
   
   // Match features from the service with all possible features
@@ -64,7 +64,7 @@ const PricingCard = ({
         <h3 className="font-semibold text-xl text-white mb-2">{planName}</h3>
         <div className={isPopular ? "text-white" : "text-gray-100"}>
           <span className="text-3xl font-bold">{formatPrice(service.price)}</span>
-          <span className="text-gray-300">/hour</span>
+          <span className="text-gray-300"> starting</span>
         </div>
       </div>
       
@@ -88,7 +88,7 @@ const PricingCard = ({
         </ul>
         
         <Button asChild className="w-full bg-primary hover:bg-primary-600">
-          <Link href={`/booking?type=${service.name.toLowerCase().includes("mixing") ? "mixing" : "recording"}`}>
+          <Link href={`/booking?type=${service.name.toLowerCase().includes("mixing") ? "mixing" : service.name.toLowerCase().includes("producer") || service.name.toLowerCase().includes("production") ? "production" : "recording"}`}>
             {buttonText}
           </Link>
         </Button>
@@ -129,7 +129,7 @@ export default function PricingSection({ services, isLoading }: PricingSectionPr
         <div className="text-center mb-16">
           <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-4">Pricing Plans</h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Transparent pricing for all your audio production needs.
+            Starting points for recording, mixing, mastering, and custom production work.
           </p>
         </div>
         

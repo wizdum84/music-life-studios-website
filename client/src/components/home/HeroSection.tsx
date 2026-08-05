@@ -26,7 +26,7 @@ export default function HeroSection() {
             Where Music is Life
           </h2>
           <p className="text-gray-100 text-xl md:text-2xl mb-8 max-w-2xl">
-            Professional audio engineering and music production services to elevate your creative vision.
+            Mobile recording, remote mixing and mastering, custom beats, and producer packages for songs, albums, film, and creative projects.
           </p>
           <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
             <Button

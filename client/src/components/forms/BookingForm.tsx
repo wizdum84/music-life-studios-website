@@ -79,7 +79,7 @@ interface BookingFormProps {
   services: Service[];
   timeSlots: TimeSlot[];
   preselectedServiceId?: number | null;
-  serviceType?: 'recording' | 'mixing' | null;
+  serviceType?: 'recording' | 'mixing' | 'production' | null;
 }
 
 export default function BookingForm({ 
@@ -110,6 +110,12 @@ export default function BookingForm({
     (selectedServiceId && services.some(s => 
       s.id === selectedServiceId && 
       (s.name.toLowerCase().includes('recording') || s.name.toLowerCase().includes('session'))
+    ));
+
+  const isProductionService = serviceType === 'production' ||
+    (selectedServiceId && services.some(s =>
+      s.id === selectedServiceId &&
+      (s.name.toLowerCase().includes('producer') || s.name.toLowerCase().includes('production') || s.name.toLowerCase().includes('composition'))
     ));
   
   // Payment state
@@ -223,9 +229,9 @@ export default function BookingForm({
     scrollToTop();
   };
   
-  // Handle date selection for mixing or recording services (no time slot needed for mixing/mastering)
+  // Handle date selection for services that can start with a project date instead of a fixed studio slot.
   useEffect(() => {
-    if (selectedDate && (isMixingService || isRecordingService)) {
+    if (selectedDate && (isMixingService || isRecordingService || isProductionService)) {
       // Scroll to top
       scrollToTop();
       
@@ -238,9 +244,9 @@ export default function BookingForm({
       
       form.setValue("date", dateWithNoon.toISOString());
       
-      console.log(`Date set for ${isRecordingService ? "recording" : "mixing"} service: ${dateWithNoon.toISOString()}`);
+      console.log(`Date set for ${isRecordingService ? "recording" : isProductionService ? "production" : "mixing"} service: ${dateWithNoon.toISOString()}`);
     }
-  }, [isMixingService, isRecordingService, selectedDate, form]);
+  }, [isMixingService, isRecordingService, isProductionService, selectedDate, form]);
   
   // Calculate total price
   const calculateTotal = () => {

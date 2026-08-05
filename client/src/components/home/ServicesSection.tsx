@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Check, Mic, Sliders, Music } from "lucide-react";
+import { Check, Mic, Sliders, Music, Film } from "lucide-react";
 import { Service } from "@shared/schema";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +17,7 @@ const ServiceCard = ({ service }: { service: Service }) => {
     const name = service.name.toLowerCase();
     if (name.includes("recording")) return <Mic className="h-12 w-12 text-primary" />;
     if (name.includes("mixing")) return <Sliders className="h-12 w-12 text-primary" />;
+    if (name.includes("producer") || name.includes("production")) return <Film className="h-12 w-12 text-primary" />;
     return <Music className="h-12 w-12 text-primary" />;
   };
   
@@ -25,7 +26,14 @@ const ServiceCard = ({ service }: { service: Service }) => {
     const name = service.name.toLowerCase();
     if (name.includes("recording")) return "Book Recording";
     if (name.includes("mixing")) return "Request Mixing/Mastering";
-    return "Discuss Project";
+    return "Build a Producer Package";
+  };
+
+  const getBookingType = () => {
+    const name = service.name.toLowerCase();
+    if (name.includes("mixing") || name.includes("mastering")) return "mixing";
+    if (name.includes("producer") || name.includes("production")) return "production";
+    return "recording";
   };
   
   return (
@@ -50,7 +58,7 @@ const ServiceCard = ({ service }: { service: Service }) => {
       <CardFooter className="px-6 pb-6">
         <Button asChild className="w-full bg-primary hover:bg-primary-600">
           <Link 
-            href={`/booking?type=${service.name.toLowerCase().includes("mixing") ? "mixing" : "recording"}`}
+            href={`/booking?type=${getBookingType()}`}
             onClick={() => scrollToTop()}
           >
             {getButtonText()}
@@ -99,7 +107,7 @@ export default function ServicesSection({ services, isLoading }: ServicesSection
           <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-2">Professional Services</h2>
           <h3 className="font-medium text-2xl text-primary mb-3">Your Sound, Perfected</h3>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Comprehensive audio solutions to elevate your sound from concept to completion.
+            Flexible audio services built around how you actually create: at home, on location, or remotely.
           </p>
         </div>
         

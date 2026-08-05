@@ -28,7 +28,7 @@ export default function ContactSection() {
                     <MapPin className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <h4 className="font-medium mb-1">Studio Location</h4>
+                    <h4 className="font-medium mb-1">Session Location</h4>
                     <p className="text-muted-foreground">{STUDIO_INFO.ADDRESS}</p>
                   </div>
                 </div>
@@ -58,7 +58,7 @@ export default function ContactSection() {
                     <Clock className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <h4 className="font-medium mb-1">Studio Hours</h4>
+                    <h4 className="font-medium mb-1">Availability</h4>
                     <p className="text-muted-foreground">
                       Monday - Friday: {STUDIO_INFO.HOURS.WEEKDAY}<br />
                       Saturday: {STUDIO_INFO.HOURS.SATURDAY}<br />

@@ -21,38 +21,38 @@ export default function AboutSection() {
             <div>
               <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-6">About Me</h2>
               <p className="text-muted-foreground mb-4">
-                With over 10 years of experience in audio engineering and music production, I've worked with artists across genres from indie to mainstream.
+                Music Life Studios is built for artists and creators who need professional sound without being locked to one room. I can bring recording support to your home setup, help arrange a rental location for the right session, and handle mixing or mastering remotely.
               </p>
               <p className="text-muted-foreground mb-6">
-                My approach combines technical precision with creative intuition, ensuring your vision comes to life with the highest audio quality possible.
+                My approach combines engineering, beat production, arrangement, and creative direction so songs, albums, film cues, and custom projects can move from idea to finished release.
               </p>
               
               <div className="mb-8">
-                <h3 className="font-semibold text-xl mb-4">Studio Equipment</h3>
+                <h3 className="font-semibold text-xl mb-4">What I Bring</h3>
                 <ul className="grid grid-cols-2 gap-x-4 gap-y-2">
                   <li className="flex items-center text-muted-foreground">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
-                    <span>SSL Mixing Console</span>
+                    <span>Mobile recording setup</span>
                   </li>
                   <li className="flex items-center text-muted-foreground">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
-                    <span>Pro Tools HDX</span>
+                    <span>Session prep</span>
                   </li>
                   <li className="flex items-center text-muted-foreground">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
-                    <span>Neumann Microphones</span>
+                    <span>Vocal production</span>
                   </li>
                   <li className="flex items-center text-muted-foreground">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
-                    <span>UA Compressors</span>
+                    <span>Mix/master delivery</span>
                   </li>
                   <li className="flex items-center text-muted-foreground">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
-                    <span>Vintage Synthesizers</span>
+                    <span>Custom beats</span>
                   </li>
                   <li className="flex items-center text-muted-foreground">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
-                    <span>Acoustic Treatment</span>
+                    <span>Release guidance</span>
                   </li>
                 </ul>
               </div>

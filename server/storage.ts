@@ -872,9 +872,9 @@ class MemoryStorage implements IStorage {
 
   private seed() {
     this.servicesData = [
-      { id: this.nextId("services"), name: "Recording Session", description: "Professional vocal and instrument recording with an experienced engineer.", price: 7500, duration: 60, features: ["Engineer included", "Vocal chain setup", "Session files"] },
-      { id: this.nextId("services"), name: "Mixing & Mastering", description: "Polished mix and master for release-ready records.", price: 15000, duration: 120, features: ["Stereo mix", "Mastered WAV/MP3", "Two revisions"] },
-      { id: this.nextId("services"), name: "Production Consultation", description: "Creative direction, arrangement feedback, and release planning.", price: 5000, duration: 60, features: ["Song review", "Production notes", "Next-step plan"] },
+      { id: this.nextId("services"), name: "Mobile Recording Session", description: "In-home or arranged-location recording with an engineer who helps capture clean vocals and performances.", price: 7500, duration: 60, features: ["Mobile or arranged recording", "Engineer included", "Session files"] },
+      { id: this.nextId("services"), name: "Mixing & Mastering", description: "Remote mix and master delivery for release-ready songs from wherever you are working.", price: 15000, duration: 120, features: ["Remote delivery", "Mastered WAV/MP3", "Two revisions"] },
+      { id: this.nextId("services"), name: "Custom Producer Package", description: "Hire Music Life Studios for custom beats, full song production, album direction, film cues, and project-based creative support.", price: 25000, duration: 120, features: ["Custom beat production", "Project direction", "Song, album, or film support"] },
     ];
 
     this.beatsData = [
@@ -890,7 +890,7 @@ class MemoryStorage implements IStorage {
         price: 3500,
         licensingOptions: { basic: 35, premium: 75, exclusive: 250 },
         contractUrl: null,
-        tags: ["smooth", "studio", "hip-hop"],
+        tags: ["smooth", "release-ready", "hip-hop"],
         featured: true,
         createdAt: new Date(),
       },
