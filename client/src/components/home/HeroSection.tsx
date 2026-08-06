@@ -2,8 +2,12 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { STUDIO_INFO } from "@/lib/constants";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function HeroSection() {
+  const { user } = useAuth();
+  const membershipHref = user ? "/account?tab=membership" : "/account/register?intent=membership";
+
   return (
     <section className="relative bg-[#1A1A1A] overflow-hidden">
       <div className="absolute inset-0 z-0">
@@ -26,11 +30,25 @@ export default function HeroSection() {
             {STUDIO_INFO.BYLINE}
           </p>
           <h2 className="font-medium text-2xl md:text-3xl text-white mb-4">
-            Book the Engineer and Producer behind the sound.
+            Build your sound with consistent studio access.
           </h2>
           <p className="text-gray-100 text-xl md:text-2xl mb-8 max-w-2xl">
-            Work directly with WIZ for recording, mixing, mastering, custom beats, and production support for songs, albums, film, and creative projects.
+            Join a Music Life Artist Membership for predictable monthly recording hours, finishing credits, member pricing, and priority booking with WIZ.
           </p>
+          <div className="mb-8 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl text-sm text-white">
+            <div className="border border-white/30 bg-black/20 px-4 py-3">
+              <span className="block text-[#FF8C00] font-semibold">$149/mo</span>
+              Artist Access
+            </div>
+            <div className="border border-white/30 bg-black/20 px-4 py-3">
+              <span className="block text-[#FF8C00] font-semibold">$325/mo</span>
+              Consistent Artist
+            </div>
+            <div className="border border-white/30 bg-black/20 px-4 py-3">
+              <span className="block text-[#FF8C00] font-semibold">$499/mo</span>
+              Release Artist
+            </div>
+          </div>
           <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
             <Button
               asChild
@@ -40,7 +58,7 @@ export default function HeroSection() {
                 "text-base"
               )}
             >
-              <Link href="/booking">Book a Session</Link>
+              <Link href={membershipHref}>Join a Membership</Link>
             </Button>
             <Button
               asChild
@@ -51,9 +69,12 @@ export default function HeroSection() {
                 "font-medium px-8 py-6 text-base"
               )}
             >
-              <a href="#portfolio">Hear My Work</a>
+              <Link href="/deals">View Deals & Savings</Link>
             </Button>
           </div>
+          <p className="mt-4 text-sm text-white/80">
+            Month-to-month memberships, bundle discounts, and loyalty rewards. <Link href="/booking" className="underline underline-offset-4">Book once instead</Link>.
+          </p>
         </div>
       </div>
     </section>

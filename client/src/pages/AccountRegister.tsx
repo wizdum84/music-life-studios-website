@@ -31,6 +31,7 @@ export default function AccountRegister() {
   const { registerMutation } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const intent = new URLSearchParams(window.location.search).get("intent");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -62,7 +63,7 @@ export default function AccountRegister() {
         description: "Welcome to Music Life Studios!",
       });
       
-      navigate("/account");
+      navigate(intent === "membership" ? "/account?tab=membership" : "/account");
     } catch (error: any) {
       // Error handling is already done in the mutation
     } finally {
@@ -73,8 +74,8 @@ export default function AccountRegister() {
   return (
     <div className="container py-10">
       <PageHeader 
-        title="Create Account" 
-        subtitle="Join the Music Life Studios family"
+        title={intent === "membership" ? "Create Account to Join" : "Create Account"} 
+        subtitle={intent === "membership" ? "Set up your account, then choose your Music Life Artist Membership" : "Join the Music Life Studios family"}
         centered
       />
       
@@ -83,7 +84,7 @@ export default function AccountRegister() {
           <CardHeader>
             <CardTitle>Sign Up</CardTitle>
             <CardDescription>
-              Create your member account to access exclusive benefits
+              {intent === "membership" ? "After sign-up, you will go straight to the membership plans." : "Create your member account to access exclusive benefits"}
             </CardDescription>
           </CardHeader>
           <CardContent>

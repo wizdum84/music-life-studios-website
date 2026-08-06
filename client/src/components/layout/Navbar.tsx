@@ -55,6 +55,7 @@ export default function Navbar() {
               <a href="#services" className="font-medium hover:text-primary transition-colors">Services</a>
               <a href="#portfolio" className="font-medium hover:text-primary transition-colors">Portfolio</a>
               <a href="#pricing" className="font-medium hover:text-primary transition-colors">Pricing</a>
+              <Link href="/deals" className="font-medium hover:text-primary transition-colors">Memberships</Link>
               <a href="#about" className="font-medium hover:text-primary transition-colors">About</a>
               <a href="#contact" className="font-medium hover:text-primary transition-colors">Contact</a>
               <Link href="/beats" className="font-medium hover:text-primary transition-colors">Beats & Licensing</Link>
@@ -64,6 +65,7 @@ export default function Navbar() {
               <Link href="/#services" className="font-medium hover:text-primary transition-colors">Services</Link>
               <Link href="/#portfolio" className="font-medium hover:text-primary transition-colors">Portfolio</Link>
               <Link href="/#pricing" className="font-medium hover:text-primary transition-colors">Pricing</Link>
+              <Link href="/deals" className="font-medium hover:text-primary transition-colors">Memberships</Link>
               <Link href="/#about" className="font-medium hover:text-primary transition-colors">About</Link>
               <Link href="/#contact" className="font-medium hover:text-primary transition-colors">Contact</Link>
               <Link href="/beats" className="font-medium hover:text-primary transition-colors">Beats & Licensing</Link>
@@ -112,6 +114,7 @@ export default function Navbar() {
                 <a href="#services" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Services</a>
                 <a href="#portfolio" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Portfolio</a>
                 <a href="#pricing" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Pricing</a>
+                <Link href="/deals" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Memberships</Link>
                 <a href="#about" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>About</a>
                 <a href="#contact" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Contact</a>
                 <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Beats & Licensing</Link>
@@ -121,6 +124,7 @@ export default function Navbar() {
                 <Link href="/#services" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Services</Link>
                 <Link href="/#portfolio" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Portfolio</Link>
                 <Link href="/#pricing" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Pricing</Link>
+                <Link href="/deals" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Memberships</Link>
                 <Link href="/#about" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>About</Link>
                 <Link href="/#contact" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Contact</Link>
                 <Link href="/beats" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Beats & Licensing</Link>

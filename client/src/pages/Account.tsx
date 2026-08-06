@@ -110,6 +110,13 @@ export default function Account() {
     }
   }, [user, navigate, logoutMutation.isPending]);
 
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab && ["overview", "membership", "bookings", "loyalty", "history", "settings"].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, []);
+
   // Fetch user bookings
   const { data: bookings = [], isLoading: isLoadingBookings } = useQuery<Booking[]>({
     queryKey: ["/api/user/bookings"],
