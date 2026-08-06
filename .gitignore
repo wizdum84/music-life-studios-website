@@ -8,6 +8,7 @@ vite.config.ts.*
 .local
 .env
 .env.*
+!.env.example
 dev-server.log
 server.err.log
 server.out.log
