@@ -22,12 +22,12 @@ const PricingCard = ({
 }) => {
   // Determine which features are included/excluded
   const allPossibleFeatures = [
-    "Mobile or arranged recording",
-    "Remote delivery",
-    "Digital delivery",
-    "Mixing & mastering",
+    "Record with Wiz",
+    "Remote mix delivery",
+    "Clean session files",
+    "Mixing and mastering",
     "Custom beat production",
-    "Project direction"
+    "Creative direction"
   ];
   
   // Match features from the service with all possible features
@@ -129,7 +129,7 @@ export default function PricingSection({ services, isLoading }: PricingSectionPr
         <div className="text-center mb-16">
           <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-4">Pricing Plans</h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Starting points for recording, mixing, mastering, and custom production work.
+            Starting points for booking Wiz directly. Final quotes can adjust for travel, rental locations, revisions, and project scope.
           </p>
         </div>
         

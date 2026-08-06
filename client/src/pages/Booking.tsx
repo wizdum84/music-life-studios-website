@@ -79,7 +79,7 @@ export default function Booking() {
     <>
       <Helmet>
         <title>Book a Session | Music Life Studios</title>
-        <meta name="description" content="Book mobile recording, remote mixing and mastering, or a custom producer package with Music Life Studios." />
+        <meta name="description" content="Book Wiz for recording, remote mixing and mastering, or custom production through Music Life Studios." />
       </Helmet>
       
       <section className="py-20 bg-gradient-to-br from-primary/95 to-secondary/95 text-white">
@@ -87,7 +87,7 @@ export default function Booking() {
           <div className="text-center mb-16">
             <h2 className="font-bold text-3xl md:text-4xl mb-4">Book a Session</h2>
             <p className="text-lg text-white/80 max-w-2xl mx-auto">
-              Schedule mobile recording, remote mixing/mastering, or custom production work with a few simple steps.
+              Book Wiz for recording, remote mixing/mastering, or custom production work with a few simple steps.
             </p>
           </div>
           

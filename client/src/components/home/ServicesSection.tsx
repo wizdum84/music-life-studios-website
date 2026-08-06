@@ -24,14 +24,14 @@ const ServiceCard = ({ service }: { service: Service }) => {
   // Button text based on name
   const getButtonText = () => {
     const name = service.name.toLowerCase();
-    if (name.includes("recording")) return "Book Recording";
-    if (name.includes("mixing")) return "Request Mixing/Mastering";
-    return "Build a Producer Package";
+    if (name.includes("record") || name.includes("recording")) return "Book Wiz to Record";
+    if (name.includes("mix") || name.includes("mastering")) return "Send Wiz a Mix";
+    return "Build With Wiz";
   };
 
   const getBookingType = () => {
     const name = service.name.toLowerCase();
-    if (name.includes("mixing") || name.includes("mastering")) return "mixing";
+    if (name.includes("mix") || name.includes("mastering")) return "mixing";
     if (name.includes("producer") || name.includes("production")) return "production";
     return "recording";
   };
@@ -104,10 +104,10 @@ export default function ServicesSection({ services, isLoading }: ServicesSection
     <section id="services" className="py-20 bg-white">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
-          <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-2">Professional Services</h2>
-          <h3 className="font-medium text-2xl text-primary mb-3">Your Sound, Perfected</h3>
+          <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-2">Work With Wiz</h2>
+          <h3 className="font-medium text-2xl text-primary mb-3">Music Life Studios, personal from the first session</h3>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Flexible audio services built around how you actually create: at home, on location, or remotely.
+            Book the person touching the record: recording support, mix/master work, custom beats, and production direction built around your project.
           </p>
         </div>
         

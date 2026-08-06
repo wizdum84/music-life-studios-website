@@ -21,10 +21,10 @@ export default function AboutSection() {
             <div>
               <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-6">About Me</h2>
               <p className="text-muted-foreground mb-4">
-                Music Life Studios is built for artists and creators who need professional sound without being locked to one room. I can bring recording support to your home setup, help arrange a rental location for the right session, and handle mixing or mastering remotely.
+                Music Life Studios is the business, but Wiz is the person you are booking. I work directly with artists to set up sessions, capture clean vocals, shape ideas, produce records, and keep the project moving toward a finished release.
               </p>
               <p className="text-muted-foreground mb-6">
-                My approach combines engineering, beat production, arrangement, and creative direction so songs, albums, film cues, and custom projects can move from idea to finished release.
+                I can bring recording support to your home setup, help arrange a rental location for the right session, and handle mixing or mastering remotely. As Wizdum the Lionheart, I also understand the artist side of the process, so the work stays technical without losing the feeling.
               </p>
               
               <div className="mb-8">

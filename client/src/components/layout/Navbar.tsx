@@ -44,6 +44,7 @@ export default function Navbar() {
           <Link href="/" className="flex items-center">
             <span className="text-primary font-bold text-2xl">Music Life</span>
             <span className="text-foreground font-medium ml-1 text-lg">Studios</span>
+            <span className="hidden lg:inline text-muted-foreground text-xs font-medium ml-3">by Wiz</span>
           </Link>
         </div>
         

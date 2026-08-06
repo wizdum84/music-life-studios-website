@@ -27,7 +27,7 @@ export default function Footer() {
               <span className="text-white/80 font-medium ml-1 text-lg">Studios</span>
             </Link>
             <p className="text-white/70 mb-6 max-w-md">
-              Professional audio engineering and music production services to elevate your creative vision. Quality sound is our passion.
+              Presented by Wiz. Recording, mixing, mastering, custom beats, and production support from the person working directly on your record.
             </p>
             <div className="flex space-x-4">
               <a href="#" className="text-white/70 hover:text-white transition-colors">

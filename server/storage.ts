@@ -872,9 +872,9 @@ class MemoryStorage implements IStorage {
 
   private seed() {
     this.servicesData = [
-      { id: this.nextId("services"), name: "Mobile Recording Session", description: "In-home or arranged-location recording with an engineer who helps capture clean vocals and performances.", price: 7500, duration: 60, features: ["Mobile or arranged recording", "Engineer included", "Session files"] },
-      { id: this.nextId("services"), name: "Mixing & Mastering", description: "Remote mix and master delivery for release-ready songs from wherever you are working.", price: 15000, duration: 120, features: ["Remote delivery", "Mastered WAV/MP3", "Two revisions"] },
-      { id: this.nextId("services"), name: "Custom Producer Package", description: "Hire Music Life Studios for custom beats, full song production, album direction, film cues, and project-based creative support.", price: 25000, duration: 120, features: ["Custom beat production", "Project direction", "Song, album, or film support"] },
+      { id: this.nextId("services"), name: "Record With Wiz", description: "Book a focused recording session with Wiz. I help set up the session, capture clean vocals, guide takes when needed, and keep your files organized for the next step.", price: 7500, duration: 60, features: ["Your place or an arranged location", "Session engineered by Wiz", "Vocal direction and clean files"] },
+      { id: this.nextId("services"), name: "Mix/Master With Wiz", description: "Send your song to Wiz for a focused mix and master that keeps the feeling intact while getting the record ready to release.", price: 15000, duration: 120, features: ["Remote mix delivery", "Mastered WAV/MP3", "Two revisions"] },
+      { id: this.nextId("services"), name: "Custom Production With Wiz", description: "Build with Wiz on custom beats, full song production, album direction, film cues, or project-based creative support from idea to finished record.", price: 25000, duration: 120, features: ["Custom beats and production", "Song, album, or film support", "Creative direction with Wiz"] },
     ];
 
     this.beatsData = [

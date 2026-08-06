@@ -1,8 +1,8 @@
 // Services
 export const SERVICES = {
-  RECORDING: "Mobile Recording Session",
-  MIXING: "Mixing & Mastering",
-  PRODUCTION: "Custom Producer Package"
+  RECORDING: "Record With Wiz",
+  MIXING: "Mix/Master With Wiz",
+  PRODUCTION: "Custom Production With Wiz"
 };
 
 // Booking status
@@ -23,6 +23,9 @@ export const PAYMENT_STATUS = {
 // Studio information
 export const STUDIO_INFO = {
   NAME: "Music Life Studios",
+  BYLINE: "Presented by Wiz",
+  CREATOR_NAME: "Wiz",
+  ARTIST_NAME: "Wizdum the Lionheart",
   EMAIL: "hello@musiclifestudios.com",
   PHONE: "(310) 555-1234",
   ADDRESS: "Mobile sessions, rented locations, and remote mixing/mastering",

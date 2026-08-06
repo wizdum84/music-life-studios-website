@@ -22,11 +22,14 @@ export default function HeroSection() {
           <h1 className="font-bold text-4xl md:text-5xl lg:text-6xl text-white leading-tight mb-6">
             {STUDIO_INFO.NAME}
           </h1>
+          <p className="uppercase tracking-[0.2em] text-sm md:text-base text-[#FF8C00] font-semibold mb-3">
+            {STUDIO_INFO.BYLINE}
+          </p>
           <h2 className="font-medium text-2xl md:text-3xl text-white mb-4">
-            Where Music is Life
+            Book the engineer and producer behind the sound.
           </h2>
           <p className="text-gray-100 text-xl md:text-2xl mb-8 max-w-2xl">
-            Mobile recording, remote mixing and mastering, custom beats, and producer packages for songs, albums, film, and creative projects.
+            Work directly with Wiz for recording, mixing, mastering, custom beats, and production support for songs, albums, film, and creative projects.
           </p>
           <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
             <Button

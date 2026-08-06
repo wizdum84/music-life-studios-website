@@ -3,6 +3,7 @@
 ## Complete Now
 
 - Correct the public offer: Music Life Studios is currently a mobile recording, remote mixing/mastering, beat production, and custom producer service, not a fixed-location studio.
+- Make Wiz the main trust signal: early clients are booking the engineer/producer they know, while Music Life Studios stays the business name.
 - Add the producer package clearly: custom beats, song production, album production support, film cues, and project-based creative direction.
 - Update booking language so recording can happen in-home or at a rented/arranged location, while mixing and mastering can be handled remotely.
 - Put beat licensing behind a release-readiness workflow: beats need ISRC details, ownership/split notes, and PRO registration status before they should be sold or delivered as final licenses.
@@ -27,4 +28,13 @@
 
 ## Positioning To Keep
 
-Music Life Studios helps artists finish records through flexible recording, remote engineering, custom beats, and production direction. The brand should feel professional and real without pretending there is a permanent studio home yet.
+Music Life Studios helps artists finish records through flexible recording, remote engineering, custom beats, and production direction. The brand should feel professional and real without pretending there is a permanent studio home yet, and the site should make clear that Wiz is the person touching the work.
+
+## Tagline Ideas
+
+- Music Life Studios, presented by Wiz.
+- Music Life Studios by Wiz.
+- Built with Wiz at Music Life Studios.
+- Sound shaped by Wiz.
+- Record, mix, and build with Wiz.
+- Music Life Studios: where Wiz helps finish the record.
