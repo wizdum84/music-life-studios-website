@@ -1,7 +1,7 @@
 // Services
 export const SERVICES = {
-  RECORDING: "Record With Wiz",
-  MIXING: "Mix/Master With Wiz",
+  RECORDING: "Book a Session With Wiz",
+  MIXING: "Mix and Master With Wiz",
   PRODUCTION: "Custom Production With Wiz"
 };
 

@@ -1,95 +1,88 @@
 import { Link } from "wouter";
-import { Service } from "@shared/schema";
 import { Button } from "@/components/ui/button";
-import { Check, X } from "lucide-react";
+import { Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface PricingSectionProps {
-  services: Service[];
+  services: unknown[];
   isLoading: boolean;
 }
 
-const formatPrice = (cents: number) => {
-  return `$${(cents / 100).toFixed(2)}`;
-};
+const pricingGroups = [
+  {
+    title: "Book a Session",
+    subtitle: "$50/hr, 2-hour minimum",
+    note: "4-hour block: $180",
+    href: "/booking?type=recording",
+    cta: "Book a Session",
+    features: [
+      "Recording engineer with Wiz",
+      "Vocal chain, effects, and drops during the session",
+      "Polished studio reference mix and MP3 export",
+      "Studio time, not a guaranteed song count"
+    ]
+  },
+  {
+    title: "Mix and Master",
+    subtitle: "Quick Finish from $75",
+    note: "Full mix/master starts at $125 per song",
+    href: "/booking?type=mixing",
+    cta: "Start My Mix",
+    featured: true,
+    features: [
+      "Quick Finish: 1 song $75, 3 songs $200, 5 songs $300",
+      "Advanced mix/master starts at $175 per song",
+      "Master only: $50 per song",
+      "WAV and MP3 delivery with revision options"
+    ]
+  },
+  {
+    title: "Custom Production",
+    subtitle: "Custom beats from $200",
+    note: "Media and buyout projects quoted after review",
+    href: "/booking?type=production",
+    cta: "Request a Custom Quote",
+    features: [
+      "Custom beat, Build-a-Song, or full single packages",
+      "Film, YouTube, podcast, game, and brand music",
+      "Stems, exclusivity, ownership, and revisions scoped upfront",
+      "No payment collected until custom scope is confirmed"
+    ]
+  }
+];
 
-const PricingCard = ({ 
-  service, 
-  isPopular 
-}: { 
-  service: Service, 
-  isPopular: boolean 
-}) => {
-  // Determine which features are included/excluded
-  const allPossibleFeatures = [
-    "Record with Wiz",
-    "Remote mix delivery",
-    "Clean session files",
-    "Mixing and mastering",
-    "Custom beat production",
-    "Creative direction"
-  ];
-  
-  // Match features from the service with all possible features
-  const featureStatus = allPossibleFeatures.map(feature => {
-    return {
-      feature,
-      included: service.features.some(f => 
-        f.toLowerCase().includes(feature.toLowerCase())
-      )
-    };
-  });
-  
-  // Determine plan name based on price
-  let planName = "Standard";
-  if (service.price >= 17000) planName = "Premium";
-  else if (service.price >= 10000) planName = "Professional";
-  
-  // Button text based on plan name
-  const buttonText = `Book ${planName}`;
-  
+const PricingCard = ({ group }: { group: typeof pricingGroups[number] }) => {
   return (
-    <div className={`bg-light rounded-lg overflow-hidden shadow-md ${isPopular ? 'transform scale-105 shadow-lg' : ''}`}>
+    <div className={`bg-light rounded-lg overflow-hidden shadow-md ${group.featured ? 'transform scale-105 shadow-lg' : ''}`}>
       <div className={`${
-        isPopular 
+        group.featured 
           ? 'bg-gradient-to-r from-primary to-secondary' 
           : 'bg-[#1A1A1A]'
         } p-6 text-center relative`}
       >
-        {isPopular && (
+        {group.featured && (
           <div className="absolute top-0 right-0 bg-[#FF8C00] text-[#1A1A1A] text-xs font-bold px-3 py-1 transform translate-y-0 translate-x-0">
             POPULAR
           </div>
         )}
-        <h3 className="font-semibold text-xl text-white mb-2">{planName}</h3>
-        <div className={isPopular ? "text-white" : "text-gray-100"}>
-          <span className="text-3xl font-bold">{formatPrice(service.price)}</span>
-          <span className="text-gray-300"> starting</span>
-        </div>
+        <h3 className="font-semibold text-xl text-white mb-2">{group.title}</h3>
+        <p className={group.featured ? "text-white text-2xl font-bold" : "text-gray-100 text-2xl font-bold"}>{group.subtitle}</p>
+        <p className="text-gray-300 text-sm mt-2">{group.note}</p>
       </div>
       
       <div className="p-6">
         <ul className="mb-6 space-y-3">
-          {featureStatus.map((item, index) => (
+          {group.features.map((feature, index) => (
             <li key={index} className="flex items-start">
-              {item.included ? (
-                <>
-                  <Check className="h-4 w-4 text-[#FF8C00] mt-1 mr-2" />
-                  <span>{item.feature}</span>
-                </>
-              ) : (
-                <>
-                  <X className="h-4 w-4 text-muted-foreground mt-1 mr-2" />
-                  <span className="text-muted-foreground">{item.feature}</span>
-                </>
-              )}
+              <Check className="h-4 w-4 text-[#FF8C00] mt-1 mr-2 shrink-0" />
+              <span>{feature}</span>
             </li>
           ))}
         </ul>
         
         <Button asChild className="w-full bg-primary hover:bg-primary-600">
-          <Link href={`/booking?type=${service.name.toLowerCase().includes("mixing") ? "mixing" : service.name.toLowerCase().includes("producer") || service.name.toLowerCase().includes("production") ? "production" : "recording"}`}>
-            {buttonText}
+          <Link href={group.href}>
+            {group.cta}
           </Link>
         </Button>
       </div>
@@ -117,19 +110,13 @@ const PricingCardSkeleton = ({ isPopular }: { isPopular: boolean }) => (
 );
 
 export default function PricingSection({ services, isLoading }: PricingSectionProps) {
-  // Sort services by price for display
-  const sortedServices = [...services].sort((a, b) => a.price - b.price);
-  
-  // Find the middle (professional) service
-  const professionalIndex = Math.floor(sortedServices.length / 2);
-  
   return (
     <section id="pricing" className="py-20 bg-white">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
           <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-4">Pricing Plans</h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Starting points for booking Wiz directly. Final quotes can adjust for travel, rental locations, revisions, and project scope.
+            Exact prices where the scope is predictable, starting prices where the creative work depends on the files, arrangement, usage, and timeline.
           </p>
         </div>
         
@@ -140,15 +127,7 @@ export default function PricingSection({ services, isLoading }: PricingSectionPr
               <PricingCardSkeleton isPopular={true} />
               <PricingCardSkeleton isPopular={false} />
             </>
-          ) : (
-            sortedServices.map((service, index) => (
-              <PricingCard 
-                key={service.id} 
-                service={service} 
-                isPopular={index === professionalIndex}
-              />
-            ))
-          )}
+          ) : pricingGroups.map((group) => <PricingCard key={group.title} group={group} />)}
         </div>
         
         <div className="mt-12 text-center">

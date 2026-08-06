@@ -228,8 +228,8 @@ export default function BookingManager() {
         let serviceName = "Unknown";
         
         // In a real app, we would fetch services and map IDs to names
-        if (serviceId === 1) serviceName = "Record With Wiz";
-        if (serviceId === 2) serviceName = "Mix/Master With Wiz";
+        if (serviceId === 1) serviceName = "Book a Session With Wiz";
+        if (serviceId === 2) serviceName = "Mix and Master With Wiz";
         if (serviceId === 3) serviceName = "Custom Production With Wiz";
         
         return <div>{serviceName}</div>;

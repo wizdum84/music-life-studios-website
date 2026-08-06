@@ -872,9 +872,9 @@ class MemoryStorage implements IStorage {
 
   private seed() {
     this.servicesData = [
-      { id: this.nextId("services"), name: "Record With Wiz", description: "Book a focused recording session with Wiz. I help set up the session, capture clean vocals, guide takes when needed, and keep your files organized for the next step.", price: 7500, duration: 60, features: ["Your place or an arranged location", "Session engineered by Wiz", "Vocal direction and clean files"] },
-      { id: this.nextId("services"), name: "Mix/Master With Wiz", description: "Send your song to Wiz for a focused mix and master that keeps the feeling intact while getting the record ready to release.", price: 15000, duration: 120, features: ["Remote mix delivery", "Mastered WAV/MP3", "Two revisions"] },
-      { id: this.nextId("services"), name: "Custom Production With Wiz", description: "Build with Wiz on custom beats, full song production, album direction, film cues, or project-based creative support from idea to finished record.", price: 25000, duration: 120, features: ["Custom beats and production", "Song, album, or film support", "Creative direction with Wiz"] },
+      { id: this.nextId("services"), name: "Book a Session With Wiz", description: "Professional recording starts at $50 per hour with a two-hour minimum. Book hourly time with Wiz or choose a release-ready song package when you want recording, mix, and master handled together.", price: 5000, duration: 60, features: ["Two-hour minimum", "4-hour block: $180", "Vocal chain, effects, and reference MP3"] },
+      { id: this.nextId("services"), name: "Mix and Master With Wiz", description: "Choose Quick Finish, full mixing, advanced mixing, master-only, or project-based mixing for singles, EPs, and albums recorded with Wiz or elsewhere.", price: 7500, duration: 60, features: ["Quick Finish from $75", "Full mix/master from $125", "Master only: $50"] },
+      { id: this.nextId("services"), name: "Custom Production With Wiz", description: "Request original music for artists, films, YouTube videos, podcasts, games, advertisements, and other media projects.", price: 20000, duration: 60, features: ["Custom beats from $200", "Complete singles from $325", "Media projects quoted after review"] },
     ];
 
     this.beatsData = [

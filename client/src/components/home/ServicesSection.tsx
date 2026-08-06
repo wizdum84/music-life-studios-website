@@ -24,9 +24,9 @@ const ServiceCard = ({ service }: { service: Service }) => {
   // Button text based on name
   const getButtonText = () => {
     const name = service.name.toLowerCase();
-    if (name.includes("record") || name.includes("recording")) return "Book Wiz to Record";
-    if (name.includes("mix") || name.includes("mastering")) return "Send Wiz a Mix";
-    return "Build With Wiz";
+    if (name.includes("session") || name.includes("record")) return "Book a Session";
+    if (name.includes("mix") || name.includes("mastering")) return "Start My Mix";
+    return "Request a Custom Quote";
   };
 
   const getBookingType = () => {
