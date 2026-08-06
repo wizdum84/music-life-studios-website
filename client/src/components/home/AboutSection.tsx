@@ -26,6 +26,9 @@ export default function AboutSection() {
               <p className="text-muted-foreground mb-6">
                 I can bring recording support to your home setup, help arrange a rental location for the right session, and handle mixing or mastering remotely. As Wizdum the Lionheart, I also understand the artist side of the process, so the work stays technical without losing the feeling.
               </p>
+              <p className="text-muted-foreground mb-6">
+                Audio engineering since 2012, graduated with honors from SAE Institute. Get a free 2-hour session after every 5 paid sessions, plus a qualifying 3-month beat lease option.
+              </p>
               
               <div className="mb-8">
                 <h3 className="font-semibold text-xl mb-4">What I Bring</h3>

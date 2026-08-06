@@ -1,7 +1,15 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertBookingSchema, insertMessageSchema } from "@shared/schema";
+import { insertBookingSchema, insertMessageSchema, insertMembershipSubscriptionSchema } from "@shared/schema";
+import { calculatePricing } from "@shared/pricing";
+import {
+  MEMBERSHIP_CANCELLATION_LANGUAGE,
+  MEMBERSHIP_LAUNCH_RULES,
+  MEMBERSHIP_PLAN_CATALOG,
+  MEMBERSHIP_POSITIONING,
+  getMembershipCatalogByTier,
+} from "@shared/membership";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import * as braintreeService from "./services/braintree";
@@ -107,14 +115,338 @@ By signing this agreement, you acknowledge that you understand and will abide by
       
       console.log("Default mixing & mastering contract created");
     }
+
+    const existingMembershipContracts = await storage.getContractsByCategory("membership_agreement");
+
+    if (!existingMembershipContracts || existingMembershipContracts.length === 0) {
+      const description = `MUSIC LIFE STUDIOS - ARTIST MEMBERSHIP AGREEMENT
+
+MEMBERSHIP POSITIONING:
+${MEMBERSHIP_POSITIONING}
+
+MONTH-TO-MONTH TERMS:
+- Memberships are month-to-month unless the customer affirmatively chooses an optional prepaid package.
+- Only one monthly payment is due at enrollment for month-to-month memberships.
+- There is no minimum-term commitment.
+- There is no early-cancellation fee.
+- There is no cancellation penalty.
+- Monthly renewal continues only until valid cancellation.
+- Cancellation stops future billing.
+- Membership benefits remain active through the current paid-through date unless terminated for fraud, abuse, chargeback, or serious policy violation.
+- No new benefits are issued after the paid-through date.
+
+CANCELLATION:
+${MEMBERSHIP_CANCELLATION_LANGUAGE}
+
+BENEFITS AND BOOKING:
+- Membership does not guarantee a specific date or time.
+- Priority booking means earlier access or priority within available openings; it does not displace confirmed bookings.
+- Members must follow normal booking, lateness, cancellation, rescheduling, and no-show policies.
+- Late cancellations and no-shows may deduct the reserved membership hours or benefit.
+- Unused benefits have no cash value and are non-transferable.
+- Only unused included recording hours may roll over, subject to the member tier cap and expiration rules.
+- Quick Finishes, Master Only credits, planning sessions, project reviews, and discounts do not roll over unless separately approved in writing.
+
+DISCOUNTS:
+- Membership discounts do not stack with promo codes unless the promotion is explicitly marked stackable.
+- Discounts cannot reduce a transaction below zero.
+- Discounts do not apply while the membership is paused, past due, canceled after the paid-through date, or terminated.
+- Discounts do not apply to full-rights buyouts, work-for-hire transfers, film, game, advertising, or custom commercial media unless manually approved.
+
+FAILED PAYMENT:
+- Failed recurring payment marks the membership past due.
+- New benefits are not issued while payment is past due.
+- Benefit redemption pauses until verified payment.
+- Payment and membership status remain separately auditable.
+
+PAUSE:
+- Launch rule: one pause per six-month period, lasting one billing cycle.
+- No charge is due during the paused cycle.
+- No new benefits are issued during the pause.
+- Eligible rollover recording hours are frozen during the pause and resume when membership reactivates.
+- The customer may cancel during the pause.
+
+SIGNATURE AND PAYMENT:
+- Signing does not confirm membership until payment is verified.
+- Recurring-payment authorization is handled through the connected payment provider when enabled.
+- In this build, admin payment verification is required before activation.`;
+
+      await storage.createContract({
+        title: "Artist Membership Agreement",
+        description,
+        content: description,
+        fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/artist_membership_agreement.pdf",
+        fileType: "pdf",
+        category: "membership_agreement",
+      });
+
+      console.log("Default membership agreement contract created");
+    }
   } catch (error) {
     console.error("Error creating default contracts:", error);
   }
 }
 
+async function ensureServicesExist() {
+  // Ensure default services exist in the database or memory storage
+  try {
+    const existingServices = await storage.getAllServices();
+    if (!existingServices || existingServices.length === 0) {
+      await storage.createService({
+        name: "Book a Session With Wiz",
+        description: "Professional recording starts at $50 per hour with a two-hour minimum. Book hourly time with Wiz or choose a release-ready song package when you want recording, mix, and master handled together.",
+        price: 5000,
+        duration: 60,
+        features: ["Two-hour minimum", "4-hour block: $180", "Vocal chain, effects, and reference MP3"]
+      });
+
+      await storage.createService({
+        name: "Mix and Master With Wiz",
+        description: "Choose Quick Finish, full mixing, advanced mixing, master-only, or project-based mixing for singles, EPs, and albums recorded with Wiz or elsewhere.",
+        price: 7500,
+        duration: 60,
+        features: ["Quick Finish from $75", "Full mix/master from $125", "Master only: $50"]
+      });
+
+      await storage.createService({
+        name: "Custom Production With Wiz",
+        description: "Request original music for artists, films, YouTube videos, podcasts, games, advertisements, and other media projects.",
+        price: 20000,
+        duration: 60,
+        features: ["Custom beats from $200", "Complete singles from $325", "Media projects quoted after review"]
+      });
+
+      console.log("Default services seeded");
+    }
+  } catch (err) {
+    console.error("Error seeding default services:", err);
+  }
+}
+
+async function ensureMembershipPlansExist() {
+  try {
+    for (const catalogPlan of MEMBERSHIP_PLAN_CATALOG) {
+      let plan = await storage.getMembershipPlanByTier(catalogPlan.tier);
+      if (!plan) {
+        plan = await storage.createMembershipPlan({
+          name: catalogPlan.name,
+          description: catalogPlan.description,
+          tier: catalogPlan.tier,
+          priceCents: catalogPlan.monthlyPriceCents,
+          billingInterval: "monthly",
+          active: true,
+        });
+      }
+
+      const activeVersion = await storage.getActiveMembershipPlanVersion(plan.id);
+      if (!activeVersion) {
+        await storage.createMembershipPlanVersion({
+          planId: plan.id,
+          versionNumber: 1,
+          priceCents: catalogPlan.monthlyPriceCents,
+          benefits: JSON.stringify({
+            positioning: MEMBERSHIP_POSITIONING,
+            cancellationLanguage: MEMBERSHIP_CANCELLATION_LANGUAGE,
+            benefits: catalogPlan.benefits,
+            prepaidThreeMonthPriceCents: catalogPlan.prepaidThreeMonthPriceCents,
+            launchRules: MEMBERSHIP_LAUNCH_RULES,
+          }),
+          active: true,
+          effectiveDate: new Date(),
+        });
+      }
+
+      const existingDefinitions = await storage.getMembershipBenefitDefinitions(plan.id);
+      for (const definition of catalogPlan.benefitDefinitions) {
+        if (!existingDefinitions.some((existing) => existing.code === definition.code)) {
+          await storage.createMembershipBenefitDefinition({
+            planId: plan.id,
+            code: definition.code,
+            description: definition.description,
+            quantity: definition.quantity,
+            rolloverAllowed: definition.rolloverAllowed,
+            rolloverLimit: definition.rolloverLimit,
+            expiresAfterCycles: definition.expiresAfterCycles,
+          });
+        }
+      }
+
+      const existingDiscounts = await storage.getMembershipDiscounts(plan.id);
+      for (const discount of catalogPlan.discounts) {
+        if (!existingDiscounts.some((existing) => existing.discountValue === discount.discountValue && existing.eligibleServices.join(",") === discount.eligibleServices.join(","))) {
+          await storage.createMembershipDiscount({
+            planId: plan.id,
+            discountType: discount.discountType,
+            discountValue: discount.discountValue,
+            eligibleServices: discount.eligibleServices,
+            stackable: discount.stackable,
+            expiresAt: null,
+          });
+        }
+      }
+
+      const existingMilestones = await storage.getMembershipLoyaltyMilestones(plan.id);
+      if (!existingMilestones.some((milestone) => milestone.thresholdMonths === MEMBERSHIP_LAUNCH_RULES.loyaltyMilestoneMonths)) {
+        await storage.createMembershipLoyaltyMilestone({
+          planId: plan.id,
+          name: "Three consecutive paid months",
+          thresholdMonths: MEMBERSHIP_LAUNCH_RULES.loyaltyMilestoneMonths,
+          rewardType: MEMBERSHIP_LAUNCH_RULES.loyaltyRewardType,
+          rewardQuantity: MEMBERSHIP_LAUNCH_RULES.loyaltyRewardQuantity,
+          expiresAfterCycles: MEMBERSHIP_LAUNCH_RULES.loyaltyRewardExpiresAfterCycles,
+          active: true,
+        });
+      }
+    }
+
+    console.log("Membership plans and launch configuration ensured");
+  } catch (error) {
+    if ((error as any)?.code === "42P01") {
+      console.error("Membership tables are missing from the connected database. Run `npm run db:push` after confirming DATABASE_URL points to the database you want to update.");
+      return;
+    }
+
+    console.error("Error creating default membership plans:", error);
+  }
+}
+
+function parseServicePath(details?: string | null) {
+  const path = details?.match(/^Service path:\s*(.+)$/m)?.[1]?.trim();
+
+  return {
+    recordingOption: path === "release-ready" ? "release-ready" : "hourly",
+    mixOption: path && ["quick-finish", "master-only", "advanced", "standard"].includes(path) ? path : "quick-finish",
+    productionOption: path && ["custom-beat", "complete-single", "signature-single", "media-quote"].includes(path) ? path : "custom-beat",
+  };
+}
+
+async function calculateServerBookingPricing(serviceId: number, duration: number, details?: string | null) {
+  const service = await storage.getService(serviceId);
+  if (!service) {
+    return { service: null, pricing: null };
+  }
+
+  const options = parseServicePath(details);
+  const pricing = calculatePricing({
+    serviceId: service.id,
+    serviceName: service.name,
+    duration,
+    ...options,
+  });
+
+  return { service, pricing };
+}
+
+function addMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function addBillingCycles(date: Date, cycles: number) {
+  return cycles > 0 ? addMonths(date, cycles) : null;
+}
+
+async function getMembershipAccountPayload(userId: number) {
+  const subscription = await storage.getUserMembership(userId);
+  if (!subscription) {
+    return {
+      subscription: null,
+      plan: null,
+      planVersion: null,
+      catalog: null,
+      benefitDefinitions: [],
+      benefitLedger: [],
+      balances: [],
+      billingPeriods: [],
+      redemptions: [],
+      discounts: [],
+      events: [],
+      pauses: [],
+      milestones: [],
+      rewards: [],
+      rules: MEMBERSHIP_LAUNCH_RULES,
+      positioning: MEMBERSHIP_POSITIONING,
+      cancellationLanguage: MEMBERSHIP_CANCELLATION_LANGUAGE,
+    };
+  }
+
+  const plan = await storage.getMembershipPlan(subscription.planId);
+  const planVersion = subscription.planVersionId
+    ? (await storage.getMembershipPlanVersions(subscription.planId)).find((version) => version.id === subscription.planVersionId) ?? null
+    : await storage.getActiveMembershipPlanVersion(subscription.planId) ?? null;
+  const benefitDefinitions = await storage.getMembershipBenefitDefinitions(subscription.planId);
+  const benefitLedger = await storage.getMembershipBenefitLedger(subscription.id);
+  const billingPeriods = await storage.getMembershipBillingPeriods(subscription.id);
+  const redemptions = await storage.getMembershipRedemptions(subscription.id);
+  const discounts = await storage.getMembershipDiscounts(subscription.planId);
+  const events = await storage.getMembershipEvents(subscription.id);
+  const pauses = await storage.getMembershipPauses(subscription.id);
+  const milestones = await storage.getMembershipLoyaltyMilestones(subscription.planId);
+  const rewards = await storage.getMembershipLoyaltyRewards(subscription.id);
+
+  const balances = benefitDefinitions.map((definition) => {
+    const entries = benefitLedger
+      .filter((entry) => entry.benefitDefinitionId === definition.id)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const latest = entries[entries.length - 1];
+
+    return {
+      benefitDefinitionId: definition.id,
+      code: definition.code,
+      description: definition.description,
+      quantityIssued: definition.quantity,
+      rolloverAllowed: definition.rolloverAllowed,
+      rolloverLimit: definition.rolloverLimit,
+      balance: latest ? latest.balanceAfter : 0,
+      expiresAt: definition.expiresAfterCycles > 0 ? addBillingCycles(subscription.currentPeriodEnd, definition.expiresAfterCycles - 1) : subscription.currentPeriodEnd,
+    };
+  });
+
+  return {
+    subscription,
+    plan: plan ?? null,
+    planVersion,
+    catalog: getMembershipCatalogByTier(plan?.tier),
+    benefitDefinitions,
+    benefitLedger,
+    balances,
+    billingPeriods,
+    redemptions,
+    discounts,
+    events,
+    pauses,
+    milestones,
+    rewards,
+    rules: MEMBERSHIP_LAUNCH_RULES,
+    positioning: MEMBERSHIP_POSITIONING,
+    cancellationLanguage: MEMBERSHIP_CANCELLATION_LANGUAGE,
+  };
+}
+
+async function issueMembershipBenefits(subscriptionId: number, planId: number, referenceType: string, referenceId: number | null, notes: string) {
+  const definitions = await storage.getMembershipBenefitDefinitions(planId);
+
+  for (const definition of definitions) {
+    await storage.createMembershipBenefitLedger({
+      subscriptionId,
+      benefitDefinitionId: definition.id,
+      action: "credit",
+      quantity: definition.quantity,
+      balanceBefore: 0,
+      balanceAfter: definition.quantity,
+      referenceType,
+      referenceId,
+      notes,
+    });
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Ensure all contracts exist when the server starts
+  // Ensure all contracts and membership plans exist when the server starts
   await ensureContractsExist();
+  await ensureServicesExist();
+  await ensureMembershipPlansExist();
   
   // Set up authentication with the new auth module
   setupAuth(app);
@@ -151,6 +483,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(service);
     } catch (error) {
       res.status(500).json({ message: "Error fetching service" });
+    }
+  });
+
+  app.post("/api/pricing/calculate", async (req, res) => {
+    try {
+      const { serviceId, duration, recordingOption, mixOption, productionOption } = req.body;
+      const parsedServiceId = parseInt(serviceId, 10);
+      const parsedDuration = parseInt(duration, 10);
+
+      if (!Number.isFinite(parsedServiceId) || !Number.isFinite(parsedDuration)) {
+        return res.status(400).json({ error: "Service ID and duration are required" });
+      }
+
+      const service = await storage.getService(parsedServiceId);
+      if (!service) {
+        return res.status(404).json({ error: "Service not found" });
+      }
+
+      const pricing = calculatePricing({
+        serviceId: service.id,
+        serviceName: service.name,
+        duration: parsedDuration,
+        recordingOption,
+        mixOption,
+        productionOption,
+      });
+
+      res.json(pricing);
+    } catch (error) {
+      console.error("Error calculating pricing:", error);
+      res.status(500).json({ error: "Failed to calculate pricing" });
     }
   });
   
@@ -315,7 +678,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/bookings", async (req, res) => {
     try {
       const booking = insertBookingSchema.parse(req.body);
-      const createdBooking = await storage.createBooking(booking);
+      const { pricing } = await calculateServerBookingPricing(booking.serviceId, booking.duration, booking.details);
+
+      if (!pricing) {
+        return res.status(404).json({ message: "Service not found" });
+      }
+
+      if (pricing.requiresManualQuote && req.body.status === "pending" && req.body.paymentStatus === "unpaid") {
+        const createdBooking = await storage.createBooking({
+          ...booking,
+          amount: 0,
+          status: "pending",
+        });
+
+        if (req.body.timeSlotId) {
+          await storage.bookTimeSlot(req.body.timeSlotId, createdBooking.id);
+        }
+
+        return res.status(201).json({ ...createdBooking, pricing });
+      }
+
+      if (pricing.requiresManualQuote) {
+        return res.status(400).json({
+          message: "This selection requires a custom quote before checkout.",
+          pricing,
+        });
+      }
+
+      const createdBooking = await storage.createBooking({
+        ...booking,
+        amount: pricing.finalTotal,
+      });
       
       // If a time slot ID is provided, book the time slot
       if (req.body.timeSlotId) {
@@ -1430,6 +1823,373 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching promotions:", error);
       res.status(500).json({ error: "Failed to fetch promotions" });
+    }
+  });
+
+  app.get("/api/membership/plans", async (req, res) => {
+    try {
+      const plans = await storage.getAllMembershipPlans();
+      res.json(plans);
+    } catch (error) {
+      console.error("Error fetching membership plans:", error);
+      res.status(500).json({ error: "Failed to fetch membership plans" });
+    }
+  });
+
+  app.get("/api/membership/plans/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const plan = await storage.getMembershipPlan(id);
+      if (!plan) {
+        return res.status(404).json({ message: "Membership plan not found" });
+      }
+      res.json(plan);
+    } catch (error) {
+      console.error("Error fetching membership plan:", error);
+      res.status(500).json({ error: "Failed to fetch membership plan" });
+    }
+  });
+
+  app.get("/api/user/membership", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      res.json(await getMembershipAccountPayload(userId));
+    } catch (error) {
+      console.error("Error fetching user membership:", error);
+      res.status(500).json({ error: "Failed to fetch user membership" });
+    }
+  });
+
+  app.post("/api/user/membership/subscribe", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { planId, prepaidTermMonths } = req.body;
+
+      if (!planId) {
+        return res.status(400).json({ error: "Membership plan ID is required" });
+      }
+
+      const plan = await storage.getMembershipPlan(parseInt(planId, 10));
+      if (!plan) {
+        return res.status(404).json({ error: "Membership plan not found" });
+      }
+
+      const existingMembership = await storage.getUserMembership(userId);
+      if (existingMembership && ["active", "cancel_pending", "paused", "past_due", "pending_payment"].includes(existingMembership.status)) {
+        return res.status(400).json({ error: "You already have a membership record in progress." });
+      }
+
+      const catalog = getMembershipCatalogByTier(plan.tier);
+      const now = new Date();
+      const currentPeriodStart = new Date(now);
+      const termMonths = prepaidTermMonths === 3 ? 3 : 1;
+      const currentPeriodEnd = addMonths(now, termMonths);
+      const planVersion = await storage.getActiveMembershipPlanVersion(plan.id);
+
+      const subscription = await storage.createMembershipSubscription({
+        userId,
+        planId: plan.id,
+        planVersionId: planVersion?.id ?? null,
+        status: "pending_payment",
+        startDate: now,
+        currentPeriodStart,
+        currentPeriodEnd,
+        nextBillingDate: new Date(currentPeriodEnd),
+        paidThroughDate: new Date(currentPeriodEnd),
+        cancellationRequestedAt: null,
+        cancellationEffectiveAt: null,
+        pauseStatus: "none",
+        pauseStartDate: null,
+        pauseEndDate: null,
+        paymentProviderSubscriptionId: null,
+        prepaidTermMonths: termMonths === 3 ? 3 : null,
+      });
+
+      await storage.createMembershipBillingPeriod({
+        subscriptionId: subscription.id,
+        periodStart: currentPeriodStart,
+        periodEnd: currentPeriodEnd,
+        amountCents: termMonths === 3 && catalog ? catalog.prepaidThreeMonthPriceCents : plan.priceCents,
+        paymentStatus: "pending",
+        status: "open",
+      });
+
+      await storage.createMembershipEvent({
+        subscriptionId: subscription.id,
+        eventType: "enrollment_started",
+        details: JSON.stringify({
+          note: "Payment provider integration is not enabled in this build. Admin payment verification is required before activation.",
+          prepaidTermMonths: termMonths === 3 ? 3 : null,
+        }),
+      });
+
+      res.status(201).json(await getMembershipAccountPayload(userId));
+    } catch (error) {
+      console.error("Error subscribing to membership:", error);
+      res.status(500).json({ error: "Failed to subscribe to membership" });
+    }
+  });
+
+  app.post("/api/user/membership/cancel", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const subscription = await storage.getUserMembership(userId);
+
+      if (!subscription) {
+        return res.status(404).json({ error: "No active membership found" });
+      }
+
+      const cancelled = await storage.cancelMembershipSubscription(subscription.id, subscription.currentPeriodEnd);
+      if (cancelled) {
+        await storage.createMembershipEvent({
+          subscriptionId: cancelled.id,
+          eventType: "cancellation_requested",
+          details: JSON.stringify({
+            cancellationEffectiveAt: cancelled.cancellationEffectiveAt,
+            paidThroughDate: cancelled.paidThroughDate,
+            language: MEMBERSHIP_CANCELLATION_LANGUAGE,
+          }),
+        });
+      }
+
+      res.json(await getMembershipAccountPayload(userId));
+    } catch (error) {
+      console.error("Error cancelling membership:", error);
+      res.status(500).json({ error: "Failed to cancel membership" });
+    }
+  });
+
+  app.post("/api/user/membership/pause", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { startDate, endDate, reason } = req.body;
+
+      const subscription = await storage.getUserMembership(userId);
+      if (!subscription) {
+        return res.status(404).json({ error: "No active membership found" });
+      }
+
+      const pauses = await storage.getMembershipPauses(subscription.id);
+      const sixMonthsAgo = addMonths(new Date(), -6);
+      const recentPauses = pauses.filter((pause) => pause.createdAt >= sixMonthsAgo);
+      if (recentPauses.length >= MEMBERSHIP_LAUNCH_RULES.pauseLimitPerSixMonths) {
+        return res.status(400).json({ error: "Pause limit reached for the current six-month period." });
+      }
+
+      const pauseStart = startDate ? new Date(startDate) : new Date(subscription.nextBillingDate);
+      const pauseEnd = endDate ? new Date(endDate) : addMonths(pauseStart, MEMBERSHIP_LAUNCH_RULES.pauseLengthCycles);
+      const paused = await storage.pauseMembershipSubscription(
+        subscription.id,
+        pauseStart,
+        pauseEnd
+      );
+
+      if (paused) {
+        await storage.createMembershipPause({
+          subscriptionId: paused.id,
+          startDate: pauseStart,
+          endDate: pauseEnd,
+          status: "approved",
+          reason: reason || null,
+        });
+        await storage.createMembershipEvent({
+          subscriptionId: paused.id,
+          eventType: "pause_scheduled",
+          details: JSON.stringify({
+            startDate: pauseStart,
+            endDate: pauseEnd,
+            reason: reason || null,
+            note: "No new benefits are issued during the paused cycle.",
+          }),
+        });
+      }
+
+      res.json(await getMembershipAccountPayload(userId));
+    } catch (error) {
+      console.error("Error pausing membership:", error);
+      res.status(500).json({ error: "Failed to pause membership" });
+    }
+  });
+
+  app.post("/api/user/membership/resume", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const subscriptions = await storage.getMembershipSubscriptionsByUser(userId);
+      const pausedSubscription = subscriptions.find((sub) => sub.status === "paused");
+
+      if (!pausedSubscription) {
+        return res.status(404).json({ error: "No paused membership found" });
+      }
+
+      const resumed = await storage.resumeMembershipSubscription(pausedSubscription.id);
+      if (resumed) {
+        await storage.createMembershipEvent({
+          subscriptionId: resumed.id,
+          eventType: "membership_resumed",
+          details: JSON.stringify({ note: "Paused rollover hours may resume according to launch rules." }),
+        });
+      }
+      res.json(await getMembershipAccountPayload(userId));
+    } catch (error) {
+      console.error("Error resuming membership:", error);
+      res.status(500).json({ error: "Failed to resume membership" });
+    }
+  });
+
+  app.post("/api/user/membership/reactivate", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { planId } = req.body;
+      const selectedPlanId = planId ? parseInt(planId, 10) : null;
+      const existingMembership = await storage.getUserMembership(userId);
+
+      if (existingMembership && ["active", "cancel_pending", "paused", "past_due", "pending_payment"].includes(existingMembership.status)) {
+        return res.status(400).json({ error: "Current membership must end before reactivation creates a new cycle." });
+      }
+
+      const plan = selectedPlanId ? await storage.getMembershipPlan(selectedPlanId) : null;
+      if (!plan) {
+        return res.status(400).json({ error: "Plan ID is required for reactivation." });
+      }
+
+      const now = new Date();
+      const periodEnd = addMonths(now, 1);
+      const planVersion = await storage.getActiveMembershipPlanVersion(plan.id);
+      const subscription = await storage.createMembershipSubscription({
+        userId,
+        planId: plan.id,
+        planVersionId: planVersion?.id ?? null,
+        status: "pending_payment",
+        startDate: now,
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        nextBillingDate: periodEnd,
+        paidThroughDate: periodEnd,
+        cancellationRequestedAt: null,
+        cancellationEffectiveAt: null,
+        pauseStatus: "none",
+        pauseStartDate: null,
+        pauseEndDate: null,
+        paymentProviderSubscriptionId: null,
+        prepaidTermMonths: null,
+      });
+
+      await storage.createMembershipEvent({
+        subscriptionId: subscription.id,
+        eventType: "reactivation_started",
+        details: JSON.stringify({ note: "Payment verification is required before benefits are issued." }),
+      });
+
+      res.status(201).json(await getMembershipAccountPayload(userId));
+    } catch (error) {
+      console.error("Error reactivating membership:", error);
+      res.status(500).json({ error: "Failed to reactivate membership" });
+    }
+  });
+
+  app.get("/api/admin/memberships", isAuthenticated, async (req, res) => {
+    if (req.user!.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    try {
+      const subscriptions = await storage.getAllMembershipSubscriptions();
+      const enriched = await Promise.all(subscriptions.map(async (subscription) => {
+        const user = await storage.getUser(subscription.userId);
+        const plan = await storage.getMembershipPlan(subscription.planId);
+        const ledger = await storage.getMembershipBenefitLedger(subscription.id);
+        const events = await storage.getMembershipEvents(subscription.id);
+
+        return {
+          subscription,
+          user: user ? { id: user.id, username: user.username, email: user.email, firstName: user.firstName, lastName: user.lastName } : null,
+          plan,
+          ledger,
+          events,
+        };
+      }));
+
+      res.json(enriched);
+    } catch (error) {
+      console.error("Error fetching admin memberships:", error);
+      res.status(500).json({ error: "Failed to fetch memberships" });
+    }
+  });
+
+  app.post("/api/admin/memberships/:id/activate", isAuthenticated, async (req, res) => {
+    if (req.user!.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    try {
+      const id = parseInt(req.params.id, 10);
+      const subscription = (await storage.getAllMembershipSubscriptions()).find((item) => item.id === id);
+      if (!subscription) {
+        return res.status(404).json({ error: "Membership subscription not found" });
+      }
+
+      const updated = await storage.updateMembershipSubscription(id, {
+        status: "active",
+        updatedAt: new Date(),
+      } as any);
+
+      if (updated) {
+        await issueMembershipBenefits(updated.id, updated.planId, "membership_subscription", updated.id, "Initial benefits issued after admin payment verification.");
+        await storage.createMembershipEvent({
+          subscriptionId: updated.id,
+          eventType: "membership_activated",
+          details: JSON.stringify({ note: "Activated by admin after external payment verification." }),
+        });
+      }
+
+      res.json({ subscription: updated });
+    } catch (error) {
+      console.error("Error activating membership:", error);
+      res.status(500).json({ error: "Failed to activate membership" });
+    }
+  });
+
+  app.post("/api/admin/memberships/:id/adjust-benefit", isAuthenticated, async (req, res) => {
+    if (req.user!.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    try {
+      const subscriptionId = parseInt(req.params.id, 10);
+      const { benefitDefinitionId, quantity, reason } = req.body;
+
+      if (!benefitDefinitionId || !quantity || !reason) {
+        return res.status(400).json({ error: "Benefit definition, quantity, and reason are required." });
+      }
+
+      const ledger = await storage.getMembershipBenefitLedger(subscriptionId);
+      const entries = ledger
+        .filter((entry) => entry.benefitDefinitionId === Number(benefitDefinitionId))
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      const before = entries[entries.length - 1]?.balanceAfter ?? 0;
+      const after = before + Number(quantity);
+      const entry = await storage.createMembershipBenefitLedger({
+        subscriptionId,
+        benefitDefinitionId: Number(benefitDefinitionId),
+        action: "manual_adjustment",
+        quantity: Number(quantity),
+        balanceBefore: before,
+        balanceAfter: after,
+        referenceType: "admin_adjustment",
+        referenceId: req.user!.id,
+        notes: reason,
+      });
+
+      await storage.createMembershipEvent({
+        subscriptionId,
+        eventType: "benefit_adjusted",
+        details: JSON.stringify({ benefitDefinitionId, quantity, reason, adminUserId: req.user!.id }),
+      });
+
+      res.status(201).json(entry);
+    } catch (error) {
+      console.error("Error adjusting membership benefit:", error);
+      res.status(500).json({ error: "Failed to adjust benefit" });
     }
   });
 

@@ -368,6 +368,240 @@ export const insertPromotionSchema = createInsertSchema(promotions)
 export type Promotion = typeof promotions.$inferSelect;
 export type InsertPromotion = z.infer<typeof insertPromotionSchema>;
 
+// Membership plans and subscription ledger schema
+export const membershipPlans = pgTable("membership_plans", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  tier: text("tier").notNull(),
+  priceCents: integer("price_cents").notNull(),
+  billingInterval: text("billing_interval").notNull().default("monthly"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const membershipPlanVersions = pgTable("membership_plan_versions", {
+  id: serial("id").primaryKey(),
+  planId: integer("plan_id").notNull(),
+  versionNumber: integer("version_number").default(1).notNull(),
+  priceCents: integer("price_cents").notNull(),
+  benefits: text("benefits").notNull(),
+  active: boolean("active").default(true).notNull(),
+  effectiveDate: timestamp("effective_date").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const membershipSubscriptions = pgTable("membership_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  planId: integer("plan_id").notNull(),
+  planVersionId: integer("plan_version_id"),
+  status: text("status").default("active").notNull(),
+  startDate: timestamp("start_date").defaultNow().notNull(),
+  currentPeriodStart: timestamp("current_period_start").notNull(),
+  currentPeriodEnd: timestamp("current_period_end").notNull(),
+  nextBillingDate: timestamp("next_billing_date").notNull(),
+  paidThroughDate: timestamp("paid_through_date").notNull(),
+  cancellationRequestedAt: timestamp("cancellation_requested_at"),
+  cancellationEffectiveAt: timestamp("cancellation_effective_at"),
+  pauseStatus: text("pause_status").default("none").notNull(),
+  pauseStartDate: timestamp("pause_start_date"),
+  pauseEndDate: timestamp("pause_end_date"),
+  paymentProviderSubscriptionId: text("payment_provider_subscription_id"),
+  prepaidTermMonths: integer("prepaid_term_months"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const membershipBillingPeriods = pgTable("membership_billing_periods", {
+  id: serial("id").primaryKey(),
+  subscriptionId: integer("subscription_id").notNull(),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  paymentStatus: text("payment_status").default("pending").notNull(),
+  status: text("status").default("open").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const membershipBenefitDefinitions = pgTable("membership_benefit_definitions", {
+  id: serial("id").primaryKey(),
+  planId: integer("plan_id").notNull(),
+  code: text("code").notNull(),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull(),
+  rolloverAllowed: boolean("rollover_allowed").default(false).notNull(),
+  rolloverLimit: integer("rollover_limit").default(0).notNull(),
+  expiresAfterCycles: integer("expires_after_cycles").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const membershipBenefitLedger = pgTable("membership_benefit_ledger", {
+  id: serial("id").primaryKey(),
+  subscriptionId: integer("subscription_id").notNull(),
+  benefitDefinitionId: integer("benefit_definition_id").notNull(),
+  action: text("action").notNull(),
+  quantity: integer("quantity").notNull(),
+  balanceBefore: integer("balance_before").notNull(),
+  balanceAfter: integer("balance_after").notNull(),
+  referenceType: text("reference_type"),
+  referenceId: integer("reference_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const membershipRedemptions = pgTable("membership_redemptions", {
+  id: serial("id").primaryKey(),
+  subscriptionId: integer("subscription_id").notNull(),
+  benefitDefinitionId: integer("benefit_definition_id").notNull(),
+  bookingId: integer("booking_id"),
+  quantity: integer("quantity").notNull(),
+  redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const membershipRollovers = pgTable("membership_rollovers", {
+  id: serial("id").primaryKey(),
+  subscriptionId: integer("subscription_id").notNull(),
+  benefitDefinitionId: integer("benefit_definition_id").notNull(),
+  rolledOverQuantity: integer("rolled_over_quantity").notNull(),
+  fromBillingPeriodId: integer("from_billing_period_id").notNull(),
+  toBillingPeriodId: integer("to_billing_period_id").notNull(),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const membershipDiscounts = pgTable("membership_discounts", {
+  id: serial("id").primaryKey(),
+  planId: integer("plan_id").notNull(),
+  discountType: text("discount_type").notNull(),
+  discountValue: integer("discount_value").notNull(),
+  eligibleServices: text("eligible_services").array().notNull(),
+  stackable: boolean("stackable").default(false).notNull(),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const membershipEvents = pgTable("membership_events", {
+  id: serial("id").primaryKey(),
+  subscriptionId: integer("subscription_id").notNull(),
+  eventType: text("event_type").notNull(),
+  details: text("details").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const membershipPaymentAssociations = pgTable("membership_payment_associations", {
+  id: serial("id").primaryKey(),
+  subscriptionId: integer("subscription_id").notNull(),
+  paymentProviderId: text("payment_provider_id").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  status: text("status").default("pending").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const membershipPauses = pgTable("membership_pauses", {
+  id: serial("id").primaryKey(),
+  subscriptionId: integer("subscription_id").notNull(),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  status: text("status").default("pending").notNull(),
+  reason: text("reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const membershipLoyaltyMilestones = pgTable("membership_loyalty_milestones", {
+  id: serial("id").primaryKey(),
+  planId: integer("plan_id").notNull(),
+  name: text("name").notNull(),
+  thresholdMonths: integer("threshold_months").notNull(),
+  rewardType: text("reward_type").notNull(),
+  rewardQuantity: integer("reward_quantity").notNull(),
+  expiresAfterCycles: integer("expires_after_cycles").default(0).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const membershipLoyaltyRewards = pgTable("membership_loyalty_rewards", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  milestoneId: integer("milestone_id").notNull(),
+  subscriptionId: integer("subscription_id").notNull(),
+  rewardType: text("reward_type").notNull(),
+  rewardQuantity: integer("reward_quantity").notNull(),
+  issuedAt: timestamp("issued_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+  redeemedAt: timestamp("redeemed_at"),
+  status: text("status").default("issued").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertMembershipPlanSchema = createInsertSchema(membershipPlans)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMembershipPlanVersionSchema = createInsertSchema(membershipPlanVersions)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMembershipSubscriptionSchema = createInsertSchema(membershipSubscriptions)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMembershipBillingPeriodSchema = createInsertSchema(membershipBillingPeriods)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMembershipBenefitDefinitionSchema = createInsertSchema(membershipBenefitDefinitions)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMembershipBenefitLedgerSchema = createInsertSchema(membershipBenefitLedger)
+  .omit({ id: true, createdAt: true });
+export const insertMembershipRedemptionSchema = createInsertSchema(membershipRedemptions)
+  .omit({ id: true, redeemedAt: true, createdAt: true });
+export const insertMembershipRolloverSchema = createInsertSchema(membershipRollovers)
+  .omit({ id: true, createdAt: true });
+export const insertMembershipDiscountSchema = createInsertSchema(membershipDiscounts)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMembershipEventSchema = createInsertSchema(membershipEvents)
+  .omit({ id: true, createdAt: true });
+export const insertMembershipPaymentAssociationSchema = createInsertSchema(membershipPaymentAssociations)
+  .omit({ id: true, createdAt: true });
+export const insertMembershipPauseSchema = createInsertSchema(membershipPauses)
+  .omit({ id: true, requestedAt: true, createdAt: true, updatedAt: true });
+export const insertMembershipLoyaltyMilestoneSchema = createInsertSchema(membershipLoyaltyMilestones)
+  .omit({ id: true, createdAt: true, updatedAt: true });
+export const insertMembershipLoyaltyRewardSchema = createInsertSchema(membershipLoyaltyRewards)
+  .omit({ id: true, issuedAt: true, createdAt: true });
+
+export type MembershipPlan = typeof membershipPlans.$inferSelect;
+export type InsertMembershipPlan = z.infer<typeof insertMembershipPlanSchema>;
+export type MembershipPlanVersion = typeof membershipPlanVersions.$inferSelect;
+export type InsertMembershipPlanVersion = z.infer<typeof insertMembershipPlanVersionSchema>;
+export type MembershipSubscription = typeof membershipSubscriptions.$inferSelect;
+export type InsertMembershipSubscription = z.infer<typeof insertMembershipSubscriptionSchema>;
+export type MembershipBillingPeriod = typeof membershipBillingPeriods.$inferSelect;
+export type InsertMembershipBillingPeriod = z.infer<typeof insertMembershipBillingPeriodSchema>;
+export type MembershipBenefitDefinition = typeof membershipBenefitDefinitions.$inferSelect;
+export type InsertMembershipBenefitDefinition = z.infer<typeof insertMembershipBenefitDefinitionSchema>;
+export type MembershipBenefitLedger = typeof membershipBenefitLedger.$inferSelect;
+export type InsertMembershipBenefitLedger = z.infer<typeof insertMembershipBenefitLedgerSchema>;
+export type MembershipRedemption = typeof membershipRedemptions.$inferSelect;
+export type InsertMembershipRedemption = z.infer<typeof insertMembershipRedemptionSchema>;
+export type MembershipRollover = typeof membershipRollovers.$inferSelect;
+export type InsertMembershipRollover = z.infer<typeof insertMembershipRolloverSchema>;
+export type MembershipDiscount = typeof membershipDiscounts.$inferSelect;
+export type InsertMembershipDiscount = z.infer<typeof insertMembershipDiscountSchema>;
+export type MembershipEvent = typeof membershipEvents.$inferSelect;
+export type InsertMembershipEvent = z.infer<typeof insertMembershipEventSchema>;
+export type MembershipPaymentAssociation = typeof membershipPaymentAssociations.$inferSelect;
+export type InsertMembershipPaymentAssociation = z.infer<typeof insertMembershipPaymentAssociationSchema>;
+export type MembershipPause = typeof membershipPauses.$inferSelect;
+export type InsertMembershipPause = z.infer<typeof insertMembershipPauseSchema>;
+export type MembershipLoyaltyMilestone = typeof membershipLoyaltyMilestones.$inferSelect;
+export type InsertMembershipLoyaltyMilestone = z.infer<typeof insertMembershipLoyaltyMilestoneSchema>;
+export type MembershipLoyaltyReward = typeof membershipLoyaltyRewards.$inferSelect;
+export type InsertMembershipLoyaltyReward = z.infer<typeof insertMembershipLoyaltyRewardSchema>;
+
 // User loyalty records schema (for tracking loyalty program activity)
 export const loyaltyRecords = pgTable("loyalty_records", {
   id: serial("id").primaryKey(),

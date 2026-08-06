@@ -2,9 +2,10 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Service } from "@shared/schema";
 
 interface PricingSectionProps {
-  services: unknown[];
+  services: Service[];
   isLoading: boolean;
 }
 
@@ -79,7 +80,7 @@ const PricingCard = ({ group }: { group: typeof pricingGroups[number] }) => {
             </li>
           ))}
         </ul>
-        
+
         <Button asChild className="w-full bg-primary hover:bg-primary-600">
           <Link href={group.href}>
             {group.cta}

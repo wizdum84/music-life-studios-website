@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
 import { TimeSlot, Service } from "@shared/schema";
+import { calculatePricing } from "@shared/pricing";
 import { apiRequest } from "@/lib/queryClient";
 import { formatPrice, scrollToTop } from "@/lib/utils";
 
@@ -98,6 +100,7 @@ export default function BookingForm({
   const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [availableTimes, setAvailableTimes] = useState<TimeSlot[]>([]);
   const [bookingData, setBookingData] = useState<FormData | null>(null);
+  const shouldShowServiceSelect = !selectedServiceId;
   const [recordingOption, setRecordingOption] = useState("hourly");
   const [mixOption, setMixOption] = useState("quick-finish");
   const [productionOption, setProductionOption] = useState("custom-beat");
@@ -134,24 +137,22 @@ export default function BookingForm({
     preferredContact: "",
   });
   
-  // Service type flags
-  const isMixingService = serviceType === 'mixing' || 
-    (selectedServiceId && services.some(s => 
-      s.id === selectedServiceId && 
-      (s.name.toLowerCase().includes('mix') || s.name.toLowerCase().includes('master'))
-    ));
-    
-  const isRecordingService = serviceType === 'recording' || 
-    (selectedServiceId && services.some(s => 
-      s.id === selectedServiceId && 
-      (s.name.toLowerCase().includes('recording') || s.name.toLowerCase().includes('session') || s.name.toLowerCase().includes('record'))
-    ));
+  const selectedService = selectedServiceId ? services.find(s => s.id === selectedServiceId) : null;
 
-  const isProductionService = serviceType === 'production' ||
-    (selectedServiceId && services.some(s =>
-      s.id === selectedServiceId &&
-      (s.name.toLowerCase().includes('producer') || s.name.toLowerCase().includes('production') || s.name.toLowerCase().includes('composition'))
-    ));
+  const normalizeServiceTypeFromName = (name?: string): 'recording' | 'mixing' | 'production' | null => {
+    if (!name) return null;
+    const lower = name.toLowerCase();
+    if (lower.includes('mix') || lower.includes('master')) return 'mixing';
+    if (lower.includes('producer') || lower.includes('production') || lower.includes('composition')) return 'production';
+    if (lower.includes('record') || lower.includes('session')) return 'recording';
+    return null;
+  };
+
+  const normalizedServiceType = serviceType ?? normalizeServiceTypeFromName(selectedService?.name);
+
+  const isMixingService = normalizedServiceType === 'mixing';
+  const isRecordingService = normalizedServiceType === 'recording';
+  const isProductionService = normalizedServiceType === 'production';
   
   // Payment state
   const [contractSigned, setContractSigned] = useState(false);
@@ -210,43 +211,34 @@ export default function BookingForm({
   };
 
   const calculateAmountCents = () => {
-    const units = selectedDuration ? selectedDuration / 60 : 0;
     if (!selectedService || !selectedDuration) return 0;
 
-    if (isRecordingService) {
-      if (recordingOption === "release-ready") return units * 22500;
-      if (selectedDuration === 240) return 18000;
-      return Math.max(2, units) * 5000;
-    }
+    return getPricingResult().finalTotal;
+  };
 
-    if (isMixingService) {
-      if (mixOption === "quick-finish") {
-        const quickFinishPrices: Record<number, number> = {
-          1: 7500,
-          2: 14000,
-          3: 20000,
-          4: 25000,
-          5: 30000,
-        };
-        return quickFinishPrices[units] ?? units * 7500;
-      }
-      if (mixOption === "master-only") return units * 5000;
-      if (mixOption === "advanced") return units * 17500;
-      return units * 12500;
-    }
-
-    if (isProductionService) {
-      const productionPrices: Record<string, number> = {
-        "custom-beat": 20000,
-        "build-song": 25000,
-        "complete-single": 32500,
-        "signature-single": 45000,
-        "media-quote": 0,
+  const getPricingResult = () => {
+    if (!selectedService || !selectedDuration) {
+      return {
+        serviceId: selectedService?.id ?? 0,
+        quantity: 0,
+        unitType: "project" as const,
+        standardUnitPrice: 0,
+        standardTotal: 0,
+        bundleDiscount: 0,
+        finalTotal: 0,
+        effectiveUnitPrice: 0,
+        requiresManualQuote: false,
       };
-      return productionPrices[productionOption] ?? selectedService.price;
     }
 
-    return selectedService.price * units;
+    return calculatePricing({
+      serviceId: selectedService.id,
+      serviceName: selectedService.name,
+      duration: selectedDuration,
+      recordingOption,
+      mixOption,
+      productionOption,
+    });
   };
 
   const buildStructuredDetails = (notes?: string) => {
@@ -325,12 +317,16 @@ export default function BookingForm({
       }
     }
   }, [selectedServiceId, selectedDuration, services, form, recordingOption, mixOption, productionOption]);
+
+  const selectedServiceName = selectedService ? selectedService.name : null;
   
-  // Selected service accessor
-  const selectedService = selectedServiceId 
-    ? services.find(s => s.id === selectedServiceId) 
-    : null;
-  
+  // Sync external preselected service into internal state
+  useEffect(() => {
+    if (preselectedServiceId !== null && preselectedServiceId !== undefined && preselectedServiceId !== selectedServiceId) {
+      setSelectedServiceId(preselectedServiceId);
+    }
+  }, [preselectedServiceId, selectedServiceId]);
+
   // Handle service selection
   const handleServiceChange = (value: string) => {
     const serviceId = parseInt(value);
@@ -373,9 +369,9 @@ export default function BookingForm({
     scrollToTop();
   };
   
-  // Handle date selection for services that can start with a project date instead of a fixed studio slot.
+  // Handle date selection for services that use a project date instead of a fixed studio time slot.
   useEffect(() => {
-    if (selectedDate && (isMixingService || isRecordingService || isProductionService)) {
+    if (selectedDate && (isMixingService || isProductionService)) {
       // Scroll to top
       scrollToTop();
       
@@ -388,9 +384,9 @@ export default function BookingForm({
       
       form.setValue("date", dateWithNoon.toISOString());
       
-      console.log(`Date set for ${isRecordingService ? "recording" : isProductionService ? "production" : "mixing"} service: ${dateWithNoon.toISOString()}`);
+      console.log(`Date set for ${isProductionService ? "production" : "mixing"} service: ${dateWithNoon.toISOString()}`);
     }
-  }, [isMixingService, isRecordingService, isProductionService, selectedDate, form]);
+  }, [isMixingService, isProductionService, selectedDate, form]);
   
   // Calculate total price
   const calculateTotal = () => {
@@ -432,14 +428,16 @@ export default function BookingForm({
       amount: calculateAmountCents(),
       details: buildStructuredDetails(data.details),
     };
+    const pricing = getPricingResult();
 
-    if (isProductionService && productionOption === "media-quote") {
+    if (pricing.requiresManualQuote) {
       apiRequest("POST", "/api/bookings", {
         ...structuredData,
+        amount: 0,
         paymentStatus: "unpaid",
         status: "pending",
       }).then(() => {
-        setBookingData(structuredData);
+        setBookingData({ ...structuredData, amount: 0 });
         setCurrentStep("confirmation");
         scrollToTop();
       }).catch(error => {
@@ -770,36 +768,51 @@ export default function BookingForm({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <FormField
-            control={form.control}
-            name="serviceId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Service Type</FormLabel>
-                <Select 
-                  onValueChange={(value) => {
-                    field.onChange(parseInt(value));
-                    handleServiceChange(value);
-                  }}
-                  value={field.value?.toString()}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a service" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {services.map(service => (
-                      <SelectItem key={service.id} value={service.id.toString()}>
-                        {service.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {shouldShowServiceSelect ? (
+            <FormField
+              control={form.control}
+              name="serviceId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Service Type</FormLabel>
+                  <Select 
+                    onValueChange={(value) => {
+                      field.onChange(parseInt(value));
+                      handleServiceChange(value);
+                    }}
+                    value={field.value?.toString()}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a service" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {services.map(service => (
+                        <SelectItem key={service.id} value={service.id.toString()}>
+                          {service.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ) : (
+            <div className="col-span-2 rounded-lg border border-primary/20 bg-primary/5 p-4">
+              <p className="text-sm text-primary font-semibold mb-2">Service selected:</p>
+              <p className="font-medium text-lg">{selectedServiceName || "Selected service"}</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                You selected this service from the previous page. If you want a different service, choose it from the homepage.
+              </p>
+              <div className="mt-4">
+                <Button asChild variant="outline" size="sm" className="px-4 py-2">
+                  <Link href="/">Choose a different service</Link>
+                </Button>
+              </div>
+            </div>
+          )}
           
           <FormField
             control={form.control}
@@ -832,13 +845,22 @@ export default function BookingForm({
                       </>
                     ) : isProductionService ? (
                       <>
-                        <SelectItem value="60">1 project</SelectItem>
+                        <SelectItem value="60">1 {productionOption === "custom-beat" ? "beat" : "song"}</SelectItem>
+                        {productionOption !== "media-quote" && (
+                          <>
+                            <SelectItem value="120">2 {productionOption === "custom-beat" ? "beats" : "songs"}</SelectItem>
+                            <SelectItem value="180">3 {productionOption === "custom-beat" ? "beats" : "songs"}</SelectItem>
+                            <SelectItem value="240">4 {productionOption === "custom-beat" ? "beats" : "songs"}</SelectItem>
+                          </>
+                        )}
                       </>
                     ) : recordingOption === "release-ready" ? (
                       <>
                         <SelectItem value="60">1 song</SelectItem>
                         <SelectItem value="120">2 songs</SelectItem>
                         <SelectItem value="180">3 songs</SelectItem>
+                        <SelectItem value="240">4 songs</SelectItem>
+                        <SelectItem value="300">5 songs</SelectItem>
                       </>
                     ) : (
                       <>
@@ -871,8 +893,12 @@ export default function BookingForm({
             </CardHeader>
             <CardContent>
               {isRecordingService && (
-                <RadioGroup value={recordingOption} onValueChange={setRecordingOption} className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <label className="border rounded-md p-4 cursor-pointer has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5">
+                <>
+                  <div className="rounded-md border border-dashed border-primary/50 bg-primary/5 p-4 mb-4 text-sm font-medium text-primary">
+                    Hourly session discounts apply for 4+ hour blocks, with additional bundle pricing up to 8 hours.
+                  </div>
+                  <RadioGroup value={recordingOption} onValueChange={setRecordingOption} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="border rounded-md p-4 cursor-pointer has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5">
                     <div className="flex items-center gap-2 mb-2">
                       <RadioGroupItem value="hourly" />
                       <span className="font-medium">Hourly Recording Session</span>
@@ -887,6 +913,7 @@ export default function BookingForm({
                     <p className="text-sm text-muted-foreground">Starts at $225 per song. Includes up to two hours recording, vocal cleanup, mix, master, WAV/MP3 delivery, and one revision.</p>
                   </label>
                 </RadioGroup>
+              </>
               )}
 
               {isMixingService && (
@@ -1127,15 +1154,25 @@ export default function BookingForm({
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input placeholder="Artist name" value={intakeDetails.artistName} onChange={(event) => updateIntake("artistName", event.target.value)} />
-                <Input placeholder={isProductionService ? "Artist, company, or project name" : "Song title"} value={isProductionService ? intakeDetails.projectName : intakeDetails.songTitle} onChange={(event) => updateIntake(isProductionService ? "projectName" : "songTitle", event.target.value)} />
+                {isProductionService ? (
+                  <Input placeholder="Artist, company, or project name" value={intakeDetails.projectName} onChange={(event) => updateIntake("projectName", event.target.value)} />
+                ) : recordingOption === "release-ready" ? (
+                  <Input placeholder="Song title" value={intakeDetails.songTitle} onChange={(event) => updateIntake("songTitle", event.target.value)} />
+                ) : (
+                  <Input placeholder="Session focus or reference" value={intakeDetails.recordingType} onChange={(event) => updateIntake("recordingType", event.target.value)} />
+                )}
                 <Input placeholder="Genre or style" value={intakeDetails.genre} onChange={(event) => updateIntake("genre", event.target.value)} />
-                <Input placeholder="Desired release date or deadline" value={intakeDetails.desiredDeadline} onChange={(event) => updateIntake("desiredDeadline", event.target.value)} />
+                {(isProductionService || recordingOption === "release-ready") && (
+                  <Input placeholder={isProductionService ? "Desired completion date" : "Desired release date"} value={intakeDetails.desiredDeadline} onChange={(event) => updateIntake("desiredDeadline", event.target.value)} />
+                )}
               </div>
 
               {isRecordingService && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input placeholder="Number of artists attending" value={intakeDetails.numberOfArtists} onChange={(event) => updateIntake("numberOfArtists", event.target.value)} />
-                  <Input placeholder="Estimated number of songs" value={intakeDetails.estimatedSongs} onChange={(event) => updateIntake("estimatedSongs", event.target.value)} />
+                  {recordingOption === "release-ready" && (
+                    <Input placeholder="Estimated number of songs" value={intakeDetails.estimatedSongs} onChange={(event) => updateIntake("estimatedSongs", event.target.value)} />
+                  )}
                   <Select value={intakeDetails.recordingType} onValueChange={(value) => updateIntake("recordingType", value)}>
                     <SelectTrigger><SelectValue placeholder="Recording type" /></SelectTrigger>
                     <SelectContent>

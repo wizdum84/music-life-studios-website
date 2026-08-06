@@ -9,10 +9,9 @@ export default function ContactSection() {
         <div className="text-center mb-16">
           <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-4">Get in Touch</h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Have questions or want to discuss your project? Reach out to Wiz and start with the real details.
+              Have questions or want to discuss your project? Reach out to WIZ and start with the real details.
           </p>
         </div>
-        
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
           <div className="col-span-1 md:col-span-2">
             <ContactForm />

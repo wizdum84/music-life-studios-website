@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -56,15 +57,21 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
+  const port = Number(process.env.PORT) || 5000;
   const listenOptions = {
     port,
     host: "0.0.0.0",
     ...(process.platform === "win32" ? {} : { reusePort: true }),
   };
+
+  server.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "EADDRINUSE") {
+      console.error(`Port ${port} is already in use. Set PORT to another value, for example: $env:PORT='5001'; npm run dev`);
+      process.exit(1);
+    }
+
+    throw error;
+  });
 
   server.listen(listenOptions, () => {
     log(`serving on port ${port}`);

@@ -12,9 +12,25 @@ import {
   Feedback, InsertFeedback,
   Promotion, InsertPromotion,
   LoyaltyRecord, InsertLoyaltyRecord,
+  MembershipPlan, InsertMembershipPlan,
+  MembershipPlanVersion, InsertMembershipPlanVersion,
+  MembershipSubscription, InsertMembershipSubscription,
+  MembershipBillingPeriod, InsertMembershipBillingPeriod,
+  MembershipBenefitDefinition, InsertMembershipBenefitDefinition,
+  MembershipBenefitLedger, InsertMembershipBenefitLedger,
+  MembershipRedemption, InsertMembershipRedemption,
+  MembershipDiscount, InsertMembershipDiscount,
+  MembershipEvent, InsertMembershipEvent,
+  MembershipPause, InsertMembershipPause,
+  MembershipLoyaltyMilestone, InsertMembershipLoyaltyMilestone,
+  MembershipLoyaltyReward, InsertMembershipLoyaltyReward,
   users, services, tracks, bookings, messages, timeSlots,
   beats, beatPurchases, contracts, contractSignatures, feedbacks,
-  promotions, loyaltyRecords
+  promotions, loyaltyRecords,
+  membershipPlans, membershipPlanVersions, membershipSubscriptions,
+  membershipBillingPeriods, membershipBenefitDefinitions, membershipBenefitLedger,
+  membershipRedemptions, membershipDiscounts, membershipEvents, membershipPauses,
+  membershipLoyaltyMilestones, membershipLoyaltyRewards
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, gte, lte, desc, sql, asc } from "drizzle-orm";
@@ -50,6 +66,42 @@ export interface IStorage {
   updatePromotion(id: number, promotion: Partial<InsertPromotion>): Promise<Promotion | undefined>;
   incrementPromotionUsage(id: number): Promise<Promotion | undefined>;
   deactivatePromotion(id: number): Promise<Promotion | undefined>;
+
+  // Membership
+  getAllMembershipPlans(): Promise<MembershipPlan[]>;
+  getMembershipPlan(id: number): Promise<MembershipPlan | undefined>;
+  getMembershipPlanByTier(tier: string): Promise<MembershipPlan | undefined>;
+  createMembershipPlan(plan: InsertMembershipPlan): Promise<MembershipPlan>;
+  updateMembershipPlan(id: number, plan: Partial<InsertMembershipPlan>): Promise<MembershipPlan | undefined>;
+  getMembershipPlanVersions(planId: number): Promise<MembershipPlanVersion[]>;
+  getActiveMembershipPlanVersion(planId: number): Promise<MembershipPlanVersion | undefined>;
+  createMembershipPlanVersion(version: InsertMembershipPlanVersion): Promise<MembershipPlanVersion>;
+  getMembershipBenefitDefinitions(planId: number): Promise<MembershipBenefitDefinition[]>;
+  createMembershipBenefitDefinition(definition: InsertMembershipBenefitDefinition): Promise<MembershipBenefitDefinition>;
+  getMembershipDiscounts(planId: number): Promise<MembershipDiscount[]>;
+  createMembershipDiscount(discount: InsertMembershipDiscount): Promise<MembershipDiscount>;
+  getAllMembershipSubscriptions(): Promise<MembershipSubscription[]>;
+  getMembershipSubscriptionsByUser(userId: number): Promise<MembershipSubscription[]>;
+  getUserMembership(userId: number): Promise<MembershipSubscription | undefined>;
+  createMembershipSubscription(subscription: InsertMembershipSubscription): Promise<MembershipSubscription>;
+  updateMembershipSubscription(id: number, subscription: Partial<InsertMembershipSubscription>): Promise<MembershipSubscription | undefined>;
+  cancelMembershipSubscription(id: number, effectiveAt: Date): Promise<MembershipSubscription | undefined>;
+  pauseMembershipSubscription(id: number, startDate: Date, endDate: Date): Promise<MembershipSubscription | undefined>;
+  resumeMembershipSubscription(id: number): Promise<MembershipSubscription | undefined>;
+  getMembershipBillingPeriods(subscriptionId: number): Promise<MembershipBillingPeriod[]>;
+  createMembershipBillingPeriod(period: InsertMembershipBillingPeriod): Promise<MembershipBillingPeriod>;
+  getMembershipBenefitLedger(subscriptionId: number): Promise<MembershipBenefitLedger[]>;
+  createMembershipBenefitLedger(entry: InsertMembershipBenefitLedger): Promise<MembershipBenefitLedger>;
+  getMembershipRedemptions(subscriptionId: number): Promise<MembershipRedemption[]>;
+  createMembershipRedemption(redemption: InsertMembershipRedemption): Promise<MembershipRedemption>;
+  getMembershipEvents(subscriptionId: number): Promise<MembershipEvent[]>;
+  createMembershipEvent(event: InsertMembershipEvent): Promise<MembershipEvent>;
+  getMembershipPauses(subscriptionId: number): Promise<MembershipPause[]>;
+  createMembershipPause(pause: InsertMembershipPause): Promise<MembershipPause>;
+  getMembershipLoyaltyMilestones(planId: number): Promise<MembershipLoyaltyMilestone[]>;
+  createMembershipLoyaltyMilestone(milestone: InsertMembershipLoyaltyMilestone): Promise<MembershipLoyaltyMilestone>;
+  getMembershipLoyaltyRewards(subscriptionId: number): Promise<MembershipLoyaltyReward[]>;
+  createMembershipLoyaltyReward(reward: InsertMembershipLoyaltyReward): Promise<MembershipLoyaltyReward>;
   
   // Services
   getAllServices(): Promise<Service[]>;
@@ -841,6 +893,206 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return result[0];
   }
+
+  // Membership
+  async getAllMembershipPlans(): Promise<MembershipPlan[]> {
+    return db.select().from(membershipPlans).where(eq(membershipPlans.active, true));
+  }
+
+  async getMembershipPlan(id: number): Promise<MembershipPlan | undefined> {
+    const result = await db.select().from(membershipPlans).where(eq(membershipPlans.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getMembershipPlanByTier(tier: string): Promise<MembershipPlan | undefined> {
+    const result = await db.select().from(membershipPlans).where(eq(membershipPlans.tier, tier)).limit(1);
+    return result[0];
+  }
+
+  async createMembershipPlan(plan: InsertMembershipPlan): Promise<MembershipPlan> {
+    const result = await db.insert(membershipPlans).values(plan).returning();
+    return result[0];
+  }
+
+  async updateMembershipPlan(id: number, plan: Partial<InsertMembershipPlan>): Promise<MembershipPlan | undefined> {
+    const result = await db.update(membershipPlans).set(plan).where(eq(membershipPlans.id, id)).returning();
+    return result[0];
+  }
+
+  async getMembershipPlanVersions(planId: number): Promise<MembershipPlanVersion[]> {
+    return db.select().from(membershipPlanVersions).where(eq(membershipPlanVersions.planId, planId)).orderBy(desc(membershipPlanVersions.versionNumber));
+  }
+
+  async getActiveMembershipPlanVersion(planId: number): Promise<MembershipPlanVersion | undefined> {
+    const result = await db.select()
+      .from(membershipPlanVersions)
+      .where(and(eq(membershipPlanVersions.planId, planId), eq(membershipPlanVersions.active, true)))
+      .orderBy(desc(membershipPlanVersions.versionNumber))
+      .limit(1);
+    return result[0];
+  }
+
+  async createMembershipPlanVersion(version: InsertMembershipPlanVersion): Promise<MembershipPlanVersion> {
+    const result = await db.insert(membershipPlanVersions).values(version).returning();
+    return result[0];
+  }
+
+  async getMembershipBenefitDefinitions(planId: number): Promise<MembershipBenefitDefinition[]> {
+    return db.select().from(membershipBenefitDefinitions).where(eq(membershipBenefitDefinitions.planId, planId)).orderBy(asc(membershipBenefitDefinitions.id));
+  }
+
+  async createMembershipBenefitDefinition(definition: InsertMembershipBenefitDefinition): Promise<MembershipBenefitDefinition> {
+    const result = await db.insert(membershipBenefitDefinitions).values(definition).returning();
+    return result[0];
+  }
+
+  async getMembershipDiscounts(planId: number): Promise<MembershipDiscount[]> {
+    return db.select().from(membershipDiscounts).where(eq(membershipDiscounts.planId, planId)).orderBy(asc(membershipDiscounts.id));
+  }
+
+  async createMembershipDiscount(discount: InsertMembershipDiscount): Promise<MembershipDiscount> {
+    const result = await db.insert(membershipDiscounts).values(discount).returning();
+    return result[0];
+  }
+
+  async getAllMembershipSubscriptions(): Promise<MembershipSubscription[]> {
+    return db.select().from(membershipSubscriptions).orderBy(desc(membershipSubscriptions.createdAt));
+  }
+
+  async getMembershipSubscriptionsByUser(userId: number): Promise<MembershipSubscription[]> {
+    return db.select()
+      .from(membershipSubscriptions)
+      .where(eq(membershipSubscriptions.userId, userId))
+      .orderBy(desc(membershipSubscriptions.createdAt));
+  }
+
+  async getUserMembership(userId: number): Promise<MembershipSubscription | undefined> {
+    const result = await db.select()
+      .from(membershipSubscriptions)
+      .where(
+        and(
+          eq(membershipSubscriptions.userId, userId),
+          sql`${membershipSubscriptions.status} in ('active', 'cancel_pending', 'paused', 'past_due', 'pending_payment')`
+        )
+      )
+      .orderBy(desc(membershipSubscriptions.currentPeriodEnd))
+      .limit(1);
+    return result[0];
+  }
+
+  async createMembershipSubscription(subscription: InsertMembershipSubscription): Promise<MembershipSubscription> {
+    const result = await db.insert(membershipSubscriptions).values(subscription).returning();
+    return result[0];
+  }
+
+  async updateMembershipSubscription(id: number, subscription: Partial<InsertMembershipSubscription>): Promise<MembershipSubscription | undefined> {
+    const result = await db.update(membershipSubscriptions).set(subscription).where(eq(membershipSubscriptions.id, id)).returning();
+    return result[0];
+  }
+
+  async cancelMembershipSubscription(id: number, effectiveAt: Date): Promise<MembershipSubscription | undefined> {
+    const result = await db.update(membershipSubscriptions)
+      .set({
+        status: "cancel_pending",
+        cancellationRequestedAt: new Date(),
+        cancellationEffectiveAt: effectiveAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(membershipSubscriptions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async pauseMembershipSubscription(id: number, startDate: Date, endDate: Date): Promise<MembershipSubscription | undefined> {
+    const result = await db.update(membershipSubscriptions)
+      .set({
+        status: "paused",
+        pauseStatus: "paused",
+        pauseStartDate: startDate,
+        pauseEndDate: endDate,
+        updatedAt: new Date(),
+      })
+      .where(eq(membershipSubscriptions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async resumeMembershipSubscription(id: number): Promise<MembershipSubscription | undefined> {
+    const result = await db.update(membershipSubscriptions)
+      .set({
+        status: "active",
+        pauseStatus: "none",
+        pauseStartDate: null,
+        pauseEndDate: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(membershipSubscriptions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getMembershipBillingPeriods(subscriptionId: number): Promise<MembershipBillingPeriod[]> {
+    return db.select().from(membershipBillingPeriods).where(eq(membershipBillingPeriods.subscriptionId, subscriptionId)).orderBy(desc(membershipBillingPeriods.periodStart));
+  }
+
+  async createMembershipBillingPeriod(period: InsertMembershipBillingPeriod): Promise<MembershipBillingPeriod> {
+    const result = await db.insert(membershipBillingPeriods).values(period).returning();
+    return result[0];
+  }
+
+  async getMembershipBenefitLedger(subscriptionId: number): Promise<MembershipBenefitLedger[]> {
+    return db.select().from(membershipBenefitLedger).where(eq(membershipBenefitLedger.subscriptionId, subscriptionId)).orderBy(desc(membershipBenefitLedger.createdAt));
+  }
+
+  async createMembershipBenefitLedger(entry: InsertMembershipBenefitLedger): Promise<MembershipBenefitLedger> {
+    const result = await db.insert(membershipBenefitLedger).values(entry).returning();
+    return result[0];
+  }
+
+  async getMembershipRedemptions(subscriptionId: number): Promise<MembershipRedemption[]> {
+    return db.select().from(membershipRedemptions).where(eq(membershipRedemptions.subscriptionId, subscriptionId)).orderBy(desc(membershipRedemptions.createdAt));
+  }
+
+  async createMembershipRedemption(redemption: InsertMembershipRedemption): Promise<MembershipRedemption> {
+    const result = await db.insert(membershipRedemptions).values(redemption).returning();
+    return result[0];
+  }
+
+  async getMembershipEvents(subscriptionId: number): Promise<MembershipEvent[]> {
+    return db.select().from(membershipEvents).where(eq(membershipEvents.subscriptionId, subscriptionId)).orderBy(desc(membershipEvents.createdAt));
+  }
+
+  async createMembershipEvent(event: InsertMembershipEvent): Promise<MembershipEvent> {
+    const result = await db.insert(membershipEvents).values(event).returning();
+    return result[0];
+  }
+
+  async getMembershipPauses(subscriptionId: number): Promise<MembershipPause[]> {
+    return db.select().from(membershipPauses).where(eq(membershipPauses.subscriptionId, subscriptionId)).orderBy(desc(membershipPauses.createdAt));
+  }
+
+  async createMembershipPause(pause: InsertMembershipPause): Promise<MembershipPause> {
+    const result = await db.insert(membershipPauses).values(pause).returning();
+    return result[0];
+  }
+
+  async getMembershipLoyaltyMilestones(planId: number): Promise<MembershipLoyaltyMilestone[]> {
+    return db.select().from(membershipLoyaltyMilestones).where(eq(membershipLoyaltyMilestones.planId, planId)).orderBy(asc(membershipLoyaltyMilestones.thresholdMonths));
+  }
+
+  async createMembershipLoyaltyMilestone(milestone: InsertMembershipLoyaltyMilestone): Promise<MembershipLoyaltyMilestone> {
+    const result = await db.insert(membershipLoyaltyMilestones).values(milestone).returning();
+    return result[0];
+  }
+
+  async getMembershipLoyaltyRewards(subscriptionId: number): Promise<MembershipLoyaltyReward[]> {
+    return db.select().from(membershipLoyaltyRewards).where(eq(membershipLoyaltyRewards.subscriptionId, subscriptionId)).orderBy(desc(membershipLoyaltyRewards.createdAt));
+  }
+
+  async createMembershipLoyaltyReward(reward: InsertMembershipLoyaltyReward): Promise<MembershipLoyaltyReward> {
+    const result = await db.insert(membershipLoyaltyRewards).values(reward).returning();
+    return result[0];
+  }
 }
 
 class MemoryStorage implements IStorage {
@@ -858,6 +1110,18 @@ class MemoryStorage implements IStorage {
   private feedbacksData: Feedback[] = [];
   private promotionsData: Promotion[] = [];
   private loyaltyRecordsData: LoyaltyRecord[] = [];
+  private membershipPlansData: MembershipPlan[] = [];
+  private membershipPlanVersionsData: MembershipPlanVersion[] = [];
+  private membershipSubscriptionsData: MembershipSubscription[] = [];
+  private membershipBillingPeriodsData: MembershipBillingPeriod[] = [];
+  private membershipBenefitDefinitionsData: MembershipBenefitDefinition[] = [];
+  private membershipBenefitLedgerData: MembershipBenefitLedger[] = [];
+  private membershipRedemptionsData: MembershipRedemption[] = [];
+  private membershipDiscountsData: MembershipDiscount[] = [];
+  private membershipEventsData: MembershipEvent[] = [];
+  private membershipPausesData: MembershipPause[] = [];
+  private membershipLoyaltyMilestonesData: MembershipLoyaltyMilestone[] = [];
+  private membershipLoyaltyRewardsData: MembershipLoyaltyReward[] = [];
   private ids: Record<string, number> = {};
 
   constructor() {
@@ -927,6 +1191,42 @@ class MemoryStorage implements IStorage {
         updatedAt: new Date(),
       },
     ];
+
+    this.membershipPlansData = [
+      {
+        id: this.nextId("membershipPlans"),
+        name: "Artist Access",
+        description: "Three recording hours, one Master Only credit, member add-on hours at $45, 10% eligible discounts, priority access, one check-in, and up to one rollover hour.",
+        tier: "artist_access",
+        priceCents: 14900,
+        billingInterval: "monthly",
+        active: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: this.nextId("membershipPlans"),
+        name: "Consistent Artist",
+        description: "Six recording hours, two eligible Quick Finishes, member add-on hours at $45, 10% eligible discounts, priority booking, one planning session, and up to two rollover hours.",
+        tier: "consistent_artist",
+        priceCents: 32500,
+        billingInterval: "monthly",
+        active: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: this.nextId("membershipPlans"),
+        name: "Release Artist",
+        description: "Eight recording hours, three eligible Quick Finishes, one Master Only credit, member add-on hours at $45, 15% eligible discounts, priority booking, strategy support, project-file review, early beat access, and up to three rollover hours.",
+        tier: "release_artist",
+        priceCents: 49900,
+        billingInterval: "monthly",
+        active: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
   }
 
   async getUser(id: number) { return this.usersData.find((user) => user.id === id); }
@@ -971,6 +1271,148 @@ class MemoryStorage implements IStorage {
     return promotion ? this.updateById(this.promotionsData, id, { usageCount: promotion.usageCount + 1 }) : undefined;
   }
   async deactivatePromotion(id: number) { return this.updateById(this.promotionsData, id, { active: false }); }
+
+  async getAllMembershipPlans() { return this.membershipPlansData.filter((plan) => plan.active); }
+  async getMembershipPlan(id: number) { return this.membershipPlansData.find((plan) => plan.id === id); }
+  async getMembershipPlanByTier(tier: string) { return this.membershipPlansData.find((plan) => plan.tier === tier); }
+  async createMembershipPlan(plan: InsertMembershipPlan) {
+    const newPlan = { id: this.nextId("membershipPlans"), createdAt: new Date(), updatedAt: new Date(), ...plan } as MembershipPlan;
+    this.membershipPlansData.push(newPlan);
+    return newPlan;
+  }
+  async updateMembershipPlan(id: number, plan: Partial<InsertMembershipPlan>) {
+    return this.updateById(this.membershipPlansData, id, { ...plan, updatedAt: new Date() });
+  }
+  async getMembershipPlanVersions(planId: number) {
+    return this.membershipPlanVersionsData.filter((version) => version.planId === planId).sort((a, b) => b.versionNumber - a.versionNumber);
+  }
+  async getActiveMembershipPlanVersion(planId: number) {
+    return this.membershipPlanVersionsData
+      .filter((version) => version.planId === planId && version.active)
+      .sort((a, b) => b.versionNumber - a.versionNumber)[0];
+  }
+  async createMembershipPlanVersion(version: InsertMembershipPlanVersion) {
+    const newVersion = { id: this.nextId("membershipPlanVersions"), active: true, effectiveDate: new Date(), createdAt: new Date(), updatedAt: new Date(), ...version } as MembershipPlanVersion;
+    this.membershipPlanVersionsData.push(newVersion);
+    return newVersion;
+  }
+  async getMembershipBenefitDefinitions(planId: number) {
+    return this.membershipBenefitDefinitionsData.filter((definition) => definition.planId === planId);
+  }
+  async createMembershipBenefitDefinition(definition: InsertMembershipBenefitDefinition) {
+    const newDefinition = { id: this.nextId("membershipBenefitDefinitions"), createdAt: new Date(), updatedAt: new Date(), ...definition } as MembershipBenefitDefinition;
+    this.membershipBenefitDefinitionsData.push(newDefinition);
+    return newDefinition;
+  }
+  async getMembershipDiscounts(planId: number) {
+    return this.membershipDiscountsData.filter((discount) => discount.planId === planId);
+  }
+  async createMembershipDiscount(discount: InsertMembershipDiscount) {
+    const newDiscount = { id: this.nextId("membershipDiscounts"), expiresAt: null, createdAt: new Date(), updatedAt: new Date(), ...discount } as MembershipDiscount;
+    this.membershipDiscountsData.push(newDiscount);
+    return newDiscount;
+  }
+  async getAllMembershipSubscriptions() {
+    return this.membershipSubscriptionsData.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  async getMembershipSubscriptionsByUser(userId: number) {
+    return this.membershipSubscriptionsData.filter((sub) => sub.userId === userId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  async getUserMembership(userId: number) {
+    return this.membershipSubscriptionsData
+      .filter((sub) => sub.userId === userId && ["active", "cancel_pending", "paused", "past_due", "pending_payment"].includes(sub.status))
+      .sort((a, b) => b.currentPeriodEnd.getTime() - a.currentPeriodEnd.getTime())[0];
+  }
+  async createMembershipSubscription(subscription: InsertMembershipSubscription) {
+    const newSubscription = { id: this.nextId("membershipSubscriptions"), createdAt: new Date(), updatedAt: new Date(), ...subscription } as MembershipSubscription;
+    this.membershipSubscriptionsData.push(newSubscription);
+    return newSubscription;
+  }
+  async updateMembershipSubscription(id: number, subscription: Partial<InsertMembershipSubscription>) {
+    return this.updateById(this.membershipSubscriptionsData, id, { ...subscription, updatedAt: new Date() });
+  }
+  async cancelMembershipSubscription(id: number, effectiveAt: Date) {
+    return this.updateById(this.membershipSubscriptionsData, id, {
+      status: "cancel_pending",
+      cancellationRequestedAt: new Date(),
+      cancellationEffectiveAt: effectiveAt,
+      updatedAt: new Date(),
+    });
+  }
+  async pauseMembershipSubscription(id: number, startDate: Date, endDate: Date) {
+    return this.updateById(this.membershipSubscriptionsData, id, {
+      status: "paused",
+      pauseStatus: "paused",
+      pauseStartDate: startDate,
+      pauseEndDate: endDate,
+      updatedAt: new Date(),
+    });
+  }
+  async getMembershipBillingPeriods(subscriptionId: number) {
+    return this.membershipBillingPeriodsData.filter((period) => period.subscriptionId === subscriptionId).sort((a, b) => b.periodStart.getTime() - a.periodStart.getTime());
+  }
+  async createMembershipBillingPeriod(period: InsertMembershipBillingPeriod) {
+    const newPeriod = { id: this.nextId("membershipBillingPeriods"), createdAt: new Date(), updatedAt: new Date(), ...period } as MembershipBillingPeriod;
+    this.membershipBillingPeriodsData.push(newPeriod);
+    return newPeriod;
+  }
+  async getMembershipBenefitLedger(subscriptionId: number) {
+    return this.membershipBenefitLedgerData.filter((entry) => entry.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  async createMembershipBenefitLedger(entry: InsertMembershipBenefitLedger) {
+    const newEntry = { id: this.nextId("membershipBenefitLedger"), referenceType: null, referenceId: null, notes: null, createdAt: new Date(), ...entry } as MembershipBenefitLedger;
+    this.membershipBenefitLedgerData.push(newEntry);
+    return newEntry;
+  }
+  async getMembershipRedemptions(subscriptionId: number) {
+    return this.membershipRedemptionsData.filter((redemption) => redemption.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  async createMembershipRedemption(redemption: InsertMembershipRedemption) {
+    const newRedemption = { id: this.nextId("membershipRedemptions"), bookingId: null, redeemedAt: new Date(), expiresAt: null, createdAt: new Date(), ...redemption } as MembershipRedemption;
+    this.membershipRedemptionsData.push(newRedemption);
+    return newRedemption;
+  }
+  async getMembershipEvents(subscriptionId: number) {
+    return this.membershipEventsData.filter((event) => event.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  async createMembershipEvent(event: InsertMembershipEvent) {
+    const newEvent = { id: this.nextId("membershipEvents"), createdAt: new Date(), ...event } as MembershipEvent;
+    this.membershipEventsData.push(newEvent);
+    return newEvent;
+  }
+  async getMembershipPauses(subscriptionId: number) {
+    return this.membershipPausesData.filter((pause) => pause.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  async createMembershipPause(pause: InsertMembershipPause) {
+    const newPause = { id: this.nextId("membershipPauses"), requestedAt: new Date(), reason: null, createdAt: new Date(), updatedAt: new Date(), ...pause } as MembershipPause;
+    this.membershipPausesData.push(newPause);
+    return newPause;
+  }
+  async getMembershipLoyaltyMilestones(planId: number) {
+    return this.membershipLoyaltyMilestonesData.filter((milestone) => milestone.planId === planId).sort((a, b) => a.thresholdMonths - b.thresholdMonths);
+  }
+  async createMembershipLoyaltyMilestone(milestone: InsertMembershipLoyaltyMilestone) {
+    const newMilestone = { id: this.nextId("membershipLoyaltyMilestones"), active: true, createdAt: new Date(), updatedAt: new Date(), ...milestone } as MembershipLoyaltyMilestone;
+    this.membershipLoyaltyMilestonesData.push(newMilestone);
+    return newMilestone;
+  }
+  async getMembershipLoyaltyRewards(subscriptionId: number) {
+    return this.membershipLoyaltyRewardsData.filter((reward) => reward.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  async createMembershipLoyaltyReward(reward: InsertMembershipLoyaltyReward) {
+    const newReward = { id: this.nextId("membershipLoyaltyRewards"), issuedAt: new Date(), expiresAt: null, redeemedAt: null, status: "issued", createdAt: new Date(), ...reward } as MembershipLoyaltyReward;
+    this.membershipLoyaltyRewardsData.push(newReward);
+    return newReward;
+  }
+  async resumeMembershipSubscription(id: number) {
+    return this.updateById(this.membershipSubscriptionsData, id, {
+      status: "active",
+      pauseStatus: "none",
+      pauseStartDate: null,
+      pauseEndDate: null,
+      updatedAt: new Date(),
+    });
+  }
 
   async getAllServices() { return this.servicesData; }
   async getService(id: number) { return this.servicesData.find((service) => service.id === id); }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { 
   Tabs, 
@@ -36,6 +36,8 @@ import {
   History, 
   Loader2,
   LogOut, 
+  Pause,
+  Play,
   Star, 
   User as UserIcon 
 } from "lucide-react";
@@ -45,8 +47,55 @@ import { Progress } from "@/components/ui/progress";
 import PageHeader from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { getQueryFn } from "@/lib/queryClient";
-import { Booking, LoyaltyRecord, Service } from "@shared/schema";
+import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
+import { Booking, LoyaltyRecord, Service, MembershipPlan, MembershipSubscription } from "@shared/schema";
+import { MEMBERSHIP_CANCELLATION_LANGUAGE, MEMBERSHIP_PLAN_CATALOG, formatCents } from "@shared/membership";
+
+type MembershipAccountPayload = {
+  subscription: MembershipSubscription | null;
+  plan: MembershipPlan | null;
+  catalog: typeof MEMBERSHIP_PLAN_CATALOG[number] | null;
+  balances: Array<{
+    benefitDefinitionId: number;
+    code: string;
+    description: string;
+    balance: number;
+    quantityIssued: number;
+    rolloverAllowed: boolean;
+    rolloverLimit: number;
+    expiresAt: string | Date | null;
+  }>;
+  benefitLedger: Array<{
+    id: number;
+    action: string;
+    quantity: number;
+    balanceBefore: number;
+    balanceAfter: number;
+    notes: string | null;
+    createdAt: string | Date;
+  }>;
+  discounts: Array<{
+    id: number;
+    discountType: string;
+    discountValue: number;
+    eligibleServices: string[];
+    stackable: boolean;
+  }>;
+  events: Array<{
+    id: number;
+    eventType: string;
+    details: string;
+    createdAt: string | Date;
+  }>;
+  pauses: Array<{
+    id: number;
+    startDate: string | Date;
+    endDate: string | Date;
+    status: string;
+  }>;
+  rules: Record<string, unknown>;
+  cancellationLanguage: string;
+};
 
 export default function Account() {
   const [_, navigate] = useLocation();
@@ -88,6 +137,88 @@ export default function Account() {
     queryFn: getQueryFn({ on401: "returnEmptyArray" }),
   });
 
+  const { data: membershipPlans = [], isLoading: isLoadingMembershipPlans } = useQuery<MembershipPlan[]>({
+    queryKey: ["/api/membership/plans"],
+  });
+
+  const { data: membershipData = {
+    subscription: null,
+    plan: null,
+    catalog: null,
+    balances: [],
+    benefitLedger: [],
+    discounts: [],
+    events: [],
+    pauses: [],
+    rules: {},
+    cancellationLanguage: MEMBERSHIP_CANCELLATION_LANGUAGE,
+  }, isLoading: isLoadingMembership } = useQuery<MembershipAccountPayload>({
+    queryKey: ["/api/user/membership"],
+    queryFn: getQueryFn({ on401: "returnEmptyObject" }),
+    enabled: !!user,
+  });
+
+  const refreshMembership = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/user/membership"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/membership/plans"] });
+  };
+
+  const subscribeMutation = useMutation({
+    mutationFn: async ({ planId, prepaidTermMonths }: { planId: number; prepaidTermMonths?: number }) => {
+      const response = await apiRequest("POST", "/api/user/membership/subscribe", { planId, prepaidTermMonths });
+      return response.json();
+    },
+    onSuccess: () => {
+      refreshMembership();
+      toast({
+        title: "Membership enrollment started",
+        description: "Payment verification is pending before benefits become active.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Membership error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const cancelMembershipMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/user/membership/cancel", {});
+      return response.json();
+    },
+    onSuccess: () => {
+      refreshMembership();
+      toast({
+        title: "Renewal canceled",
+        description: "Your membership remains active through the paid-through date.",
+      });
+    },
+  });
+
+  const pauseMembershipMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/user/membership/pause", {});
+      return response.json();
+    },
+    onSuccess: () => {
+      refreshMembership();
+      toast({ title: "Pause scheduled", description: "Your next billing cycle pause has been recorded." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Pause unavailable", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resumeMembershipMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/user/membership/resume", {});
+      return response.json();
+    },
+    onSuccess: () => {
+      refreshMembership();
+      toast({ title: "Membership resumed" });
+    },
+  });
+
   const handleLogout = async () => {
     try {
       await logoutMutation.mutateAsync();
@@ -106,8 +237,11 @@ export default function Account() {
   }
   
   // Check if data is loading
-  const isLoading = isLoadingBookings || isLoadingLoyalty || isLoadingServices;
+  const isLoading = isLoadingBookings || isLoadingLoyalty || isLoadingServices || isLoadingMembership || isLoadingMembershipPlans;
   
+  const membershipSubscription = membershipData.subscription;
+  const membershipPlan = membershipData.plan;
+  const membershipStatus = membershipSubscription ? membershipSubscription.status : "none";
 
   // Calculate loyalty program progress
   const sessionCount = loyaltyData.sessionCount || user.sessionCount || 0;
@@ -177,10 +311,14 @@ export default function Account() {
       )}
       
       <Tabs defaultValue="overview" value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+        <TabsList className="grid grid-cols-3 md:grid-cols-6 gap-2">
           <TabsTrigger value="overview" className="flex items-center">
             <UserIcon className="mr-2 h-4 w-4" />
             <span className="hidden sm:inline">Overview</span>
+          </TabsTrigger>
+          <TabsTrigger value="membership" className="flex items-center">
+            <CreditCard className="mr-2 h-4 w-4" />
+            <span className="hidden sm:inline">Membership</span>
           </TabsTrigger>
           <TabsTrigger value="bookings" className="flex items-center">
             <Calendar className="mr-2 h-4 w-4" />
@@ -307,6 +445,38 @@ export default function Account() {
                     <span className="text-sm font-medium">{user.phone || "Not provided"}</span>
                   </div>
                   <Separator />
+                  <div className="flex justify-between gap-4">
+                    <span className="text-sm text-muted-foreground">Membership</span>
+                    <span className="text-sm font-medium text-right">
+                      {membershipPlan ? membershipPlan.name : "No active plan"}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between gap-4">
+                    <span className="text-sm text-muted-foreground">Membership Status</span>
+                    <Badge variant={membershipStatus === "active" ? "default" : "secondary"}>
+                      {membershipStatus === "none" ? "None" : membershipStatus}
+                    </Badge>
+                  </div>
+                  {membershipSubscription && (
+                    <>
+                      <Separator />
+                      <div className="flex justify-between gap-4">
+                        <span className="text-sm text-muted-foreground">Next Billing Date</span>
+                        <span className="text-sm font-medium">
+                          {format(new Date(membershipSubscription.nextBillingDate), "MMM d, yyyy")}
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between gap-4">
+                        <span className="text-sm text-muted-foreground">Paid Through</span>
+                        <span className="text-sm font-medium">
+                          {format(new Date(membershipSubscription.paidThroughDate), "MMM d, yyyy")}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <Separator />
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Member Since</span>
                     <span className="text-sm font-medium">
@@ -359,6 +529,228 @@ export default function Account() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="membership" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Music Life Artist Membership</CardTitle>
+              <CardDescription>
+                Stay consistent when it makes sense for you. No long-term contract, no cancellation penalty, and no pressure.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {membershipSubscription && membershipPlan ? (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="rounded-lg bg-muted/50 p-4">
+                      <p className="text-sm text-muted-foreground">Current Plan</p>
+                      <p className="text-xl font-bold">{membershipPlan.name}</p>
+                      <p className="text-sm text-muted-foreground">{formatCurrency(membershipPlan.priceCents)} / month</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-4">
+                      <p className="text-sm text-muted-foreground">Status</p>
+                      <Badge variant={membershipStatus === "active" ? "default" : "secondary"} className="mt-2">
+                        {membershipStatus.replace("_", " ")}
+                      </Badge>
+                      {membershipStatus === "pending_payment" && (
+                        <p className="text-xs text-muted-foreground mt-2">Admin payment verification required before benefits activate.</p>
+                      )}
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-4">
+                      <p className="text-sm text-muted-foreground">Next Billing Date</p>
+                      <p className="text-lg font-semibold">{format(new Date(membershipSubscription.nextBillingDate), "MMM d, yyyy")}</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-4">
+                      <p className="text-sm text-muted-foreground">Paid Through</p>
+                      <p className="text-lg font-semibold">{format(new Date(membershipSubscription.paidThroughDate), "MMM d, yyyy")}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border p-4">
+                    <h3 className="font-semibold mb-2">Membership Rules</h3>
+                    <p className="text-sm text-muted-foreground">{membershipData.cancellationLanguage}</p>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Benefits are issued through a backend ledger. Frontend controls cannot change balances.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">Benefit Balances</CardTitle>
+                        <CardDescription>Current ledger-backed balances</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {membershipData.balances.length > 0 ? (
+                          <div className="space-y-3">
+                            {membershipData.balances.map((balance) => (
+                              <div key={balance.benefitDefinitionId} className="flex items-start justify-between gap-4 rounded-md bg-muted/50 p-3">
+                                <div>
+                                  <p className="font-medium">{balance.description}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {balance.rolloverAllowed ? `Rollover cap: ${balance.rolloverLimit}` : "No rollover"}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xl font-bold">{balance.balance}</p>
+                                  {balance.expiresAt && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Expires {format(new Date(balance.expiresAt), "MMM d")}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            Benefits will appear after verified payment activation.
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">Member Discounts</CardTitle>
+                        <CardDescription>Discounts do not stack unless explicitly marked stackable</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {membershipData.discounts.length > 0 ? (
+                          <div className="space-y-3">
+                            {membershipData.discounts.map((discount) => (
+                              <div key={discount.id} className="rounded-md bg-muted/50 p-3">
+                                <p className="font-medium">{discount.discountValue}% off</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {discount.eligibleServices.join(", ").replaceAll("_", " ")}
+                                </p>
+                                <Badge variant="outline" className="mt-2">
+                                  {discount.stackable ? "Stackable" : "Not stackable"}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No member discounts are active yet.</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="rounded-lg border p-4">
+                    <h3 className="font-semibold mb-3">Membership Controls</h3>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      {membershipStatus === "paused" ? (
+                        <Button onClick={() => resumeMembershipMutation.mutate()} disabled={resumeMembershipMutation.isPending}>
+                          <Play className="mr-2 h-4 w-4" />
+                          Resume Membership
+                        </Button>
+                      ) : (
+                        <Button variant="outline" onClick={() => pauseMembershipMutation.mutate()} disabled={pauseMembershipMutation.isPending || membershipStatus !== "active"}>
+                          <Pause className="mr-2 h-4 w-4" />
+                          Pause Next Cycle
+                        </Button>
+                      )}
+                      <Button
+                        variant="destructive"
+                        onClick={() => cancelMembershipMutation.mutate()}
+                        disabled={cancelMembershipMutation.isPending || !["active", "paused", "past_due"].includes(membershipStatus)}
+                      >
+                        Cancel Renewal
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Benefit History</CardTitle>
+                      <CardDescription>Audit entries for credits, holds, redemptions, and adjustments</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {membershipData.benefitLedger.length > 0 ? (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Action</TableHead>
+                              <TableHead>Quantity</TableHead>
+                              <TableHead>Balance</TableHead>
+                              <TableHead>Notes</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {membershipData.benefitLedger.slice(0, 10).map((entry) => (
+                              <TableRow key={entry.id}>
+                                <TableCell>{format(new Date(entry.createdAt), "MMM d, yyyy")}</TableCell>
+                                <TableCell>{entry.action.replace("_", " ")}</TableCell>
+                                <TableCell>{entry.quantity}</TableCell>
+                                <TableCell>{entry.balanceBefore} {"->"} {entry.balanceAfter}</TableCell>
+                                <TableCell>{entry.notes || ""}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No benefit history yet.</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-lg border p-4">
+                    <h3 className="font-semibold mb-2">Choose a Month-to-Month Plan</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Payment collection is not automated in this build. Starting enrollment creates a pending membership for admin payment verification.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {membershipPlans.map((plan) => {
+                      const catalog = MEMBERSHIP_PLAN_CATALOG.find((item) => item.tier === plan.tier);
+                      return (
+                        <Card key={plan.id}>
+                          <CardHeader>
+                            <CardTitle>{plan.name}</CardTitle>
+                            <CardDescription>{catalog?.bestFor || plan.description}</CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <div>
+                              <p className="text-3xl font-bold">{formatCurrency(plan.priceCents)}</p>
+                              <p className="text-sm text-muted-foreground">per month</p>
+                              {catalog && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  Optional prepaid: {formatCents(catalog.prepaidThreeMonthPriceCents)} for 3 months
+                                </p>
+                              )}
+                            </div>
+                            <ul className="space-y-2 text-sm">
+                              {(catalog?.benefits || [plan.description]).slice(0, 6).map((benefit) => (
+                                <li key={benefit} className="flex gap-2">
+                                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                                  <span>{benefit}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            <div className="grid grid-cols-1 gap-2">
+                              <Button onClick={() => subscribeMutation.mutate({ planId: plan.id })} disabled={subscribeMutation.isPending}>
+                                Start Monthly Enrollment
+                              </Button>
+                              {catalog && (
+                                <Button variant="outline" onClick={() => subscribeMutation.mutate({ planId: plan.id, prepaidTermMonths: 3 })} disabled={subscribeMutation.isPending}>
+                                  Start Prepaid Enrollment
+                                </Button>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         
         <TabsContent value="bookings">

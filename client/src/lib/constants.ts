@@ -23,11 +23,11 @@ export const PAYMENT_STATUS = {
 // Studio information
 export const STUDIO_INFO = {
   NAME: "Music Life Studios",
-  BYLINE: "Presented by Wiz",
-  CREATOR_NAME: "Wiz",
+  BYLINE: "PRESENTED BY WIZ",
+  CREATOR_NAME: "WIZ",
   ARTIST_NAME: "Wizdum the Lionheart",
-  EMAIL: "hello@musiclifestudios.com",
-  PHONE: "(310) 555-1234",
+  EMAIL: "wizdum84@gmail.com",
+  PHONE: "708-477-7104",
   ADDRESS: "Mobile sessions, rented locations, and remote mixing/mastering",
   HOURS: {
     WEEKDAY: "10:00 AM - 10:00 PM",

@@ -49,16 +49,17 @@ export default function Booking() {
   useEffect(() => {
     if (services && serviceType && !preselectedServiceId) {
       const matchingService = services.find(service => {
+        const name = service.name.toLowerCase();
         if (serviceType === 'mixing') {
-          return service.name.toLowerCase().includes('mixing') || 
-                service.name.toLowerCase().includes('mastering');
+          return name.includes('mix') || name.includes('master');
         } else if (serviceType === 'production') {
-          return service.name.toLowerCase().includes('producer') ||
-                service.name.toLowerCase().includes('production') ||
-                service.name.toLowerCase().includes('composition');
+          return name.includes('producer') ||
+                name.includes('production') ||
+                name.includes('composition');
         } else if (serviceType === 'recording') {
-          return service.name.toLowerCase().includes('recording') || 
-                service.name.toLowerCase().includes('session');
+          return name.includes('recording') || 
+                name.includes('session') ||
+                name.includes('book a session');
         }
         return false;
       });
