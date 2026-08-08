@@ -36,7 +36,7 @@ export default function Booking() {
   
   const [endDate] = useState(() => {
     const end = new Date();
-    end.setDate(end.getDate() + 30); // 30 days from now
+    end.setDate(end.getDate() + 60); // Match the booking calendar window
     end.setHours(23, 59, 59, 999);
     return end;
   });
@@ -92,7 +92,7 @@ export default function Booking() {
             </p>
           </div>
           
-          <div id="booking-form-container" className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6 md:p-8 text-foreground">
+          <div id="booking-form-container" className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6 md:p-10 text-foreground">
             {isLoading ? (
               <div className="flex justify-center items-center py-20">
                 <Loader2 className="w-10 h-10 text-primary animate-spin" />

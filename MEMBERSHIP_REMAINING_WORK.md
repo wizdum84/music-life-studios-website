@@ -14,13 +14,27 @@ The project now has:
 - Admin membership manager for reviewing pending enrollments, activating memberships after external payment verification, and writing documented ledger adjustments.
 - Server-side booking pricing validation and manual quote routing.
 
-## Payment Provider Work
+## Implemented Against The August 7 Prompt
 
-- Connect Braintree recurring billing for month-to-month memberships.
+- Booking deposits are server-authoritative at 50% and are processed through Stripe PaymentIntents.
+- Membership enrollment can create a Stripe monthly Checkout Session and verifies the completed session before activation.
+- Active checkout and booking payment code no longer uses Braintree, and the package lock has been cleaned of the retired direct dependencies.
+- Booking retention policies are stored with the booking: guest projects 30 days, Music Lifer projects 90 days, and Passport projects at least 90 days at launch.
+- Free Music Lifer session stamps are awarded only for eligible completed paid bookings, with a repeatable five-stamp reward cycle.
+- Passport payment stamps are tracked separately from free-account session stamps, with the current tier-specific two- or three-payment reward cycles.
+- Rewards receive a 90-day redemption deadline and duplicate payment or cycle issuance is guarded server-side.
+- Beat availability, reward product type, nonexclusive disclosure, Content ID restriction, license version, and rights snapshots are represented in the schema and purchase request flow.
+- Contract signatures record a terms snapshot and signed-document hash for auditability.
+- Passport enrollment now generates a selected-tier agreement, requires the agreement signature before enrollment, and binds the signed terms to the selected plan and billing term.
+
+## Payment Provider Work Remaining
+
+- Stripe signed webhook handling now covers checkout completion, recurring invoice success, failed invoice state, and provider cancellation.
+- Add refund, dispute, and chargeback event handling with benefit and reward reversal rules.
 - Add optional prepaid three-month checkout flow.
 - Store provider subscription IDs and transaction IDs in membership payment association records.
 - Activate memberships only after verified server-side payment success.
-- Add idempotent webhook handling for:
+- Extend idempotent webhook handling to cover:
   - enrollment payment success
   - renewal success
   - failed payment
@@ -29,9 +43,20 @@ The project now has:
   - refunds
   - disputes
   - chargebacks
-- Ensure duplicate webhooks cannot duplicate benefit credits.
+- Continue verifying duplicate events cannot duplicate benefit credits.
 - Record payment status separately from membership status.
 - Define refund and chargeback benefit reversal behavior.
+
+The initial Stripe Checkout completion path and core renewal lifecycle events are implemented. Configure `STRIPE_WEBHOOK_SECRET` in the deployment and register `/api/stripe/webhook` in Stripe before enabling recurring public enrollment. Refund, dispute, chargeback, and reconciliation behavior still need to be finalized.
+
+## Beat Licensing Work Remaining
+
+- Add a customer redemption flow for earned Starter and Commercial beat rewards.
+- Generate immutable license records and customer-facing license documents from the stored rights snapshot.
+- Add explicit Starter-to-Commercial upgrade handling.
+- Add admin review and fulfillment states for pending, available, and exclusively sold beats.
+- Prevent redemption after the 90-day deadline while preserving the audit record.
+- Connect paid beat requests to Stripe payment confirmation before marking a license active.
 
 ## Email And Notifications
 
@@ -82,12 +107,36 @@ The project now has:
 
 ## Loyalty Rewards
 
-- Implement consecutive paid-month tracking.
-- Issue one bonus recording hour after three consecutive paid monthly renewals.
-- Expire bonus hour after two billing cycles.
-- Make failed-payment streak behavior configurable.
-- Prevent loyalty reward transfer and double redemption.
-- Add admin controls for milestone length, reward type, quantity, expiration, and eligibility.
+### Proposed Music Lifer Loyalty Model
+
+- Keep a free Music Lifer account available to occasional artists; membership is optional.
+- Award one loyalty stamp for each completed paid session for free account holders.
+- Award the free-account reward after five completed sessions: 2 studio hours plus 1 beat lease.
+- Name the paid recurring membership product the **Passport Program**.
+- Treat one successful monthly payment as one Passport stamp for active members.
+- Use the existing three membership plans as the Passport ladder:
+  - Passport Starter / Artist Access: reward after 3 paid months; 2 studio hours plus 1 beat lease.
+  - Passport Builder / Consistent Artist: reward after 2 paid months; 3 studio hours plus 1 beat lease plus a Quick Finish discount.
+  - Passport Release / Release Artist: reward after 2 paid months; 3 studio hours plus 2 beat leases plus a larger discount on Quick Finish, mastering, or another defined service.
+- Keep the member reward more valuable and faster to earn than the free five-session path.
+- Track session stamps and Passport stamps separately so customers can understand how each reward was earned.
+- Do not represent a customer as a paid Passport member unless the membership is active and payment is verified.
+- Prevent reward transfer, duplicate issuance, and duplicate redemption.
+- Define reward expiration, redemption limits, beat eligibility, service discount percentages, and whether unused rewards roll over.
+- Decide whether failed payments, pauses, cancellations, refunds, chargebacks, and downgrades break or preserve a Passport stamp streak.
+- Add admin controls for milestone length, reward type, quantity, expiration, service discount, and eligibility.
+
+### Legal Review Questions
+
+- Is a free Music Lifer account and loyalty program available in every service area and to all eligible customers?
+- What exact booking status qualifies as a completed session for a stamp?
+- Are taxes, deposits, late cancellations, no-shows, refunds, and chargebacks excluded from stamp eligibility?
+- What are the exact terms for the 2-hour or 3-hour studio reward, including scheduling, blackout dates, expiration, and availability limits?
+- What beat leases qualify, and what rights does each included lease grant?
+- Can Passport rewards be combined with member discounts, promo codes, deposits, bundles, or other credits?
+- What happens to earned stamps and unredeemed rewards after cancellation or plan downgrade?
+- Should a successful renewal count as a stamp immediately or only after the paid period is completed?
+- What disclosures are required for recurring billing, reward expiration, service availability, and promotional claims?
 
 ## Pause, Cancel, Reactivation
 
@@ -121,10 +170,14 @@ The project now has:
 
 ## Contract Generator
 
-- Route membership enrollments through the membership agreement.
-- Snapshot signed membership terms immutably.
+- Route membership enrollments through the generated membership agreement.
+- Route ordinary bookings through a server-generated transaction agreement with a module manifest and server-calculated Schedule A price.
+- Require explicit production beat-rights selection; carry commercial/nonexclusive rights into the agreement and send exclusive or portfolio requests to review.
+- Store the ten lawyer-prepared PDFs in `docs/legal/source` as the reference library for future module expansion.
+- Snapshot signed membership terms immutably with the contract version and SHA-256 document hash.
 - Include selected tier, monthly or prepaid price, benefits, renewal terms, cancel-anytime terms, paid-through date, rollover rules, pause rules, booking limitations, discount restrictions, failed-payment treatment, no-show treatment, upgrade-credit logic, prepaid terms, loyalty terms, recurring authorization, and electronic signature.
 - Ensure no mandatory three-month commitment language exists in any generated membership agreement.
+- Add PDF export/download and a customer-accessible signed-agreement history after legal review.
 
 ## Testing
 
@@ -141,9 +194,15 @@ The project now has:
   - benefit holds and redemption
   - failed checkout hold release
   - failed payment blocks new benefits
+  - free-account session stamp issuance and five-session reward
+  - Passport stamp issuance after verified monthly payment
+  - tier-specific two- or three-month reward thresholds
+  - tier-specific reward contents and expiration
   - loyalty milestone issuance and expiration
   - admin manual adjustment audit trail
   - signed contract snapshot immutability
+
+The current repository has no dedicated automated test suite for these flows. Until those tests are added, manually verify contract generation, signature gating, selected-plan binding, Stripe test-mode payment completion, duplicate completion requests, failed payment behavior, reward cycle boundaries, and beat-license disclosure before launch.
 
 ## Launch Decisions
 
@@ -154,3 +213,4 @@ The project now has:
 - Confirm whether failed payments break loyalty streaks.
 - Confirm whether paused months break loyalty streaks.
 - Confirm capacity limits per tier before enabling public enrollment.
+- Add Stripe test-mode keys and configure the production webhook or reconciliation strategy before enabling recurring public enrollment.

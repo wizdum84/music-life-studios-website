@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Check, CreditCard, DollarSign } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
-import { BraintreePaymentForm } from "@/components/forms/BraintreePaymentForm";
+import { StripePaymentForm } from "@/components/forms/StripePaymentForm";
 
 // Form schema for searching a booking
 const searchSchema = z.object({
@@ -36,7 +36,6 @@ export default function CompletePayment() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [booking, setBooking] = useState<any>(null);
-  const [clientToken, setClientToken] = useState("");
   const [remainingAmount, setRemainingAmount] = useState(0);
   const [tipAmount, setTipAmount] = useState(0);
   const [step, setStep] = useState<"search" | "tip" | "payment" | "complete">("search");
@@ -79,7 +78,6 @@ export default function CompletePayment() {
       
       if (response.booking) {
         setBooking(response.booking);
-        setClientToken(response.clientToken);
         setRemainingAmount(response.remainingAmount);
         
         // If booking is already fully paid
@@ -386,7 +384,7 @@ export default function CompletePayment() {
         </div>
         
         {/* Payment Form */}
-        <BraintreePaymentForm
+        <StripePaymentForm
           bookingData={{
             ...booking,
             amount: remainingAmount

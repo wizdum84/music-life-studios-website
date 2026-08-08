@@ -82,6 +82,7 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
   const [customerEmail, setCustomerEmail] = useState("");
   const [contractStep, setContractStep] = useState(false);
   const [contractSigned, setContractSigned] = useState(false);
+  const [contentIdAcknowledged, setContentIdAcknowledged] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   
@@ -251,7 +252,8 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
         customerName,
         customerEmail,
         licenseType: selectedLicense,
-        price: getPrice()
+        price: getPrice(),
+        contentIdAcknowledged,
       });
 
       if (!response.ok) {
@@ -260,8 +262,8 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
       }
 
       toast({
-        title: "Purchase successful!",
-        description: "Your beat license has been purchased successfully. Check your email for download instructions.",
+        title: "License request recorded",
+        description: "Your signed license request is recorded and will remain pending until payment and fulfillment are verified.",
         variant: "default"
       });
 
@@ -317,6 +319,11 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
               <p className="font-semibold text-primary">{formatPrice(beat.price)}</p>
             </div>
           </div>
+          {beat.availabilityStatus !== "available_nonexclusive" && (
+            <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700">
+              {beat.availabilityStatus === "pending_exclusive" ? "New licenses are temporarily paused while an exclusive sale is reviewed." : "This beat is exclusively sold. Existing licenses remain governed by their signed terms."}
+            </p>
+          )}
         </CardHeader>
         
         <CardContent className="p-4">
@@ -385,7 +392,7 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
         </CardContent>
         
         <CardFooter className="p-4 pt-0">
-          <Button className="w-full bg-primary hover:bg-primary-600" onClick={handlePurchaseClick}>
+          <Button className="w-full bg-primary hover:bg-primary-600" onClick={handlePurchaseClick} disabled={beat.availabilityStatus !== "available_nonexclusive"}>
             <ShoppingCart className="h-4 w-4 mr-2" />
             Purchase {selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License
           </Button>
@@ -447,6 +454,12 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
                   <span className="font-medium">{formatPrice(getPrice())}</span>
                 </div>
               </div>
+              {selectedLicense !== "exclusive" && (
+                <label className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+                  <input type="checkbox" checked={contentIdAcknowledged} onChange={(event) => setContentIdAcknowledged(event.target.checked)} className="mt-0.5" />
+                  <span>This is nonexclusive. Other artists may license the same beat, and I understand the Content ID restriction.</span>
+                </label>
+              )}
               
               <DialogFooter className="pt-4">
                 <Button 
@@ -457,6 +470,7 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
                 </Button>
                 <Button 
                   onClick={handleContinueToContract}
+                  disabled={selectedLicense !== "exclusive" && !contentIdAcknowledged}
                 >
                   Continue to License Agreement
                 </Button>

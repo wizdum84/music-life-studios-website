@@ -1,4 +1,5 @@
 import HeroSection from "@/components/home/HeroSection";
+import PassportSection from "@/components/home/PassportSection";
 import ServicesSection from "@/components/home/ServicesSection";
 import PortfolioSection from "@/components/home/PortfolioSection";
 import PricingSection from "@/components/home/PricingSection";
@@ -40,6 +41,7 @@ export default function Home() {
   return (
     <>
       <HeroSection />
+      <PassportSection />
       <ServicesSection services={services || []} isLoading={isLoading} />
       <PortfolioSection tracks={tracks || []} isLoading={isLoading} />
       <PricingSection services={services || []} isLoading={isLoading} />

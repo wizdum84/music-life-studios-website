@@ -14,8 +14,10 @@ const Home = lazy(() => import("@/pages/Home"));
 const Booking = lazy(() => import("@/pages/Booking"));
 const Beats = lazy(() => import("@/pages/Beats"));
 const Deals = lazy(() => import("@/pages/Deals"));
+const DesignPreview = lazy(() => import("@/pages/DesignPreview"));
 const Admin = lazy(() => import("@/pages/Admin"));
 const AdminLogin = lazy(() => import("@/pages/AdminLogin"));
+const AdminSetup = lazy(() => import("@/pages/AdminSetup"));
 const CompletePayment = lazy(() => import("@/pages/CompletePayment"));
 const Analytics = lazy(() => import("@/pages/Analytics"));
 const AccountLogin = lazy(() => import("@/pages/AccountLogin"));
@@ -34,6 +36,7 @@ function Router() {
         <Route path="/booking" component={Booking} />
         <Route path="/beats" component={Beats} />
         <Route path="/deals" component={Deals} />
+        <Route path="/design-preview" component={DesignPreview} />
         <Route path="/complete-payment" component={CompletePayment} />
         <Route path="/account/login">
           {() => <AccountLogin />}
@@ -43,6 +46,7 @@ function Router() {
         </Route>
         <ProtectedRoute path="/account" component={() => <Account />} adminOnly={false} />
         <Route path="/admin/login" component={AdminLogin} />
+        <Route path="/admin/setup" component={AdminSetup} />
         <ProtectedRoute path="/admin" component={Admin} adminOnly={true} />
         <ProtectedRoute path="/analytics" component={Analytics} adminOnly={true} />
         <Route component={NotFound} />

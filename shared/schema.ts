@@ -91,13 +91,18 @@ export const bookings = pgTable("bookings", {
   paymentStatus: text("payment_status").default("unpaid").notNull(), // unpaid, deposit_paid, paid
   amount: integer("amount").notNull(), // In cents
   tipAmount: integer("tip_amount").default(0), // Optional tip amount in cents
-  transactionId: text("transaction_id"),  // Braintree transaction ID
+  transactionId: text("transaction_id"),  // Stripe PaymentIntent ID
   paymentMethod: text("payment_method"),  // card, paypal, etc.
   paymentErrorMessage: text("payment_error_message"), // Error message if payment failed
   paymentMetadata: json("payment_metadata"), // Additional payment information
   discountCode: text("discount_code"), // Discount code applied to booking
   discountAmount: integer("discount_amount"), // Discount amount in cents
   loyaltyApplied: boolean("loyalty_applied").default(false), // Whether this is a free loyalty session
+  retentionPolicy: text("retention_policy").default("guest").notNull(),
+  retentionDays: integer("retention_days").default(30).notNull(),
+  retentionDeadline: timestamp("retention_deadline"),
+  retentionPolicyVersion: integer("retention_policy_version").default(1).notNull(),
+  retentionTrigger: text("retention_trigger").default("project_completion").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -113,7 +118,12 @@ export const insertBookingSchema = createInsertSchema(bookings)
     paymentMetadata: true,
     discountCode: true,
     discountAmount: true,
-    loyaltyApplied: true
+    loyaltyApplied: true,
+    retentionPolicy: true,
+    retentionDays: true,
+    retentionDeadline: true,
+    retentionPolicyVersion: true,
+    retentionTrigger: true
   })
   .extend({
     userId: z.number().optional(),
@@ -195,6 +205,12 @@ export const beats = pgTable("beats", {
   contractUrl: text("contract_url"), // URL to licensing contract PDF
   tags: text("tags").array(), // Keywords for search
   featured: boolean("featured").default(false), // Whether the beat is featured
+  availabilityStatus: text("availability_status").default("available_nonexclusive").notNull(),
+  availabilityUpdatedAt: timestamp("availability_updated_at"),
+  starterRewardEligible: boolean("starter_reward_eligible").default(true).notNull(),
+  commercialLeaseEligible: boolean("commercial_lease_eligible").default(true).notNull(),
+  contentIdRestricted: boolean("content_id_restricted").default(true).notNull(),
+  licenseVersion: integer("license_version").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -213,6 +229,12 @@ export const insertBeatSchema = createInsertSchema(beats)
     contractUrl: z.string().url("Contract URL must be a valid URL").optional(),
     tags: z.array(z.string()).optional(),
     featured: z.boolean().optional(),
+    availabilityStatus: z.enum(["available_nonexclusive", "pending_exclusive", "exclusively_sold"]).optional(),
+    availabilityUpdatedAt: z.coerce.date().nullable().optional(),
+    starterRewardEligible: z.boolean().optional(),
+    commercialLeaseEligible: z.boolean().optional(),
+    contentIdRestricted: z.boolean().optional(),
+    licenseVersion: z.number().int().positive().optional(),
   });
 
 // Beat purchases
@@ -227,11 +249,22 @@ export const beatPurchases = pgTable("beat_purchases", {
   downloadCount: integer("download_count").default(0), // Number of times downloaded
   contractSigned: boolean("contract_signed").default(false), // Whether the contract has been signed
   contractSignedAt: timestamp("contract_signed_at"), // When the contract was signed
+  userId: integer("user_id"),
+  licenseProduct: text("license_product").default("paid_nonexclusive").notNull(),
+  licenseVersion: integer("license_version").default(1).notNull(),
+  nonexclusive: boolean("nonexclusive").default(true).notNull(),
+  licenseStartDate: timestamp("license_start_date"),
+  rightsSnapshot: json("rights_snapshot"),
+  contentIdAcknowledged: boolean("content_id_acknowledged").default(false).notNull(),
+  rewardSourceType: text("reward_source_type"),
+  rewardSourceId: integer("reward_source_id"),
+  licenseStatus: text("license_status").default("pending").notNull(),
+  signedSnapshotHash: text("signed_snapshot_hash"),
   purchaseDate: timestamp("purchase_date").defaultNow().notNull(),
 });
 
 export const insertBeatPurchaseSchema = createInsertSchema(beatPurchases)
-  .omit({ id: true, downloadCount: true, contractSigned: true, contractSignedAt: true, purchaseDate: true })
+  .omit({ id: true, downloadCount: true, contractSigned: true, contractSignedAt: true, userId: true, licenseProduct: true, licenseVersion: true, nonexclusive: true, licenseStartDate: true, rightsSnapshot: true, contentIdAcknowledged: true, rewardSourceType: true, rewardSourceId: true, licenseStatus: true, signedSnapshotHash: true, purchaseDate: true })
   .extend({
     beatId: z.number(),
     customerName: z.string().min(2, "Name must be at least 2 characters"),
@@ -281,6 +314,9 @@ export const contractSignatures = pgTable("contract_signatures", {
   agreedToTerms: boolean("agreed_to_terms").notNull().default(false),
   relatedEntityType: text("related_entity_type"), // "beat", "booking", etc.
   relatedEntityId: integer("related_entity_id"), // ID of the related entity
+  contractVersion: integer("contract_version").default(1).notNull(),
+  termsSnapshot: text("terms_snapshot"),
+  signedDocumentHash: text("signed_document_hash"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -295,6 +331,9 @@ export const insertContractSignatureSchema = createInsertSchema(contractSignatur
     agreedToTerms: z.boolean(),
     relatedEntityType: z.string().optional(),
     relatedEntityId: z.number().optional(),
+    contractVersion: z.number().int().positive().optional(),
+    termsSnapshot: z.string().optional(),
+    signedDocumentHash: z.string().optional(),
   });
 
 export type Beat = typeof beats.$inferSelect;
@@ -537,6 +576,11 @@ export const membershipLoyaltyRewards = pgTable("membership_loyalty_rewards", {
   subscriptionId: integer("subscription_id").notNull(),
   rewardType: text("reward_type").notNull(),
   rewardQuantity: integer("reward_quantity").notNull(),
+  cycleNumber: integer("cycle_number").notNull().default(1),
+  thresholdMonths: integer("threshold_months").notNull().default(1),
+  earnedAt: timestamp("earned_at").defaultNow().notNull(),
+  redemptionDeadline: timestamp("redemption_deadline"),
+  sourcePaymentAssociationId: integer("source_payment_association_id"),
   issuedAt: timestamp("issued_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at"),
   redeemedAt: timestamp("redeemed_at"),
@@ -571,7 +615,7 @@ export const insertMembershipPauseSchema = createInsertSchema(membershipPauses)
 export const insertMembershipLoyaltyMilestoneSchema = createInsertSchema(membershipLoyaltyMilestones)
   .omit({ id: true, createdAt: true, updatedAt: true });
 export const insertMembershipLoyaltyRewardSchema = createInsertSchema(membershipLoyaltyRewards)
-  .omit({ id: true, issuedAt: true, createdAt: true });
+  .omit({ id: true, earnedAt: true, issuedAt: true, createdAt: true });
 
 export type MembershipPlan = typeof membershipPlans.$inferSelect;
 export type InsertMembershipPlan = z.infer<typeof insertMembershipPlanSchema>;
@@ -607,9 +651,16 @@ export const loyaltyRecords = pgTable("loyalty_records", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   bookingId: integer("booking_id"),
-  action: text("action").notNull(), // session_completed, reward_earned, reward_used
+  action: text("action").notNull(), // stamp_earned, session_completed, reward_earned, reward_used, reversal
   pointsChange: integer("points_change").notNull(), // Positive for earned, negative for used
   description: text("description").notNull(),
+  cycleNumber: integer("cycle_number"),
+  rewardType: text("reward_type"),
+  rewardQuantity: integer("reward_quantity"),
+  earnedAt: timestamp("earned_at"),
+  redemptionDeadline: timestamp("redemption_deadline"),
+  status: text("status").default("valid").notNull(),
+  metadata: json("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -618,9 +669,16 @@ export const insertLoyaltyRecordSchema = createInsertSchema(loyaltyRecords)
   .extend({
     userId: z.number(),
     bookingId: z.number().optional(),
-    action: z.enum(["session_completed", "reward_earned", "reward_used"]),
+    action: z.enum(["stamp_earned", "session_completed", "reward_earned", "reward_used", "reversal"]),
     pointsChange: z.number(),
     description: z.string().min(2, "Description must be at least 2 characters"),
+    cycleNumber: z.number().int().positive().optional(),
+    rewardType: z.string().optional(),
+    rewardQuantity: z.number().optional(),
+    earnedAt: z.coerce.date().optional(),
+    redemptionDeadline: z.coerce.date().optional(),
+    status: z.enum(["valid", "held", "redeemed", "expired", "reversed", "review"]).optional(),
+    metadata: z.unknown().optional(),
   });
 
 export type LoyaltyRecord = typeof loyaltyRecords.$inferSelect;

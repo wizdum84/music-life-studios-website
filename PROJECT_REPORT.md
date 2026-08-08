@@ -4,15 +4,15 @@
 This is a professional audio engineering platform built for Music Life Studios, featuring comprehensive beat production, booking management, and customer loyalty systems. The platform provides a robust ecosystem for music professionals to create, collaborate, and monetize their work.
 
 ## Current Status: 85% Complete
-**Primary Issue**: Database connection error preventing full functionality
-**Next Steps**: Fix database connectivity, then proceed with final deployment preparations
+**Primary Issue**: Database schema must be pushed to the connected PostgreSQL environment before membership startup seeding can run
+**Next Steps**: Configure Stripe test keys, push the current schema, then complete payment-event and reward-redemption testing
 
 ## Technology Stack
 - **Frontend**: React.js with TypeScript, Tailwind CSS, Shadcn/ui components
 - **Backend**: Node.js with Express.js
 - **Database**: PostgreSQL with Drizzle ORM
 - **Authentication**: Passport.js with session-based auth
-- **Payment**: Braintree integration (credentials needed)
+- **Payment**: Stripe PaymentIntents for bookings and Stripe Checkout for monthly Passport enrollment
 - **Hosting**: Replit deployment ready
 
 ## Core Features Implemented
@@ -46,10 +46,11 @@ This is a professional audio engineering platform built for Music Life Studios, 
 - Account dashboard with multiple tabs
 
 ### 5. Customer Loyalty Program ✅
-- Track sessions completed
-- 5-session milestone rewards (free 3-hour session)
-- Point accumulation system
-- Loyalty history tracking
+- Free Music Lifer accounts can earn one stamp per eligible completed paid session
+- Repeatable five-stamp reward cycles: 2 recording hours plus 1 Starter Reward Beat License
+- Passport payment stamps are tracked separately from free-account session stamps
+- Tier-specific two- or three-payment Passport reward cycles
+- Loyalty history, reward deadlines, and audit records
 - Progress visualization
 
 ### 6. Admin Panel ✅
@@ -89,11 +90,11 @@ This is a professional audio engineering platform built for Music Life Studios, 
 - Run database migrations once connected
 
 ### 2. Payment Integration (HIGH PRIORITY)
-**Missing Credentials**:
-- `BRAINTREE_MERCHANT_ID`
-- `BRAINTREE_PUBLIC_KEY` 
-- `BRAINTREE_PRIVATE_KEY`
-**Solution**: Obtain Braintree sandbox/production credentials
+**Required Credentials**:
+- `STRIPE_SECRET_KEY`
+- `VITE_STRIPE_PUBLISHABLE_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+**Solution**: Configure Stripe test or production keys. Recurring renewal and failure events still need a signed event endpoint or reconciliation job before public launch.
 
 ### 3. Email Notifications (MEDIUM)
 **Missing**: `SENDGRID_API_KEY` for booking confirmations
@@ -153,10 +154,11 @@ This is a professional audio engineering platform built for Music Life Studios, 
 - Production build configuration
 
 ### Remaining Tasks
-1. Fix database connectivity
-2. Add payment credentials
-3. Configure email service
-4. Final testing and deployment
+1. Push the current Drizzle schema to the active database
+2. Add Stripe test or production credentials
+3. Add Stripe refund, dispute, chargeback, and reconciliation handling
+4. Complete beat reward redemption and license issuance
+5. Final testing and deployment
 
 ## Business Features
 
@@ -183,10 +185,10 @@ This is a professional audio engineering platform built for Music Life Studios, 
 ## Recommended Next Steps
 
 ### Immediate (Week 1)
-1. Resolve database connectivity issues
-2. Obtain and configure Braintree credentials
-3. Set up SendGrid for email notifications
-4. Conduct comprehensive testing
+1. Resolve database/schema provisioning issues
+2. Obtain and configure Stripe credentials
+3. Conduct comprehensive payment, membership, and loyalty testing
+4. Decide whether to enable optional email notifications later
 
 ### Short-term (Weeks 2-3)
 1. Deploy to production environment

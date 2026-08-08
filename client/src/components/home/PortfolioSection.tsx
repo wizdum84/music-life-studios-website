@@ -18,11 +18,11 @@ export default function PortfolioSection({ tracks, isLoading }: PortfolioSection
   };
   
   return (
-    <section id="portfolio" className="py-20 bg-light">
+    <section id="portfolio" className="bg-[#1d1d1d] py-20 text-white">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
-          <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-4">Portfolio</h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+          <h2 className="mb-4 text-3xl font-black md:text-4xl">Portfolio</h2>
+          <p className="mx-auto max-w-2xl text-lg text-white/65">
             Listen to some of my recent work across various genres and projects.
           </p>
         </div>
@@ -82,7 +82,7 @@ export default function PortfolioSection({ tracks, isLoading }: PortfolioSection
               tracks.map(track => (
                 <Card 
                   key={track.id} 
-                  className={`bg-white rounded-lg shadow-md p-5 transition-transform hover:-translate-y-1 hover:shadow-lg ${
+                  className={`rounded-none border-2 border-[#6d4918] bg-[#141414] p-5 text-white shadow-none transition-transform hover:-translate-y-1 hover:shadow-[8px_8px_0_#8a5a1c] ${
                     selectedTrack?.id === track.id ? 'ring-2 ring-primary' : ''
                   }`}
                 >
@@ -93,7 +93,7 @@ export default function PortfolioSection({ tracks, isLoading }: PortfolioSection
                       </div>
                       <div>
                         <h4 className="font-medium text-lg">{track.title}</h4>
-                        <p className="text-muted-foreground text-sm">{track.description}</p>
+                        <p className="text-sm text-white/55">{track.description}</p>
                       </div>
                       <div className="ml-auto">
                         <button 

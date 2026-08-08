@@ -12,8 +12,10 @@ import {
 } from "@shared/membership";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
-import * as braintreeService from "./services/braintree";
-import * as emailService from "./services/email";
+import { getBeatRightsSnapshot, NONEXCLUSIVE_DISCLOSURE, CONTENT_ID_RESTRICTION, type BeatLicenseProduct } from "@shared/beatLicensing";
+import { assembleBookingAgreement, assembleMembershipAgreement, type ContractAccountStatus } from "@shared/contractGenerator";
+import { createHash } from "node:crypto";
+import * as stripeService from "./services/stripe";
 import { setupAuth } from "./auth";
 
 // Create default contracts if they don't exist
@@ -27,9 +29,9 @@ async function ensureContractsExist() {
       const description = `MUSIC LIFE STUDIOS - STUDIO RULES & POLICIES
 
 BOOKING & CANCELLATION:
-- A 25% non-refundable deposit is required to secure all bookings.
-- Cancellations must be made at least 48 hours in advance for rescheduling.
-- Late cancellations (less than 48 hours) forfeit the deposit.
+      - A 50% deposit is required to secure all bookings.
+      - Cancellations and rescheduling should be requested at least 24 hours in advance.
+      - Changes inside the 24-hour window follow the configured late-cancellation and no-show treatment.
 - Arriving more than 30 minutes late may result in a shortened session or cancellation with no refund.
 
 STUDIO CONDUCT:
@@ -46,7 +48,9 @@ RECORDING & PRODUCTION:
 - Engineer breaks: 10 minutes per 2 hours of recording.
 
 POST-SESSION:
-- Session files will be stored for 30 days after recording.
+      - Guest project files are retained for 30 days after the configured project-completion trigger.
+      - Music Lifer project files are retained for 90 days.
+      - Passport project files are retained for at least 90 days at launch.
 - Final mixes will be provided in formats requested by the client.
 - Minor revisions (up to 3) are included in mixing packages.
 - Major revisions may incur additional costs.
@@ -235,7 +239,7 @@ async function ensureMembershipPlansExist() {
           priceCents: catalogPlan.monthlyPriceCents,
           billingInterval: "monthly",
           active: true,
-        });
+        } as any);
       }
 
       const activeVersion = await storage.getActiveMembershipPlanVersion(plan.id);
@@ -248,6 +252,7 @@ async function ensureMembershipPlansExist() {
             positioning: MEMBERSHIP_POSITIONING,
             cancellationLanguage: MEMBERSHIP_CANCELLATION_LANGUAGE,
             benefits: catalogPlan.benefits,
+            rewardCycle: catalogPlan.rewardCycle,
             prepaidThreeMonthPriceCents: catalogPlan.prepaidThreeMonthPriceCents,
             launchRules: MEMBERSHIP_LAUNCH_RULES,
           }),
@@ -286,16 +291,18 @@ async function ensureMembershipPlansExist() {
       }
 
       const existingMilestones = await storage.getMembershipLoyaltyMilestones(plan.id);
-      if (!existingMilestones.some((milestone) => milestone.thresholdMonths === MEMBERSHIP_LAUNCH_RULES.loyaltyMilestoneMonths)) {
-        await storage.createMembershipLoyaltyMilestone({
-          planId: plan.id,
-          name: "Three consecutive paid months",
-          thresholdMonths: MEMBERSHIP_LAUNCH_RULES.loyaltyMilestoneMonths,
-          rewardType: MEMBERSHIP_LAUNCH_RULES.loyaltyRewardType,
-          rewardQuantity: MEMBERSHIP_LAUNCH_RULES.loyaltyRewardQuantity,
-          expiresAfterCycles: MEMBERSHIP_LAUNCH_RULES.loyaltyRewardExpiresAfterCycles,
-          active: true,
-        });
+      for (const reward of catalogPlan.rewardCycle.rewards) {
+        if (!existingMilestones.some((milestone) => milestone.thresholdMonths === catalogPlan.rewardCycle.thresholdMonths && milestone.rewardType === reward.type)) {
+          await storage.createMembershipLoyaltyMilestone({
+            planId: plan.id,
+            name: `${catalogPlan.name} repeatable reward cycle`,
+            thresholdMonths: catalogPlan.rewardCycle.thresholdMonths,
+            rewardType: reward.type,
+            rewardQuantity: reward.quantity,
+            expiresAfterCycles: 0,
+            active: true,
+          });
+        }
       }
     }
 
@@ -345,6 +352,40 @@ function addMonths(date: Date, months: number) {
 
 function addBillingCycles(date: Date, cycles: number) {
   return cycles > 0 ? addMonths(date, cycles) : null;
+}
+
+const BOOKING_DEPOSIT_RATE = 0.5;
+
+function getBookingChargeAmount(booking: { amount: number; paymentStatus?: string }, isDeposit: boolean, tipAmount = 0) {
+  if (isDeposit) return Math.round(booking.amount * BOOKING_DEPOSIT_RATE);
+  const remaining = booking.paymentStatus === "deposit_paid"
+    ? booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)
+    : booking.amount;
+  return remaining + Math.max(0, Math.round(tipAmount));
+}
+
+async function getRetentionPolicy(userId: number | null | undefined) {
+  if (!userId) return { name: "guest", days: 30, version: 1 };
+  const membership = await storage.getUserMembership(userId);
+  if (membership && ["active", "cancel_pending", "paused", "past_due"].includes(membership.status)) {
+    return { name: "passport", days: 90, version: 1 };
+  }
+  return { name: "music_lifer", days: 90, version: 1 };
+}
+
+async function getContractAccountStatus(userId: number | null | undefined): Promise<ContractAccountStatus> {
+  if (!userId) return "guest";
+
+  const membership = await storage.getUserMembership(userId);
+  if (!membership || !["active", "cancel_pending", "paused", "past_due"].includes(membership.status)) {
+    return "music_lifer";
+  }
+
+  const plan = await storage.getMembershipPlan(membership.planId);
+  if (plan?.tier === "artist_access") return "passport_starter";
+  if (plan?.tier === "consistent_artist") return "passport_builder";
+  if (plan?.tier === "release_artist") return "passport_release";
+  return "music_lifer";
 }
 
 async function getMembershipAccountPayload(userId: number) {
@@ -426,20 +467,85 @@ async function getMembershipAccountPayload(userId: number) {
 
 async function issueMembershipBenefits(subscriptionId: number, planId: number, referenceType: string, referenceId: number | null, notes: string) {
   const definitions = await storage.getMembershipBenefitDefinitions(planId);
+  const existingLedger = await storage.getMembershipBenefitLedger(subscriptionId);
 
   for (const definition of definitions) {
+    const latest = existingLedger
+      .filter((entry) => entry.benefitDefinitionId === definition.id)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .at(-1);
+    const balanceBefore = latest?.balanceAfter ?? 0;
+
     await storage.createMembershipBenefitLedger({
       subscriptionId,
       benefitDefinitionId: definition.id,
       action: "credit",
       quantity: definition.quantity,
-      balanceBefore: 0,
-      balanceAfter: definition.quantity,
+      balanceBefore,
+      balanceAfter: balanceBefore + definition.quantity,
       referenceType,
       referenceId,
       notes,
     });
   }
+}
+
+async function issuePassportRewardCycle(
+  subscription: Awaited<ReturnType<typeof storage.getUserMembership>>,
+  paymentAssociationId: number,
+  earnedAt: Date,
+) {
+  if (!subscription) return [];
+
+  const payments = (await storage.getMembershipPaymentAssociations(subscription.id))
+    .filter((payment) => payment.status === "succeeded");
+  const milestones = await storage.getMembershipLoyaltyMilestones(subscription.planId);
+  const plan = await storage.getMembershipPlan(subscription.planId);
+  const catalog = getMembershipCatalogByTier(plan?.tier);
+  const configuredRewards = catalog?.rewardCycle.rewards ?? [];
+  const rewards = await storage.getMembershipLoyaltyRewards(subscription.id);
+  const issued: Awaited<ReturnType<typeof storage.createMembershipLoyaltyReward>>[] = [];
+
+  for (const milestone of milestones.filter((item) => configuredRewards.some((reward) => reward.type === item.rewardType && reward.quantity === item.rewardQuantity && catalog?.rewardCycle.thresholdMonths === item.thresholdMonths))) {
+    if (!milestone.active || payments.length < milestone.thresholdMonths) continue;
+    const cycleNumber = Math.floor(payments.length / milestone.thresholdMonths);
+    if (cycleNumber < 1 || rewards.some((reward) => reward.cycleNumber === cycleNumber && reward.rewardType === milestone.rewardType)) continue;
+
+    const redemptionDeadline = addDays(earnedAt, MEMBERSHIP_LAUNCH_RULES.rewardRedemptionDeadlineDays);
+    issued.push(await storage.createMembershipLoyaltyReward({
+      userId: subscription.userId,
+      milestoneId: milestone.id,
+      subscriptionId: subscription.id,
+      rewardType: milestone.rewardType,
+      rewardQuantity: milestone.rewardQuantity,
+      cycleNumber,
+      thresholdMonths: milestone.thresholdMonths,
+      redemptionDeadline,
+      sourcePaymentAssociationId: paymentAssociationId,
+      expiresAt: redemptionDeadline,
+      status: "issued",
+      redeemedAt: null,
+    }));
+  }
+
+  return issued;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+async function hasStripeMembershipEvent(subscriptionId: number, stripeEventId: string) {
+  const events = await storage.getMembershipEvents(subscriptionId);
+  return events.some((event) => {
+    try {
+      return JSON.parse(event.details).stripeEventId === stripeEventId;
+    } catch {
+      return false;
+    }
+  });
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -508,7 +614,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         recordingOption,
         mixOption,
         productionOption,
-      });
+      } as any);
 
       res.json(pricing);
     } catch (error) {
@@ -559,6 +665,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message });
     }
   });
+
+  app.get("/api/beats/:id/licensing-status", async (req, res) => {
+    try {
+      const beat = await storage.getBeat(parseInt(req.params.id, 10));
+      if (!beat) return res.status(404).json({ error: "Beat not found" });
+      const purchases = await storage.getBeatPurchasesByBeat(beat.id);
+      res.json({
+        beatId: beat.id,
+        availabilityStatus: beat.availabilityStatus,
+        starterRewardEligible: beat.starterRewardEligible && beat.availabilityStatus === "available_nonexclusive",
+        commercialLeaseEligible: beat.commercialLeaseEligible && beat.availabilityStatus === "available_nonexclusive",
+        nonexclusiveDisclosure: NONEXCLUSIVE_DISCLOSURE,
+        contentIdRestriction: CONTENT_ID_RESTRICTION,
+        activeNonexclusiveLicenses: purchases.filter((purchase) => purchase.nonexclusive && purchase.licenseStatus === "active").length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
   
   // Get single beat by ID
   app.get("/api/beats/:id", async (req, res) => {
@@ -597,6 +722,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message });
     }
   });
+
+  app.patch("/api/admin/beats/:id/availability", isAuthenticated, async (req, res) => {
+    if (req.user!.role !== "admin") return res.status(403).json({ error: "Access denied" });
+    const availabilityStatus = req.body.availabilityStatus;
+    if (!["available_nonexclusive", "pending_exclusive", "exclusively_sold"].includes(availabilityStatus)) {
+      return res.status(400).json({ error: "Invalid beat availability status" });
+    }
+    const beat = await storage.updateBeat(parseInt(req.params.id, 10), { availabilityStatus, availabilityUpdatedAt: new Date() });
+    if (!beat) return res.status(404).json({ error: "Beat not found" });
+    res.json(beat);
+  });
   
   // Delete beat (admin only)
   app.delete("/api/beats/:id", isAuthenticated, async (req, res) => {
@@ -627,7 +763,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create beat purchase
   app.post("/api/beat-purchases", async (req, res) => {
     try {
-      const purchase = await storage.createBeatPurchase(req.body);
+      const beat = await storage.getBeat(Number(req.body.beatId));
+      if (!beat) return res.status(404).json({ error: "Beat not found" });
+
+      const requestedLicense = String(req.body.licenseType || "basic");
+      const product = requestedLicense === "starter_reward" || requestedLicense === "commercial_lease"
+        ? requestedLicense
+        : requestedLicense === "exclusive" ? "exclusive" : "paid_nonexclusive";
+      if (beat.availabilityStatus !== "available_nonexclusive") {
+        return res.status(409).json({ error: "This beat is not currently available for a new nonexclusive license." });
+      }
+      if (product === "starter_reward" && !beat.starterRewardEligible) return res.status(400).json({ error: "This beat is not eligible for a Starter Reward Beat License." });
+      if (product === "commercial_lease" && !beat.commercialLeaseEligible) return res.status(400).json({ error: "This beat is not eligible for a Commercial Beat Lease." });
+
+      const rightsSnapshot = getBeatRightsSnapshot(product);
+      const purchase = await storage.createBeatPurchase({
+        ...req.body,
+        beatId: beat.id,
+        licenseType: requestedLicense,
+        licenseProduct: product,
+        licenseVersion: beat.licenseVersion,
+        nonexclusive: product !== "exclusive",
+        rightsSnapshot,
+        contentIdAcknowledged: Boolean(req.body.contentIdAcknowledged),
+        licenseStatus: "pending",
+        price: product === "starter_reward" || product === "commercial_lease" ? 0 : beat.price,
+        transactionId: req.body.transactionId || `pending:${Date.now()}`,
+        userId: req.isAuthenticated() ? req.user!.id : null,
+      } as any);
       res.status(201).json(purchase);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -678,6 +841,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/bookings", async (req, res) => {
     try {
       const booking = insertBookingSchema.parse(req.body);
+      const bookingUserId = req.isAuthenticated() ? req.user!.id : booking.userId;
+      const retention = await getRetentionPolicy(bookingUserId);
       const { pricing } = await calculateServerBookingPricing(booking.serviceId, booking.duration, booking.details);
 
       if (!pricing) {
@@ -687,9 +852,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (pricing.requiresManualQuote && req.body.status === "pending" && req.body.paymentStatus === "unpaid") {
         const createdBooking = await storage.createBooking({
           ...booking,
+          userId: bookingUserId,
           amount: 0,
           status: "pending",
-        });
+          retentionPolicy: retention.name,
+          retentionDays: retention.days,
+          retentionPolicyVersion: retention.version,
+          retentionTrigger: "project_completion",
+        } as any);
 
         if (req.body.timeSlotId) {
           await storage.bookTimeSlot(req.body.timeSlotId, createdBooking.id);
@@ -707,8 +877,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const createdBooking = await storage.createBooking({
         ...booking,
+        userId: bookingUserId,
         amount: pricing.finalTotal,
-      });
+        retentionPolicy: retention.name,
+        retentionDays: retention.days,
+        retentionPolicyVersion: retention.version,
+        retentionTrigger: "project_completion",
+      } as any);
       
       // If a time slot ID is provided, book the time slot
       if (req.body.timeSlotId) {
@@ -723,6 +898,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: fromZodError(error).message 
         });
       }
+      console.error("Error creating booking:", error);
       res.status(500).json({ message: "Error creating booking" });
     }
   });
@@ -737,8 +913,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Booking not found" });
       }
       
-      // Get the client token for new payments if needed
-      const clientToken = await braintreeService.generateClientToken();
+      const email = String(req.query.email || "").trim().toLowerCase();
+      if (email && booking.email.toLowerCase() !== email) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
       
       res.json({
         booking: {
@@ -753,10 +931,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           transactionId: booking.transactionId,
           tipAmount: booking.tipAmount
         },
-        clientToken,
         // Calculate how much is left to pay if it's a deposit
         remainingAmount: booking.paymentStatus === 'deposit_paid' 
-          ? booking.amount - (booking.amount * 0.25) 
+          ? booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)
           : 0
       });
     } catch (error: any) {
@@ -805,7 +982,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         points: user.loyaltyPoints || 0,
         sessionCount: user.sessionCount || 0,
-        records: loyaltyRecords
+        records: loyaltyRecords,
+        stampCount: loyaltyRecords.filter((record) => record.action === "stamp_earned").length || user.sessionCount || 0,
+        completedRewardCycles: loyaltyRecords.filter((record) => record.action === "reward_earned" && record.status !== "reversed").length,
+        availableRewards: loyaltyRecords.filter((record) => record.action === "reward_earned" && ["valid", "issued"].includes(record.status)).length,
       });
     } catch (error) {
       console.error("Error fetching user loyalty data:", error);
@@ -863,6 +1043,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Time Slots API
   app.get("/api/time-slots", async (req, res) => {
     try {
+      res.set("Cache-Control", "no-store");
       const { startDate, endDate } = req.query;
       
       if (!startDate || !endDate) {
@@ -921,106 +1102,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Braintree Payment API
-  app.get("/api/braintree/client-token", async (req, res) => {
+  // Stripe Payment API. Payment amounts are calculated from the stored booking;
+  // the browser only supplies the booking ID and payment intent choice.
+  app.post("/api/stripe/create-payment-intent", async (req, res) => {
     try {
-      const clientToken = await braintreeService.generateClientToken();
-      res.json({ clientToken });
-    } catch (error: any) {
-      res.status(500).json({ 
-        message: "Error generating client token", 
-        error: error.message 
+      const bookingId = Number(req.body.bookingId);
+      const isDeposit = Boolean(req.body.isDeposit);
+      const tipAmount = Number(req.body.tipAmount || 0);
+      const booking = await storage.getBooking(bookingId);
+
+      if (!booking) return res.status(404).json({ message: "Booking not found" });
+      if (!Number.isFinite(tipAmount) || tipAmount < 0) return res.status(400).json({ message: "Invalid tip amount" });
+      if (booking.paymentStatus === "paid") return res.status(400).json({ message: "Booking is already paid" });
+
+      const amountCents = getBookingChargeAmount(booking, isDeposit, tipAmount);
+      const intent = await stripeService.createPaymentIntent({
+        amountCents,
+        bookingId: booking.id,
+        customerEmail: booking.email,
+        isDeposit,
+        tipAmount,
       });
+
+      res.json({ clientSecret: intent.client_secret, paymentIntentId: intent.id, amountCents });
+    } catch (error: any) {
+      console.error("Error creating Stripe payment intent:", error);
+      res.status(500).json({ message: error.message || "Unable to start Stripe payment" });
     }
   });
 
-  app.post("/api/braintree/process-payment", async (req, res) => {
+  app.post("/api/stripe/complete-payment", async (req, res) => {
     try {
-      const { 
-        bookingId, 
-        paymentMethodNonce, 
-        isDeposit = false,
-        tipAmount = 0
-      } = req.body;
-      
-      if (!bookingId || !paymentMethodNonce) {
-        return res.status(400).json({ 
-          message: "Missing required fields" 
-        });
+      const paymentIntentId = String(req.body.paymentIntentId || "").trim();
+      if (!paymentIntentId) return res.status(400).json({ message: "Payment intent ID is required" });
+
+      const intent = await stripeService.retrievePaymentIntent(paymentIntentId);
+      if (intent.status !== "succeeded") {
+        return res.status(400).json({ message: `Payment is not complete (${intent.status})` });
       }
-      
-      // Get the booking information
-      const booking = await storage.getBooking(parseInt(bookingId));
-      
-      if (!booking) {
-        return res.status(404).json({ 
-          message: "Booking not found" 
-        });
+
+      const bookingId = Number(intent.metadata.bookingId);
+      const isDeposit = intent.metadata.isDeposit === "true";
+      const tipAmount = Number(intent.metadata.tipAmount || 0);
+      const booking = await storage.getBooking(bookingId);
+      if (!booking || intent.metadata.bookingId !== String(booking.id)) {
+        return res.status(400).json({ message: "Payment does not match a booking" });
       }
-      
-      // Process the payment
-      const result = await braintreeService.processPayment(
-        booking,
-        paymentMethodNonce,
-        isDeposit
-      );
-      
-      if (result.success && result.transaction) {
-        // Update booking with transaction information
-        const updatedBooking = await storage.updateBookingTransactionInfo(booking.id, {
-          transactionId: result.transaction.id,
-          paymentStatus: result.paymentStatus,
-          paymentMethod: result.transaction.paymentInstrumentType,
-          paymentMetadata: result.transaction,
-          tipAmount: tipAmount > 0 ? tipAmount : undefined
-        });
-        
-        // Send confirmation emails
-        if (updatedBooking) {
-          await emailService.sendClientConfirmationEmail(
-            updatedBooking, 
-            result.transaction.id
-          );
-          
-          await emailService.sendAdminNotificationEmail(
-            updatedBooking, 
-            result.transaction.id
-          );
-        }
-        
-        res.json({
-          success: true,
-          transaction: {
-            id: result.transaction.id,
-            status: result.transaction.status,
-            amount: result.transaction.amount
-          },
-          booking: updatedBooking
-        });
-      } else {
-        // Update booking with error information if needed
-        await storage.updateBookingTransactionInfo(booking.id, {
-          transactionId: 'error',
-          paymentStatus: 'failed',
-          paymentErrorMessage: result.errorMessage
-        });
-        
-        res.status(400).json({
-          success: false,
-          message: result.errorMessage,
-          errors: result.errors
-        });
+
+      const expectedAmount = getBookingChargeAmount(booking, isDeposit, tipAmount);
+      if (intent.amount !== expectedAmount) {
+        return res.status(400).json({ message: "Payment amount does not match the booking" });
       }
-    } catch (error: any) {
-      res.status(500).json({ 
-        message: "Error processing payment", 
-        error: error.message 
+
+      const updatedBooking = await storage.updateBookingTransactionInfo(booking.id, {
+        transactionId: intent.id,
+        paymentStatus: isDeposit ? "deposit_paid" : "paid",
+        paymentMethod: "stripe",
+        paymentMetadata: intent,
+        tipAmount: tipAmount || undefined,
       });
+
+      res.json({ success: true, paymentIntentId: intent.id, booking: updatedBooking });
+    } catch (error: any) {
+      console.error("Error completing Stripe payment:", error);
+      res.status(500).json({ message: error.message || "Unable to verify Stripe payment" });
     }
   });
-  
-  // Admin-only refund endpoint
-  app.post("/api/braintree/refund", isAuthenticated, async (req, res) => {
+
+  // Admin-only Stripe refund endpoint
+  app.post("/api/stripe/refund", isAuthenticated, async (req, res) => {
     try {
       const { transactionId, amount } = req.body;
       
@@ -1030,110 +1180,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const result = await braintreeService.refundTransaction(
-        transactionId, 
-        amount
-      );
-      
-      if (result.success && result.transaction) {
-        // Find booking by transactionId and update it
-        const bookings = await storage.getAllBookings();
-        const booking = bookings.find(b => b.transactionId === transactionId);
-        
-        if (booking) {
-          await storage.updateBookingTransactionInfo(booking.id, {
-            transactionId: result.transaction.id,
-            paymentStatus: 'refunded'
-          });
-        }
-        
-        res.json({
-          success: true,
-          transaction: {
-            id: result.transaction.id,
-            status: result.transaction.status,
-            amount: result.transaction.amount
-          }
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          message: result.errorMessage
-        });
-      }
-    } catch (error: any) {
-      res.status(500).json({ 
-        message: "Error processing refund", 
-        error: error.message 
+      const intent = await stripeService.retrievePaymentIntent(transactionId);
+      const refund = await stripeService.stripe?.refunds.create({
+        payment_intent: intent.id,
+        amount: amount ? Number(amount) : undefined,
       });
-    }
-  });
-  
-  // Add a tip to a booking
-  app.post("/api/braintree/add-tip", async (req, res) => {
-    try {
-      const { 
-        bookingId, 
-        paymentMethodNonce, 
-        tipAmount 
-      } = req.body;
-      
-      if (!bookingId || !paymentMethodNonce || !tipAmount) {
-        return res.status(400).json({ 
-          message: "Missing required fields" 
-        });
-      }
-      
-      // Get the booking information
-      const booking = await storage.getBooking(parseInt(bookingId));
-      
-      if (!booking) {
-        return res.status(404).json({ 
-          message: "Booking not found" 
-        });
-      }
-      
-      // Create a modified booking object with the tip amount
-      const tipBooking = {
-        ...booking,
-        amount: tipAmount  // Override the amount with just the tip amount
-      };
-      
-      // Process the tip payment
-      const result = await braintreeService.processPayment(
-        tipBooking,
-        paymentMethodNonce,
-        false
-      );
-      
-      if (result.success && result.transaction) {
-        // Update booking with tip information
-        const updatedBooking = await storage.updateBookingTransactionInfo(booking.id, {
-          transactionId: result.transaction.id,
-          paymentStatus: booking.paymentStatus || "unpaid",  // Keep the original payment status
-          paymentMethod: result.transaction.paymentInstrumentType,
-          tipAmount: tipAmount
-        });
-        
-        res.json({
-          success: true,
-          transaction: {
-            id: result.transaction.id,
-            status: result.transaction.status,
-            amount: result.transaction.amount
-          },
-          booking: updatedBooking
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          message: result.errorMessage,
-          errors: result.errors
-        });
-      }
+      if (!refund) throw new Error("Stripe is not configured");
+
+      const bookings = await storage.getAllBookings();
+      const booking = bookings.find((item) => item.transactionId === transactionId);
+      if (booking) await storage.updateBookingTransactionInfo(booking.id, { transactionId, paymentStatus: "refunded" });
+      res.json({ success: true, refund });
     } catch (error: any) {
       res.status(500).json({ 
-        message: "Error processing tip", 
+        message: "Error processing refund",
         error: error.message 
       });
     }
@@ -1162,6 +1222,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  app.post("/api/contracts/preview", async (req, res) => {
+    try {
+      const serviceId = Number(req.body.serviceId);
+      const durationMinutes = Number(req.body.durationMinutes);
+      const servicePath = typeof req.body.servicePath === "string" ? req.body.servicePath : "hourly";
+      const allowedBeatProducts: BeatLicenseProduct[] = ["starter_reward", "commercial_lease", "paid_nonexclusive", "exclusive"];
+      const beatLicenseProduct = allowedBeatProducts.includes(req.body.beatLicenseProduct) ? req.body.beatLicenseProduct as BeatLicenseProduct : undefined;
+      const rightsRequiredPaths = ["custom-beat", "build-song", "complete-single", "signature-single"];
+
+      if (!Number.isInteger(serviceId) || serviceId <= 0 || !Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+        return res.status(400).json({ error: "A valid service and duration are required" });
+      }
+
+      const service = await storage.getService(serviceId);
+      if (!service) return res.status(404).json({ error: "Service not found" });
+
+      if (rightsRequiredPaths.includes(servicePath) && !beatLicenseProduct) {
+        return res.status(400).json({ error: "Select the beat rights you want before continuing to the agreement." });
+      }
+
+      const pricing = calculatePricing({
+        serviceId: service.id,
+        serviceName: service.name,
+        duration: durationMinutes,
+        recordingOption: servicePath,
+        mixOption: servicePath,
+        productionOption: servicePath,
+      });
+
+      if (pricing.requiresManualQuote) {
+        return res.status(400).json({ error: pricing.quoteReason || "This request requires a custom quote" });
+      }
+
+      const accountStatus = await getContractAccountStatus(req.user?.id);
+      const assembly = assembleBookingAgreement({
+        accountStatus,
+        serviceName: service.name,
+        servicePath,
+        amountCents: pricing.finalTotal,
+        durationMinutes,
+        date: typeof req.body.date === "string" ? req.body.date : undefined,
+        customerName: typeof req.body.customerName === "string" ? req.body.customerName : undefined,
+        customerEmail: typeof req.body.customerEmail === "string" ? req.body.customerEmail : undefined,
+        beatLicenseProduct,
+        requestedAddOns: typeof req.body.requestedAddOns === "string" ? req.body.requestedAddOns : undefined,
+        portfolioReleaseRequested: req.body.portfolioReleaseRequested === true,
+      });
+      if (assembly.requiresManualReview) {
+        return res.status(409).json({
+          error: assembly.reviewReason || "This request requires manual review before an agreement can be signed.",
+          requiresManualReview: true,
+        });
+      }
+      const contract = await storage.createContract({
+        title: assembly.title,
+        description: assembly.content,
+        content: assembly.content,
+        fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/generated_transaction_agreement.pdf",
+        fileType: "generated",
+        category: "booking_agreement",
+      });
+
+      res.status(201).json({ contract, modules: assembly.modules, pricing, requiresManualReview: assembly.requiresManualReview });
+    } catch (error) {
+      console.error("Error generating booking contract:", error);
+      res.status(500).json({ error: "Failed to generate booking agreement" });
+    }
+  });
+
   app.get("/api/contracts/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -1330,6 +1459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Create the signature
+      const termsSnapshot = contract.content || contract.description;
       const newSignature = await storage.createContractSignature({
         contractId,
         customerName,
@@ -1338,7 +1468,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ipAddress,
         agreedToTerms,
         relatedEntityType,
-        relatedEntityId
+        relatedEntityId,
+        contractVersion: contract.version,
+        termsSnapshot,
+        signedDocumentHash: createHash("sha256").update(termsSnapshot).digest("hex"),
       });
       
       // If this is for a beat purchase, update the purchase to mark contract as signed
@@ -1348,6 +1481,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(201).json(newSignature);
     } catch (error) {
+      console.error("Error creating contract signature:", error);
       res.status(500).json({ message: "Error creating contract signature" });
     }
   });
@@ -1473,6 +1607,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create weekly schedule (admin only)
   app.post("/api/schedule/weekly", isAuthenticated, async (req, res) => {
     try {
+      if (req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
       const { 
         startDate, 
         endDate, 
@@ -1490,6 +1627,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         slotDuration,
         daysOfWeek
       );
+
+      if (slots.length === 0) {
+        return res.status(400).json({ error: "No time slots were generated. Check that the end time is later than the start time and that the selected date range includes your working days." });
+      }
       
       res.status(201).json(slots);
     } catch (error: any) {
@@ -1500,6 +1641,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete time slots in a date range (admin only)
   app.delete("/api/schedule/range", isAuthenticated, async (req, res) => {
     try {
+      if (req.user?.role !== "admin") {
+        return res.status(403).json({ error: "Admin access required" });
+      }
       const { startDate, endDate } = req.body;
       
       const success = await storage.deleteTimeSlotsByDateRange(
@@ -1697,57 +1841,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Booking not found" });
       }
       
-      // Update booking status to completed
-      await storage.updateBooking(bookingId, { status: "completed" });
-      
-      // If the booking has a user ID, add loyalty points and increment session count
-      if (booking.userId) {
-        // Calculate points based on booking amount (1 point per $10 spent)
-        const pointsEarned = Math.floor(booking.amount / 10);
-        
-        // Update user's loyalty points
-        await storage.updateUserLoyaltyPoints(booking.userId, pointsEarned);
-        
-        // Increment session count
-        await storage.incrementUserSessionCount(booking.userId);
-        
-        // Record loyalty transaction
+      const updatedBooking = await storage.updateBooking(bookingId, {
+        status: "completed",
+        retentionDeadline: addDays(new Date(), booking.retentionDays || 30),
+      } as any);
+      if (!booking.userId) return res.json({ message: "Booking completed", eligibleForLoyalty: false });
+
+      const existingRecords = await storage.getLoyaltyRecords(booking.userId);
+      if (existingRecords.some((record) => record.bookingId === bookingId && record.action === "stamp_earned")) {
+        return res.json({ message: "Booking was already counted for loyalty", booking: updatedBooking, idempotent: true });
+      }
+
+      const occurred = new Date(booking.date) <= new Date();
+      const eligiblePayment = booking.paymentStatus === "paid";
+      const eligible = occurred && eligiblePayment && !booking.loyaltyApplied && booking.amount > 0;
+      if (!eligible) {
         await storage.createLoyaltyRecord({
           userId: booking.userId,
           action: "session_completed",
-          pointsChange: pointsEarned,
-          description: `Completed booking #${bookingId}`,
-          bookingId
+          pointsChange: 0,
+          description: `Completed booking #${bookingId}; no Music Lifer stamp awarded under eligibility rules.`,
+          bookingId,
+          status: "review",
+          metadata: { occurred, eligiblePayment, loyaltyApplied: booking.loyaltyApplied, amount: booking.amount },
         });
-        
-        // Check if user has reached 5 sessions for free reward
-        const user = await storage.getUser(booking.userId);
-        if (user && user.sessionCount % 5 === 0) {
-          // Create a loyalty record for the free session reward
-          await storage.createLoyaltyRecord({
-            userId: booking.userId,
-            action: "reward_earned",
-            pointsChange: 0, // No points but tracking the reward
-            description: `Free 3-hour session reward (every 5 sessions)`,
-            bookingId: undefined
-          });
-          
-          return res.json({ 
-            message: "Booking completed and loyalty reward earned!", 
-            pointsEarned,
-            rewardEarned: true,
-            sessionCount: user.sessionCount
-          });
-        }
-        
-        return res.json({ 
-          message: "Booking completed and loyalty points added!", 
-          pointsEarned,
-          sessionCount: user ? user.sessionCount : null
+        return res.json({ message: "Booking completed without a loyalty stamp", booking: updatedBooking, eligibleForLoyalty: false });
+      }
+
+      const user = await storage.incrementUserSessionCount(booking.userId);
+      await storage.updateUserLoyaltyPoints(booking.userId, 1);
+      const stampNumber = user?.sessionCount ?? 1;
+      const cycleNumber = Math.floor(stampNumber / 5);
+      await storage.createLoyaltyRecord({
+        userId: booking.userId,
+        action: "stamp_earned",
+        pointsChange: 1,
+        description: `Music Lifer stamp earned for completed paid booking #${bookingId}.`,
+        bookingId,
+        cycleNumber: cycleNumber || undefined,
+        metadata: { source: "server_booking_completion", paymentStatus: booking.paymentStatus },
+      });
+
+      let rewardEarned = false;
+      if (stampNumber % 5 === 0) {
+        rewardEarned = true;
+        const earnedAt = new Date();
+        await storage.createLoyaltyRecord({
+          userId: booking.userId,
+          action: "reward_earned",
+          pointsChange: 0,
+          description: `Music Lifer reward cycle ${cycleNumber} earned: 2 recording hours + 1 Starter Reward Beat License.`,
+          cycleNumber,
+          rewardType: "recording_hours_plus_starter_reward_beat",
+          rewardQuantity: 1,
+          earnedAt,
+          redemptionDeadline: addDays(earnedAt, 90),
+          metadata: { recordingHours: 2, starterRewardBeatLicenses: 1 },
         });
       }
-      
-      res.json({ message: "Booking completed" });
+
+      return res.json({
+        message: rewardEarned ? "Booking completed and Music Lifer reward cycle earned!" : "Booking completed and Music Lifer stamp added.",
+        stampNumber,
+        stampsInCurrentCycle: stampNumber % 5,
+        rewardEarned,
+        sessionCount: user?.sessionCount ?? null,
+      });
     } catch (error) {
       console.error("Error completing booking:", error);
       res.status(500).json({ error: "Failed to complete booking" });
@@ -1826,6 +1985,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/stripe/webhook", async (req, res) => {
+    try {
+      const event = stripeService.constructWebhookEvent(
+        req.body as Buffer,
+        req.header("stripe-signature") ?? undefined,
+      );
+      const payload = event.data.object as any;
+
+      if (event.type === "checkout.session.completed" && payload.mode === "subscription" && payload.payment_status === "paid") {
+        const subscriptionId = Number(payload.metadata?.subscriptionId);
+        const membership = (await storage.getAllMembershipSubscriptions()).find((item) => item.id === subscriptionId);
+        if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
+          const providerPaymentId = `checkout:${payload.id}`;
+          const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(providerPaymentId);
+          if (!existingPayment) {
+            const providerSubscriptionId = typeof payload.subscription === "string" ? payload.subscription : payload.subscription?.id ?? null;
+            const updated = await storage.updateMembershipSubscription(membership.id, {
+              status: "active",
+              paymentProviderSubscriptionId: providerSubscriptionId,
+              updatedAt: new Date(),
+            } as any);
+            const plan = await storage.getMembershipPlan(membership.planId);
+            const payment = await storage.createMembershipPaymentAssociation({
+              subscriptionId: membership.id,
+              paymentProviderId: providerPaymentId,
+              amountCents: plan?.priceCents ?? 0,
+              status: "succeeded",
+            });
+            if (updated) {
+              await issueMembershipBenefits(updated.id, updated.planId, "stripe_checkout", payment.id, "Initial benefits issued after Stripe checkout verification.");
+              await issuePassportRewardCycle(updated, payment.id, new Date(event.created * 1000));
+            }
+          }
+          await storage.createMembershipEvent({
+            subscriptionId: membership.id,
+            eventType: "stripe_checkout_verified",
+            details: JSON.stringify({ stripeEventId: event.id, checkoutSessionId: payload.id }),
+          });
+        }
+      }
+
+      if (event.type === "invoice.paid") {
+        const providerSubscriptionId = typeof payload.subscription === "string" ? payload.subscription : payload.subscription?.id;
+        const membership = providerSubscriptionId
+          ? (await storage.getAllMembershipSubscriptions()).find((item) => item.paymentProviderSubscriptionId === providerSubscriptionId)
+          : undefined;
+        if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
+          const providerPaymentId = `invoice:${payload.id}`;
+          const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(providerPaymentId);
+          if (!existingPayment) {
+            const periodStart = payload.period_start ? new Date(payload.period_start * 1000) : membership.currentPeriodStart;
+            const periodEnd = payload.period_end ? new Date(payload.period_end * 1000) : addMonths(membership.currentPeriodEnd, 1);
+            const updated = await storage.updateMembershipSubscription(membership.id, {
+              status: "active",
+              currentPeriodStart: periodStart,
+              currentPeriodEnd: periodEnd,
+              nextBillingDate: periodEnd,
+              paidThroughDate: periodEnd,
+              updatedAt: new Date(),
+            } as any);
+            const payment = await storage.createMembershipPaymentAssociation({
+              subscriptionId: membership.id,
+              paymentProviderId: providerPaymentId,
+              amountCents: Math.max(0, Number(payload.amount_paid ?? payload.amount_due ?? 0)),
+              status: "succeeded",
+            });
+            await storage.createMembershipBillingPeriod({
+              subscriptionId: membership.id,
+              periodStart,
+              periodEnd,
+              amountCents: payment.amountCents,
+              paymentStatus: "paid",
+              status: "closed",
+            });
+            if (updated) {
+              await issueMembershipBenefits(updated.id, updated.planId, "stripe_renewal", payment.id, "Included benefits issued after verified Stripe renewal.");
+              await issuePassportRewardCycle(updated, payment.id, new Date(event.created * 1000));
+            }
+          }
+          await storage.createMembershipEvent({
+            subscriptionId: membership.id,
+            eventType: "stripe_invoice_paid",
+            details: JSON.stringify({ stripeEventId: event.id, invoiceId: payload.id }),
+          });
+        }
+      }
+
+      if (event.type === "invoice.payment_failed") {
+        const providerSubscriptionId = typeof payload.subscription === "string" ? payload.subscription : payload.subscription?.id;
+        const membership = providerSubscriptionId
+          ? (await storage.getAllMembershipSubscriptions()).find((item) => item.paymentProviderSubscriptionId === providerSubscriptionId)
+          : undefined;
+        if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
+          await storage.updateMembershipSubscription(membership.id, { status: "past_due", updatedAt: new Date() } as any);
+          await storage.createMembershipEvent({
+            subscriptionId: membership.id,
+            eventType: "stripe_invoice_payment_failed",
+            details: JSON.stringify({ stripeEventId: event.id, invoiceId: payload.id }),
+          });
+        }
+      }
+
+      if (event.type === "customer.subscription.deleted") {
+        const membership = (await storage.getAllMembershipSubscriptions()).find((item) => item.paymentProviderSubscriptionId === payload.id);
+        if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
+          await storage.updateMembershipSubscription(membership.id, { status: "cancelled", updatedAt: new Date() } as any);
+          await storage.createMembershipEvent({
+            subscriptionId: membership.id,
+            eventType: "stripe_subscription_cancelled",
+            details: JSON.stringify({ stripeEventId: event.id, providerSubscriptionId: payload.id }),
+          });
+        }
+      }
+
+      res.json({ received: true });
+    } catch (error: any) {
+      console.error("Error processing Stripe webhook:", error);
+      res.status(400).json({ error: error.message || "Invalid Stripe webhook" });
+    }
+  });
+
   app.get("/api/membership/plans", async (req, res) => {
     try {
       const plans = await storage.getAllMembershipPlans();
@@ -1860,10 +2140,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/user/membership/contract-preview", isAuthenticated, async (req, res) => {
+    try {
+      const planId = Number(req.body.planId);
+      const termMonths = req.body.prepaidTermMonths === 3 ? 3 : 1;
+      if (!Number.isInteger(planId) || planId <= 0) {
+        return res.status(400).json({ error: "Membership plan ID is required" });
+      }
+
+      const plan = await storage.getMembershipPlan(planId);
+      if (!plan) return res.status(404).json({ error: "Membership plan not found" });
+
+      const catalog = getMembershipCatalogByTier(plan.tier);
+      if (!catalog) return res.status(400).json({ error: "Membership plan is missing its launch configuration" });
+
+      const assembly = assembleMembershipAgreement({ plan: catalog, termMonths });
+      const contract = await storage.createContract({
+        title: assembly.title,
+        description: assembly.content,
+        content: assembly.content,
+        fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/generated_membership_agreement.pdf",
+        fileType: "generated",
+        category: "membership_agreement",
+      });
+
+      res.status(201).json({ contract, planId, prepaidTermMonths: termMonths });
+    } catch (error) {
+      console.error("Error generating membership contract:", error);
+      res.status(500).json({ error: "Failed to generate membership agreement" });
+    }
+  });
+
   app.post("/api/user/membership/subscribe", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
-      const { planId, prepaidTermMonths } = req.body;
+      const { planId, prepaidTermMonths, contractId } = req.body;
 
       if (!planId) {
         return res.status(400).json({ error: "Membership plan ID is required" });
@@ -1874,6 +2185,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Membership plan not found" });
       }
 
+      const selectedContractId = Number(contractId);
+      const termMonths = prepaidTermMonths === 3 ? 3 : 1;
+      const enrollmentContract = Number.isInteger(selectedContractId) ? await storage.getContract(selectedContractId) : undefined;
+      const expectedTitle = `Passport Enrollment Agreement - ${plan.name}`;
+      const expectedBillingLanguage = termMonths === 3
+        ? "optional prepaid three-month enrollment"
+        : "month-to-month enrollment";
+      if (
+        !enrollmentContract
+        || enrollmentContract.category !== "membership_agreement"
+        || enrollmentContract.title !== expectedTitle
+        || !enrollmentContract.content.includes(expectedBillingLanguage)
+      ) {
+        return res.status(400).json({ error: "Sign the selected Passport membership agreement before enrolling." });
+      }
+      const signedContract = (await storage.getContractSignaturesByContract(enrollmentContract.id))
+        .find((signature) => signature.customerEmail.toLowerCase() === req.user!.email.toLowerCase() && signature.agreedToTerms);
+      if (!signedContract) {
+        return res.status(400).json({ error: "Sign the selected Passport membership agreement before enrolling." });
+      }
+
       const existingMembership = await storage.getUserMembership(userId);
       if (existingMembership && ["active", "cancel_pending", "paused", "past_due", "pending_payment"].includes(existingMembership.status)) {
         return res.status(400).json({ error: "You already have a membership record in progress." });
@@ -1882,7 +2214,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const catalog = getMembershipCatalogByTier(plan.tier);
       const now = new Date();
       const currentPeriodStart = new Date(now);
-      const termMonths = prepaidTermMonths === 3 ? 3 : 1;
       const currentPeriodEnd = addMonths(now, termMonths);
       const planVersion = await storage.getActiveMembershipPlanVersion(plan.id);
 
@@ -1918,15 +2249,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subscriptionId: subscription.id,
         eventType: "enrollment_started",
         details: JSON.stringify({
-          note: "Payment provider integration is not enabled in this build. Admin payment verification is required before activation.",
+          note: stripeService.stripe && termMonths === 1
+            ? "Stripe subscription checkout created; benefits activate only after the server verifies the checkout session."
+            : "Stripe subscription checkout is unavailable for this enrollment; admin payment verification is required before activation.",
           prepaidTermMonths: termMonths === 3 ? 3 : null,
         }),
       });
 
-      res.status(201).json(await getMembershipAccountPayload(userId));
+      let checkoutUrl: string | null = null;
+      if (stripeService.stripe && termMonths === 1) {
+        const origin = `${req.protocol}://${req.get("host")}`;
+        const checkout = await stripeService.createMembershipCheckoutSession({
+          customerEmail: req.user!.email,
+          userId,
+          subscriptionId: subscription.id,
+          planId: plan.id,
+          planName: plan.name,
+          priceCents: plan.priceCents,
+          successUrl: `${origin}/account?tab=membership&checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${origin}/account?tab=membership&checkout=cancelled`,
+        });
+        checkoutUrl = checkout.url;
+      }
+
+      res.status(201).json({ ...(await getMembershipAccountPayload(userId)), checkoutUrl });
     } catch (error) {
       console.error("Error subscribing to membership:", error);
       res.status(500).json({ error: "Failed to subscribe to membership" });
+    }
+  });
+
+  app.post("/api/user/membership/complete-checkout", isAuthenticated, async (req, res) => {
+    try {
+      const sessionId = String(req.body.sessionId || "").trim();
+      if (!sessionId) return res.status(400).json({ error: "Stripe checkout session ID is required" });
+      const checkout = await stripeService.retrieveCheckoutSession(sessionId);
+      if (checkout.payment_status !== "paid") return res.status(400).json({ error: "Membership payment is not complete" });
+      if (checkout.metadata?.userId !== String(req.user!.id)) return res.status(403).json({ error: "Checkout session does not belong to this account" });
+
+      const subscriptionId = Number(checkout.metadata?.subscriptionId);
+      const membership = (await storage.getMembershipSubscriptionsByUser(req.user!.id)).find((item) => item.id === subscriptionId);
+      if (!membership) return res.status(404).json({ error: "Membership enrollment not found" });
+
+      const providerPaymentId = `checkout:${checkout.id}`;
+      const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(providerPaymentId);
+      if (existingPayment) return res.json(await getMembershipAccountPayload(req.user!.id));
+
+      const plan = await storage.getMembershipPlan(membership.planId);
+      const providerSubscriptionId = typeof checkout.subscription === "string" ? checkout.subscription : checkout.subscription?.id ?? null;
+      const updated = await storage.updateMembershipSubscription(membership.id, {
+        status: "active",
+        paymentProviderSubscriptionId: providerSubscriptionId,
+        updatedAt: new Date(),
+      } as any);
+      const payment = await storage.createMembershipPaymentAssociation({
+        subscriptionId: membership.id,
+        paymentProviderId: providerPaymentId,
+        amountCents: plan?.priceCents ?? 0,
+        status: "succeeded",
+      });
+      if (updated) {
+        await issueMembershipBenefits(updated.id, updated.planId, "stripe_checkout", payment.id, "Initial benefits issued after Stripe checkout verification.");
+        await issuePassportRewardCycle(updated, payment.id, new Date());
+      }
+      await storage.createMembershipEvent({
+        subscriptionId: membership.id,
+        eventType: "stripe_checkout_verified",
+        details: JSON.stringify({ checkoutSessionId: checkout.id, paymentAssociationId: payment.id }),
+      });
+      res.json(await getMembershipAccountPayload(req.user!.id));
+    } catch (error: any) {
+      console.error("Error completing membership checkout:", error);
+      res.status(500).json({ error: error.message || "Failed to verify membership checkout" });
     }
   });
 
@@ -2128,17 +2522,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Membership subscription not found" });
       }
 
+      const activationKey = `manual-activation:${subscription.id}`;
+      const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(activationKey);
+      if (existingPayment) {
+        return res.json({ subscription, idempotent: true });
+      }
+
       const updated = await storage.updateMembershipSubscription(id, {
         status: "active",
         updatedAt: new Date(),
       } as any);
 
       if (updated) {
+        const payment = await storage.createMembershipPaymentAssociation({
+          subscriptionId: updated.id,
+          paymentProviderId: activationKey,
+          amountCents: (await storage.getMembershipPlan(updated.planId))?.priceCents ?? 0,
+          status: "succeeded",
+        });
         await issueMembershipBenefits(updated.id, updated.planId, "membership_subscription", updated.id, "Initial benefits issued after admin payment verification.");
+        await issuePassportRewardCycle(updated, payment.id, new Date());
         await storage.createMembershipEvent({
           subscriptionId: updated.id,
           eventType: "membership_activated",
-          details: JSON.stringify({ note: "Activated by admin after external payment verification." }),
+          details: JSON.stringify({ note: "Activated by admin after external payment verification.", paymentAssociationId: payment.id }),
         });
       }
 
@@ -2146,6 +2553,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error activating membership:", error);
       res.status(500).json({ error: "Failed to activate membership" });
+    }
+  });
+
+  app.post("/api/admin/memberships/:id/verify-payment", isAuthenticated, async (req, res) => {
+    if (req.user!.role !== "admin") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    try {
+      const subscriptionId = parseInt(req.params.id, 10);
+      const providerPaymentId = String(req.body.providerPaymentId || "").trim();
+      if (!providerPaymentId) {
+        return res.status(400).json({ error: "Verified provider payment ID is required." });
+      }
+
+      const subscription = (await storage.getAllMembershipSubscriptions()).find((item) => item.id === subscriptionId);
+      if (!subscription) return res.status(404).json({ error: "Membership subscription not found" });
+
+      const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(providerPaymentId);
+      if (existingPayment) {
+        return res.json({ subscription, payment: existingPayment, rewards: await storage.getMembershipLoyaltyRewards(subscription.id), idempotent: true });
+      }
+
+      const plan = await storage.getMembershipPlan(subscription.planId);
+      const payment = await storage.createMembershipPaymentAssociation({
+        subscriptionId,
+        paymentProviderId: providerPaymentId,
+        amountCents: plan?.priceCents ?? 0,
+        status: "succeeded",
+      });
+      const updated = await storage.updateMembershipSubscription(subscriptionId, { status: "active", updatedAt: new Date() } as any);
+      const rewards = await issuePassportRewardCycle(updated ?? subscription, payment.id, new Date());
+      await storage.createMembershipEvent({
+        subscriptionId,
+        eventType: "membership_payment_verified",
+        details: JSON.stringify({ paymentAssociationId: payment.id, providerPaymentId, adminUserId: req.user!.id, rewardsIssued: rewards.map((reward) => reward.id) }),
+      });
+
+      res.json({ subscription: updated, payment, rewards });
+    } catch (error) {
+      console.error("Error verifying membership payment:", error);
+      res.status(500).json({ error: "Failed to verify membership payment" });
     }
   });
 

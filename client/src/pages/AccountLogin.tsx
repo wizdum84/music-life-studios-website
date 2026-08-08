@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { Eye, EyeOff } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -21,6 +22,7 @@ export default function AccountLogin() {
   const { loginMutation } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -33,12 +35,12 @@ export default function AccountLogin() {
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
     try {
-      await loginMutation.mutateAsync(values);
+      const loggedInUser = await loginMutation.mutateAsync(values);
       toast({
         title: "Login successful",
         description: "Welcome back to Music Life Studios!",
       });
-      navigate("/account");
+      navigate(loggedInUser.role === "admin" ? "/admin" : "/account");
     } catch (error: any) {
       // Error handling is already done in the mutation
     } finally {
@@ -85,7 +87,18 @@ export default function AccountLogin() {
                     <FormItem>
                       <FormLabel>Password</FormLabel>
                       <FormControl>
-                        <Input type="password" placeholder="Enter your password" {...field} />
+                        <div className="relative">
+                          <Input type={showPassword ? "text" : "password"} placeholder="Enter your password" className="pr-10" {...field} />
+                          <button
+                            type="button"
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                            title={showPassword ? "Hide password" : "Show password"}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:text-foreground"
+                            onClick={() => setShowPassword((visible) => !visible)}
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -115,7 +128,7 @@ export default function AccountLogin() {
               </li>
               <li className="flex items-start">
                 <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center mr-3 mt-0.5">✓</span>
-                <span>Get a free 3-hour session after every 5 paid sessions</span>
+                <span>Earn 2 recording hours plus a Starter Reward Beat License after every 5 eligible paid sessions</span>
               </li>
               <li className="flex items-start">
                 <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center mr-3 mt-0.5">✓</span>

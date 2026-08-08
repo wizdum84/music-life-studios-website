@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { Eye, EyeOff } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -31,6 +32,7 @@ export default function AccountRegister() {
   const { registerMutation } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const intent = new URLSearchParams(window.location.search).get("intent");
 
   const form = useForm<FormValues>({
@@ -164,7 +166,10 @@ export default function AccountRegister() {
                     <FormItem>
                       <FormLabel>Password</FormLabel>
                       <FormControl>
-                        <Input type="password" placeholder="Create a password" {...field} />
+                        <div className="relative">
+                          <Input type={showPassword ? "text" : "password"} placeholder="Create a password" className="pr-10" {...field} />
+                          <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} title={showPassword ? "Hide password" : "Show password"} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -177,7 +182,10 @@ export default function AccountRegister() {
                     <FormItem>
                       <FormLabel>Confirm Password</FormLabel>
                       <FormControl>
-                        <Input type="password" placeholder="Confirm your password" {...field} />
+                        <div className="relative">
+                          <Input type={showPassword ? "text" : "password"} placeholder="Confirm your password" className="pr-10" {...field} />
+                          <button type="button" aria-label={showPassword ? "Hide password" : "Show password"} title={showPassword ? "Hide password" : "Show password"} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:text-foreground" onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -7,7 +7,7 @@ import BookingManager from "@/components/admin/BookingManager";
 import ContentManager from "@/components/admin/ContentManager";
 import ScheduleManager from "@/components/admin/ScheduleManager";
 import MembershipManager from "@/components/admin/MembershipManager";
-import { Loader2, BarChart2, LogOut } from "lucide-react";
+import { Loader2, BarChart2, ExternalLink, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -78,6 +78,18 @@ export default function Admin() {
             </div>
             
             <div className="flex flex-col md:flex-row gap-2">
+              <Button variant="outline" asChild className="inline-flex items-center justify-center gap-2 w-full md:w-auto">
+                <a href="/" target="_blank" rel="noreferrer">
+                  <ExternalLink size={18} />
+                  <span className="font-medium">Preview Customer Site</span>
+                </a>
+              </Button>
+              <Button variant="outline" asChild className="inline-flex items-center justify-center gap-2 w-full md:w-auto">
+                <a href="/booking" target="_blank" rel="noreferrer">
+                  <ExternalLink size={18} />
+                  <span className="font-medium">Preview Booking</span>
+                </a>
+              </Button>
               <a 
                 href="/analytics" 
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors w-full md:w-auto"

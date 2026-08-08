@@ -5,7 +5,11 @@ export type MembershipBenefitCode =
   | "quick_finish"
   | "master_only"
   | "planning_session"
-  | "project_file_review";
+  | "project_file_review"
+  | "starter_reward_beat"
+  | "commercial_beat_lease"
+  | "quick_finish_reward_discount"
+  | "quick_finish_or_master_reward_discount";
 
 export type MembershipPlanCatalogItem = {
   tier: MembershipTier;
@@ -29,6 +33,10 @@ export type MembershipPlanCatalogItem = {
     eligibleServices: string[];
     stackable: boolean;
   }>;
+  rewardCycle: {
+    thresholdMonths: number;
+    rewards: Array<{ type: string; quantity: number; description: string }>;
+  };
 };
 
 export const MEMBERSHIP_POSITIONING =
@@ -40,10 +48,10 @@ export const MEMBERSHIP_CANCELLATION_LANGUAGE =
 export const MEMBERSHIP_LAUNCH_RULES = {
   pauseLimitPerSixMonths: 1,
   pauseLengthCycles: 1,
-  loyaltyMilestoneMonths: 3,
-  loyaltyRewardType: "recording_hours",
-  loyaltyRewardQuantity: 1,
-  loyaltyRewardExpiresAfterCycles: 2,
+  passportRewardsRepeat: true,
+  rewardRedemptionDeadlineDays: 90,
+  starterRewardLicense: "starter_reward",
+  commercialLeaseLicense: "commercial_lease",
   upgrades: "Admin approved; may take effect immediately after payment approval or next billing date.",
   downgrades: "Next billing date only. No proration is automated in this launch build.",
 };
@@ -95,6 +103,13 @@ export const MEMBERSHIP_PLAN_CATALOG: MembershipPlanCatalogItem[] = [
     discounts: [
       { discountType: "percentage", discountValue: 10, eligibleServices: ["quick_finish", "catalog_beat_license"], stackable: false },
     ],
+    rewardCycle: {
+      thresholdMonths: 3,
+      rewards: [
+        { type: "recording_hours", quantity: 2, description: "2 recording hours" },
+        { type: "starter_reward_beat", quantity: 1, description: "1 Starter Reward Beat License" },
+      ],
+    },
   },
   {
     tier: "consistent_artist",
@@ -142,6 +157,14 @@ export const MEMBERSHIP_PLAN_CATALOG: MembershipPlanCatalogItem[] = [
     discounts: [
       { discountType: "percentage", discountValue: 10, eligibleServices: ["standard_mix_master", "catalog_beat_license"], stackable: false },
     ],
+    rewardCycle: {
+      thresholdMonths: 2,
+      rewards: [
+        { type: "recording_hours", quantity: 3, description: "3 recording hours" },
+        { type: "commercial_beat_lease", quantity: 1, description: "1 Commercial Beat Lease" },
+        { type: "quick_finish_reward_discount", quantity: 25, description: "25% off one eligible Quick Finish" },
+      ],
+    },
   },
   {
     tier: "release_artist",
@@ -209,6 +232,14 @@ export const MEMBERSHIP_PLAN_CATALOG: MembershipPlanCatalogItem[] = [
     discounts: [
       { discountType: "percentage", discountValue: 15, eligibleServices: ["standard_mix_master", "advanced_mix_master", "catalog_beat_license"], stackable: false },
     ],
+    rewardCycle: {
+      thresholdMonths: 2,
+      rewards: [
+        { type: "recording_hours", quantity: 3, description: "3 recording hours" },
+        { type: "commercial_beat_lease", quantity: 2, description: "2 Commercial Beat Leases" },
+        { type: "quick_finish_or_master_reward_discount", quantity: 50, description: "50% off one eligible Quick Finish or one Master Only" },
+      ],
+    },
   },
 ];
 

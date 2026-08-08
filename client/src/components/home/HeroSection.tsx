@@ -1,6 +1,6 @@
 import { Link } from "wouter";
+import { ArrowRight, Mic2, Radio, Stamp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { STUDIO_INFO } from "@/lib/constants";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -9,72 +9,56 @@ export default function HeroSection() {
   const membershipHref = user ? "/account?tab=membership" : "/account/register?intent=membership";
 
   return (
-    <section className="relative bg-[#1A1A1A] overflow-hidden">
-      <div className="absolute inset-0 z-0">
-        {/* Background image - using a div with backgroundImage instead of <img> for better control */}
-        <div 
-          className="w-full h-full bg-cover bg-center opacity-40"
-          style={{ 
-            backgroundImage: "url('https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?ixlib=rb-1.2.1&auto=format&fit=crop&w=1920&h=1080&q=80')" 
-          }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/80 to-secondary/80" />
+    <section className="relative overflow-hidden bg-[#141414] text-white">
+      <div className="absolute right-0 top-0 hidden h-full w-1/4 bg-[#ff8a00] md:block" />
+      <div className="absolute right-[4%] top-6 hidden w-36 border-2 border-black px-3 py-3 text-right text-3xl font-black leading-[0.82] text-black md:block">
+        <p>MAKE</p>
+        <p>LIFE</p>
+        <p>MUSIC</p>
       </div>
-      
-      <div className="container mx-auto px-4 py-20 md:py-32 relative z-10">
-        <div className="max-w-3xl">
-          <h1 className="font-bold text-4xl md:text-5xl lg:text-6xl text-white leading-tight mb-6">
-            {STUDIO_INFO.NAME}
+
+      <div className="relative mx-auto grid max-w-6xl grid-cols-1 gap-10 px-6 py-16 md:grid-cols-[1.1fr_0.9fr] md:items-center md:py-24">
+        <div>
+          <div className="mb-5 flex flex-wrap items-center gap-3 text-xs font-black uppercase tracking-[0.22em]">
+            <span className="text-[#ff8a00]">{STUDIO_INFO.NAME}</span>
+            <span className="bg-[#ff8a00] px-3 py-1 text-black">Artist Built</span>
+            <span className="text-white/60">Mobile by design</span>
+          </div>
+          <h1 className="max-w-3xl text-5xl font-black leading-[0.92] md:text-7xl">
+            Make the studio part of your rhythm.
           </h1>
-          <p className="uppercase tracking-[0.2em] text-sm md:text-base text-[#FF8C00] font-semibold mb-3">
-            {STUDIO_INFO.BYLINE}
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-white/72 md:text-xl">
+            Recording, production, mixing, and mastering with Wiz for artists who want records finished, not folders full of almosts.
           </p>
-          <h2 className="font-medium text-2xl md:text-3xl text-white mb-4">
-            Build your sound with consistent studio access.
-          </h2>
-          <p className="text-gray-100 text-xl md:text-2xl mb-8 max-w-2xl">
-            Join a Music Life Artist Membership for predictable monthly recording hours, finishing credits, member pricing, and priority booking with WIZ.
-          </p>
-          <div className="mb-8 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl text-sm text-white">
-            <div className="border border-white/30 bg-black/20 px-4 py-3">
-              <span className="block text-[#FF8C00] font-semibold">$149/mo</span>
-              Artist Access
-            </div>
-            <div className="border border-white/30 bg-black/20 px-4 py-3">
-              <span className="block text-[#FF8C00] font-semibold">$325/mo</span>
-              Consistent Artist
-            </div>
-            <div className="border border-white/30 bg-black/20 px-4 py-3">
-              <span className="block text-[#FF8C00] font-semibold">$499/mo</span>
-              Release Artist
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
-            <Button
-              asChild
-              size="lg"
-              className={cn(
-                "bg-[#FF8C00] hover:bg-[#FFA333] text-[#1A1A1A] font-medium px-8 py-6",
-                "text-base"
-              )}
-            >
-              <Link href={membershipHref}>Join a Membership</Link>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Button asChild size="lg" className="bg-[#ff8a00] px-7 text-black hover:bg-[#ffac3d]">
+              <Link href={membershipHref}>Join the Passport Program</Link>
             </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className={cn(
-                "bg-transparent border-2 border-white text-white hover:bg-white hover:text-primary",
-                "font-medium px-8 py-6 text-base"
-              )}
-            >
-              <Link href="/deals">View Deals & Savings</Link>
+            <Button asChild size="lg" variant="outline" className="border-white/70 bg-transparent px-7 text-white hover:bg-white hover:text-black">
+              <Link href="/booking">Book a Session</Link>
             </Button>
           </div>
-          <p className="mt-4 text-sm text-white/80">
-            Month-to-month memberships, bundle discounts, and loyalty rewards. <Link href="/booking" className="underline underline-offset-4">Book once instead</Link>.
+          <p className="mt-4 text-sm text-white/58">
+            Free Music Lifer accounts, bundle savings, and month-to-month Passport memberships. <Link href="/deals" className="font-bold text-[#ff8a00] underline underline-offset-4">Compare the paths</Link>.
           </p>
+        </div>
+
+        <div className="border-2 border-black bg-[#ff8a00] p-5 text-black shadow-[10px_10px_0_#f3eee4] md:mt-32">
+          <div className="border-2 border-black bg-[#f3eee4] p-5">
+            <div className="flex items-center justify-between border-b-2 border-black pb-4">
+              <p className="text-xs font-black uppercase tracking-[0.2em]">Music Lifer Passport</p>
+              <Radio className="h-6 w-6" />
+            </div>
+            <p className="mt-6 text-5xl font-black leading-[0.86]">BUILD<br />CONSISTENTLY.</p>
+            <div className="mt-7 grid grid-cols-2 gap-3 text-sm font-black">
+              <Link href="/booking" className="border-2 border-black bg-black p-3 text-[#ff8a00] transition-colors hover:bg-[#2a2115]"><Mic2 className="mb-3 h-5 w-5" />Record</Link>
+              <Link href="/booking?type=mixing" className="border-2 border-black p-3 transition-colors hover:bg-white"><ArrowRight className="mb-3 h-5 w-5" />Finish</Link>
+            </div>
+            <div className="mt-5 flex items-center gap-3 border-t-2 border-black pt-4">
+              <Stamp className="h-6 w-6" />
+              <p className="text-sm font-bold">The more seriously you build, the faster your Passport pays you back.</p>
+            </div>
+          </div>
         </div>
       </div>
     </section>

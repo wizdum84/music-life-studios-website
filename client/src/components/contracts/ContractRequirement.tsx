@@ -6,8 +6,9 @@ import { Contract } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { SignatureCanvas } from "@/components/forms/SignatureCanvas";
-import { FileText, Check, AlertCircle } from "lucide-react";
+import { FileText, Check, AlertCircle, Download, Eye, PenLine } from "lucide-react";
 
 interface ContractRequirementProps {
   contractId: number;
@@ -15,6 +16,7 @@ interface ContractRequirementProps {
   entityId?: number;
   email: string;
   name: string;
+  plainLanguageSummary?: string;
   onContractSigned: () => void;
   onCheckExistingSignature?: boolean;
 }
@@ -25,17 +27,60 @@ export function ContractRequirement({
   entityId,
   email,
   name,
+  plainLanguageSummary,
   onContractSigned,
   onCheckExistingSignature = true,
 }: ContractRequirementProps) {
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
   const [signaturePad, setSignaturePad] = useState<string | null>(null);
+  const [signatureMode, setSignatureMode] = useState<"draw" | "type">("draw");
+  const [typedSignature, setTypedSignature] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [contractSigned, setContractSigned] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const effectiveSignature = signatureMode === "type" ? typedSignature.trim() : signaturePad;
+
+  const getPlainLanguageSummary = (title: string) => {
+    if (plainLanguageSummary?.trim()) return plainLanguageSummary.trim();
+
+    const lowerTitle = title.toLowerCase();
+    if (lowerTitle.includes("membership") || lowerTitle.includes("passport")) {
+      return "You are agreeing to the Passport plan, monthly payment, included benefits, rewards, and cancellation terms shown below.";
+    }
+    if (lowerTitle.includes("mix") || lowerTitle.includes("master")) {
+      return "You are agreeing to the mix/master scope, price, files, revisions, delivery, and payment terms shown below.";
+    }
+    if (lowerTitle.includes("beat") || lowerTitle.includes("license")) {
+      return "You are agreeing to the beat license, permitted uses, rights limits, payment, and delivery terms shown below.";
+    }
+    return "You are agreeing to the selected service, price, schedule, delivery, payment, and change or cancellation terms shown below.";
+  };
+
+  const getReviewTargets = () => [
+    { id: "payment", label: "Payment", pattern: /payment|deposit|price|fee|billing/i },
+    { id: "delivery", label: "Deliverables & revisions", pattern: /deliver|included|revision|file|format/i },
+    { id: "cancellation", label: "Cancellation", pattern: /cancel|reschedul|refund|no-show/i },
+    { id: "rights", label: "Rights & ownership", pattern: /right|license|ownership|content id|portfolio/i },
+    { id: "signature", label: "Electronic signature", pattern: /electronic|signature|sign/i },
+  ];
+
+  const downloadContractCopy = () => {
+    if (!contract) return;
+    const content = `${contract.title}\n\n${contract.content || contract.description}`;
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${contract.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "music-life-agreement"}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     const fetchContractData = async () => {
@@ -92,7 +137,7 @@ export function ContractRequirement({
   }, [contractId, email, entityType, entityId, onCheckExistingSignature, onContractSigned, toast]);
 
   const handleSignContract = async () => {
-    if (!contract || !signaturePad || !agreedToTerms) {
+    if (!contract || !effectiveSignature || !agreedToTerms) {
       toast({
         title: "Missing information",
         description: "Please agree to the terms and provide a signature.",
@@ -109,7 +154,7 @@ export function ContractRequirement({
         contractId: contract.id,
         customerName: name,
         customerEmail: email,
-        signatureData: signaturePad,
+        signatureData: effectiveSignature,
         agreedToTerms,
         relatedEntityType: entityType,
         relatedEntityId: entityId || null
@@ -190,6 +235,26 @@ export function ContractRequirement({
     );
   }
 
+  const contractText = contract.content || contract.description;
+  const reviewTargets = getReviewTargets();
+  const claimedTargetIds = new Set<string>();
+  const lineAnchorIds = new Map<number, string>();
+  contractText.split("\n").forEach((line, index) => {
+    const target = reviewTargets.find((candidate) => !claimedTargetIds.has(candidate.id) && candidate.pattern.test(line));
+    if (target) {
+      claimedTargetIds.add(target.id);
+      lineAnchorIds.set(index, `contract-section-${target.id}`);
+    }
+  });
+  const availableReviewTargets = reviewTargets.filter((target) => claimedTargetIds.has(target.id));
+  const isAgreementHeading = (line: string) => {
+    const trimmed = line.trim();
+    return Boolean(trimmed) && (
+      /^[A-Z0-9][A-Z0-9 ,&/.'-]{8,}$/.test(trimmed) ||
+      trimmed.endsWith("MANUAL REVIEW REQUIRED")
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-muted/30 p-6 rounded-lg border">
@@ -197,14 +262,86 @@ export function ContractRequirement({
           <FileText className="w-6 h-6 text-primary mr-2" />
           <h3 className="text-lg font-semibold">{contract.title}</h3>
         </div>
+
+        <div className="rounded-md border-2 border-primary bg-primary/10 p-4 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Eye className="h-5 w-5 text-primary" />
+            <h4 className="font-bold">Plain-language summary before you sign</h4>
+          </div>
+          <p className="text-base font-bold leading-7">{getPlainLanguageSummary(contract.title)}</p>
+          <p className="mt-2 text-xs font-medium text-muted-foreground">This is only a convenience summary. Read the full agreement below; the full agreement controls.</p>
+          {availableReviewTargets.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-semibold">
+              <span className="text-muted-foreground">Review:</span>
+              {availableReviewTargets.map((target) => (
+                <a
+                  key={target.id}
+                  href={`#contract-section-${target.id}`}
+                  className="text-primary underline underline-offset-2 hover:text-primary/80"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    document.getElementById(`contract-section-${target.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                >
+                  {target.label}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-md border-2 border-amber-500 bg-amber-50 p-4 mb-6 text-amber-950">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+            <div>
+              <h4 className="font-bold">Important: keep a copy for your records</h4>
+              <p className="mt-1 text-sm leading-6">Review the full agreement carefully, download a copy, and save it somewhere you can access later before signing.</p>
+              <Button type="button" variant="outline" size="sm" className="mt-3 border-red-600 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={downloadContractCopy}>
+                <Download className="mr-2 h-4 w-4" />
+                Download a Copy
+              </Button>
+            </div>
+          </div>
+        </div>
         
-        <div className="mb-6 max-h-60 overflow-y-auto p-4 bg-background border rounded-md">
-          <h4 className="font-medium mb-2">Description:</h4>
-          <p className="whitespace-pre-wrap text-sm font-sans mb-4">
-            {contract.description}
-          </p>
+        <div className="mb-6 min-h-[28rem] max-h-[min(68vh,46rem)] overflow-y-auto p-5 md:p-7 bg-background border rounded-md">
+          <h4 className="font-medium mb-4">Full agreement</h4>
+          <div className="text-[15px] md:text-base font-sans leading-7 mb-4">
+            {contractText.split("\n").map((line, index) => {
+              const trimmed = line.trim();
+              const anchorId = lineAnchorIds.get(index);
+              const anchorClass = anchorId ? "scroll-mt-8 border-l-2 border-primary/60 bg-primary/5 px-3 py-1" : "";
+
+              if (!trimmed) {
+                return <div key={`${index}-blank`} className="h-3" aria-hidden="true" />;
+              }
+
+              if (isAgreementHeading(trimmed)) {
+                return (
+                  <h5 key={`${index}-${trimmed.slice(0, 12)}`} id={anchorId} className={`mt-7 first:mt-0 border-b border-border pb-2 text-sm font-bold uppercase tracking-wide text-foreground ${anchorClass}`}>
+                    {trimmed}
+                  </h5>
+                );
+              }
+
+              if (trimmed.startsWith("-")) {
+                return (
+                  <div key={`${index}-${trimmed.slice(0, 12)}`} id={anchorId} className={`flex gap-3 pl-4 ${anchorClass}`}>
+                    <span className="text-primary" aria-hidden="true">•</span>
+                    <span>{trimmed.slice(1).trim()}</span>
+                  </div>
+                );
+              }
+
+              return (
+                <p key={`${index}-${trimmed.slice(0, 12)}`} id={anchorId} className={`mb-3 last:mb-0 ${anchorClass}`}>
+                  {trimmed}
+                </p>
+              );
+            })}
+          </div>
           
-          {contract.fileUrl && (
+          {contract.fileType === "pdf" && contract.fileUrl && (
             <div className="flex flex-col items-center justify-center border-t pt-4">
               <a 
                 href={contract.fileUrl} 
@@ -242,22 +379,50 @@ export function ContractRequirement({
             </div>
           </div>
           
-          <div className="space-y-2">
-            <Label htmlFor="signature">Signature</Label>
-            <div className="border rounded-md overflow-hidden bg-background">
-              <SignatureCanvas 
-                onSignatureChange={setSignaturePad}
-                height={150}
-              />
+          <div className="space-y-3">
+            <Label>Signature</Label>
+            <div className="inline-flex rounded-md border bg-background p-1">
+              <Button type="button" size="sm" variant={signatureMode === "draw" ? "default" : "ghost"} onClick={() => setSignatureMode("draw")}>
+                <PenLine className="mr-2 h-4 w-4" />
+                Draw
+              </Button>
+              <Button type="button" size="sm" variant={signatureMode === "type" ? "default" : "ghost"} onClick={() => setSignatureMode("type")}>
+                <FileText className="mr-2 h-4 w-4" />
+                Type
+              </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Draw your signature above. Click or tap inside the box and drag to sign.
-            </p>
+
+            {signatureMode === "draw" ? (
+              <>
+                <div className="border rounded-md overflow-hidden bg-background">
+                  <SignatureCanvas
+                    onSignatureChange={setSignaturePad}
+                    height={150}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">Draw your signature above, or switch to Type to enter it with your keyboard.</p>
+              </>
+            ) : (
+              <>
+                <Input
+                  aria-label="Typed electronic signature"
+                  placeholder="Type your full name"
+                  value={typedSignature}
+                  onChange={(event) => setTypedSignature(event.target.value)}
+                  className="text-2xl italic"
+                  style={{ fontFamily: '"Segoe Script", "Brush Script MT", cursive' }}
+                />
+                <div className="min-h-16 rounded-md border bg-background px-4 py-3 text-3xl italic" style={{ fontFamily: '"Segoe Script", "Brush Script MT", cursive' }}>
+                  {typedSignature.trim() || "Your typed signature will appear here"}
+                </div>
+                <p className="text-xs text-muted-foreground">Typing your name is your electronic signature for this agreement.</p>
+              </>
+            )}
           </div>
           
           <Button 
             onClick={handleSignContract} 
-            disabled={!agreedToTerms || !signaturePad || isSubmitting}
+            disabled={!agreedToTerms || !effectiveSignature || isSubmitting}
             className="w-full"
           >
             {isSubmitting ? (

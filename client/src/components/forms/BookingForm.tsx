@@ -48,7 +48,7 @@ import {
 } from "lucide-react";
 
 import { ContractRequirement } from "../contracts/ContractRequirement";
-import { BraintreePaymentForm } from "@/components/forms/BraintreePaymentForm";
+import { StripePaymentForm } from "@/components/forms/StripePaymentForm";
 
 // Form schema
 const formSchema = z.object({
@@ -56,7 +56,7 @@ const formSchema = z.object({
     required_error: "Please select a service",
   }),
   name: z.string().min(2, {
-    message: "Name must be at least 2 characters",
+    message: "Artist or stage name must be at least 2 characters",
   }),
   email: z.string().email({
     message: "Please enter a valid email address",
@@ -76,6 +76,22 @@ const formSchema = z.object({
 });
 
 type FormData = z.infer<typeof formSchema>;
+type BookingDraft = FormData & { id?: number; contractId?: number; paymentStatus?: string; status?: string };
+
+function getLocalDateKey(value: Date | string) {
+  const date = value instanceof Date ? value : new Date(value);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function formatPhoneNumber(value: string) {
+  let digits = value.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+  digits = digits.slice(0, 10);
+
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
 
 interface BookingFormProps {
   services: Service[];
@@ -97,19 +113,17 @@ export default function BookingForm({
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<TimeSlot | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<number | null>(preselectedServiceId);
-  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
+  const [selectedDuration, setSelectedDuration] = useState<number | null>(120);
   const [availableTimes, setAvailableTimes] = useState<TimeSlot[]>([]);
-  const [bookingData, setBookingData] = useState<FormData | null>(null);
+  const [bookingData, setBookingData] = useState<BookingDraft | null>(null);
   const shouldShowServiceSelect = !selectedServiceId;
   const [recordingOption, setRecordingOption] = useState("hourly");
   const [mixOption, setMixOption] = useState("quick-finish");
   const [productionOption, setProductionOption] = useState("custom-beat");
   const [intakeDetails, setIntakeDetails] = useState({
-    artistName: "",
     songTitle: "",
     numberOfArtists: "",
-    estimatedSongs: "",
-    genre: "",
+    sessionFocus: "",
     recordingType: "",
     performanceType: "",
     vocalists: "",
@@ -122,10 +136,12 @@ export default function BookingForm({
     creativeEffects: "",
     soundDescription: "",
     referenceLink: "",
+    referenceAudioName: "",
+    beatOrTracksFileName: "",
+    beatOrTracksLink: "",
     referenceNotes: "",
     deliveryOptions: "",
     projectName: "",
-    projectType: "",
     projectDescription: "",
     intendedUse: "",
     desiredStyle: "",
@@ -134,6 +150,8 @@ export default function BookingForm({
     desiredDeadline: "",
     estimatedBudget: "",
     rightsNeeds: "",
+    beatLicenseProduct: "",
+    portfolioRelease: "",
     preferredContact: "",
   });
   
@@ -201,6 +219,44 @@ export default function BookingForm({
     return "General booking";
   };
 
+  const getBookingServicePath = () => {
+    if (isRecordingService) return recordingOption;
+    if (isMixingService) return mixOption;
+    if (isProductionService) return productionOption;
+    return "hourly";
+  };
+
+  const getCheckoutSummary = () => {
+    const orderContext = `Your order is ${getBookingPathLabel()}${selectedDate ? ` on ${formatDate(selectedDate)}` : ""}${calculateAmountCents() > 0 ? ` for ${formatPrice(calculateAmountCents())}` : ""}.`;
+
+    switch (getBookingServicePath()) {
+      case "hourly":
+        return `${orderContext} The price covers the reserved session and the recording items listed below; it does not promise a finished song count or final mix unless selected. Payment, balance, cancellation, file, and signature terms are shown in the agreement.`;
+      case "release-ready":
+        return `${orderContext} This covers the included recording time, mix/master, WAV and MP3 delivery, and one revision. Extra work is approved before it is added.`;
+      case "quick-finish":
+        return `${orderContext} This covers light finishing, final mix/master, WAV and MP3 delivery, and one minor revision per song.`;
+      case "standard":
+        return `${orderContext} This covers detailed cleanup, mix/master, WAV and MP3 delivery, and two revisions.`;
+      case "advanced":
+        return `${orderContext} The final scope and price are confirmed after file review before extra work begins.`;
+      case "master-only":
+        return `${orderContext} This covers mastering and delivery formats for a supplied stereo mix; multitrack mixing and major fixes are separate.`;
+      case "custom-beat":
+        return `${orderContext} The service covers the production items listed below; beat rights, ownership, and publishing are separate and must be shown in the agreement.`;
+      case "build-song":
+        return `${orderContext} This covers the selected creative time and a reference mix; final mixing, mastering, and beat rights are separate unless shown below.`;
+      case "complete-single":
+        return `${orderContext} This covers the listed production, recording, Quick Finish, and master deliverables; beat rights and ownership are separate.`;
+      case "signature-single":
+        return `${orderContext} This covers the listed production, recording, vocal, mix/master, and stem deliverables; rights and splits are shown separately.`;
+      case "media-quote":
+        return "This is a custom media project request. Scope, price, rights, delivery, and timing must be confirmed before the project can be finalized.";
+      default:
+        return "You are agreeing to the selected service, price, delivery, payment, and cancellation terms shown below.";
+    }
+  };
+
   const getQuantityLabel = () => {
     if (!selectedDuration) return "";
     if (isMixingService || recordingOption === "release-ready") {
@@ -244,11 +300,9 @@ export default function BookingForm({
   const buildStructuredDetails = (notes?: string) => {
     const lines = [
       `Service path: ${isRecordingService ? recordingOption : isMixingService ? mixOption : isProductionService ? productionOption : "general"}`,
-      intakeDetails.artistName && `Artist name: ${intakeDetails.artistName}`,
       intakeDetails.songTitle && `Song title: ${intakeDetails.songTitle}`,
-      intakeDetails.genre && `Genre: ${intakeDetails.genre}`,
       intakeDetails.numberOfArtists && `Number of artists attending: ${intakeDetails.numberOfArtists}`,
-      intakeDetails.estimatedSongs && `Estimated songs: ${intakeDetails.estimatedSongs}`,
+      intakeDetails.sessionFocus && `Session focus: ${intakeDetails.sessionFocus}`,
       intakeDetails.recordingType && `Recording type: ${intakeDetails.recordingType}`,
       intakeDetails.performanceType && `Performance type: ${intakeDetails.performanceType}`,
       intakeDetails.vocalists && `Number of vocalists: ${intakeDetails.vocalists}`,
@@ -261,10 +315,12 @@ export default function BookingForm({
       intakeDetails.creativeEffects && `Creative effects: ${intakeDetails.creativeEffects}`,
       intakeDetails.soundDescription && `Sound description: ${intakeDetails.soundDescription}`,
       intakeDetails.referenceLink && `Reference link: ${intakeDetails.referenceLink}`,
+      intakeDetails.referenceAudioName && `Reference audio file: ${intakeDetails.referenceAudioName}`,
+      intakeDetails.beatOrTracksFileName && `Beat or tracks file: ${intakeDetails.beatOrTracksFileName}`,
+      intakeDetails.beatOrTracksLink && `Beat or tracks link: ${intakeDetails.beatOrTracksLink}`,
       intakeDetails.referenceNotes && `Reference notes: ${intakeDetails.referenceNotes}`,
       intakeDetails.deliveryOptions && `Delivery options: ${intakeDetails.deliveryOptions}`,
       intakeDetails.projectName && `Project/company name: ${intakeDetails.projectName}`,
-      intakeDetails.projectType && `Project type: ${intakeDetails.projectType}`,
       intakeDetails.projectDescription && `Project description: ${intakeDetails.projectDescription}`,
       intakeDetails.intendedUse && `Intended use: ${intakeDetails.intendedUse}`,
       intakeDetails.desiredStyle && `Desired style: ${intakeDetails.desiredStyle}`,
@@ -273,9 +329,10 @@ export default function BookingForm({
       intakeDetails.desiredDeadline && `Desired deadline: ${intakeDetails.desiredDeadline}`,
       intakeDetails.estimatedBudget && `Estimated budget: ${intakeDetails.estimatedBudget}`,
       intakeDetails.rightsNeeds && `Rights/stems/ownership needs: ${intakeDetails.rightsNeeds}`,
+      intakeDetails.beatLicenseProduct && `Beat rights requested: ${intakeDetails.beatLicenseProduct}`,
+      intakeDetails.portfolioRelease && `Portfolio use request: ${intakeDetails.portfolioRelease}`,
       intakeDetails.preferredContact && `Preferred contact method: ${intakeDetails.preferredContact}`,
       notes && `Additional notes: ${notes}`,
-      "File uploads: to be collected manually until upload storage is connected.",
     ].filter(Boolean);
 
     return lines.join("\n");
@@ -284,21 +341,10 @@ export default function BookingForm({
   // Update available times when date changes
   useEffect(() => {
     if (selectedDate) {
-      const startOfDay = new Date(selectedDate);
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const endOfDay = new Date(selectedDate);
-      endOfDay.setHours(23, 59, 59, 999);
-      
       const timesForDay = timeSlots.filter(slot => {
-        const slotDate = new Date(slot.date);
-        return (
-          slot.available && 
-          slotDate >= startOfDay && 
-          slotDate <= endOfDay
-        );
-      });
-      
+        return slot.available && getLocalDateKey(slot.date) === getLocalDateKey(selectedDate);
+      }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
       setAvailableTimes(timesForDay);
     } else {
       setAvailableTimes([]);
@@ -317,6 +363,19 @@ export default function BookingForm({
       }
     }
   }, [selectedServiceId, selectedDuration, services, form, recordingOption, mixOption, productionOption]);
+
+  useEffect(() => {
+    if (!isRecordingService) return;
+
+    const validDurations = recordingOption === "release-ready"
+      ? [60, 120, 180, 240, 300]
+      : [120, 180, 240, 300, 360, 420, 480];
+    if (!selectedDuration || !validDurations.includes(selectedDuration)) {
+      const nextDuration = recordingOption === "release-ready" ? 60 : 120;
+      setSelectedDuration(nextDuration);
+      form.setValue("duration", nextDuration);
+    }
+  }, [form, isRecordingService, recordingOption, selectedDuration]);
 
   const selectedServiceName = selectedService ? selectedService.name : null;
   
@@ -337,8 +396,6 @@ export default function BookingForm({
     console.log(`Service changed to: ${service?.name} (ID: ${serviceId})`);
     console.log(`Recording service? ${service?.name.toLowerCase().includes('recording') || service?.name.toLowerCase().includes('session')}`);
     
-    // Scroll to top
-    scrollToTop();
   };
   
   // Handle duration selection
@@ -347,34 +404,28 @@ export default function BookingForm({
     setSelectedDuration(duration);
     form.setValue("duration", duration);
     
-    // Scroll to top
-    scrollToTop();
   };
   
   // Handle date selection
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
     setSelectedTime(null);
-    
-    // Scroll to top
-    scrollToTop();
+    if (isRecordingService) {
+      form.setValue("date", "", { shouldValidate: true });
+      form.setValue("timeSlotId", undefined as unknown as number, { shouldValidate: true });
+    }
   };
   
   // Handle time slot selection
   const handleTimeSelect = (timeSlot: TimeSlot) => {
     setSelectedTime(timeSlot);
-    form.setValue("timeSlotId", timeSlot.id);
-    
-    // Scroll to top
-    scrollToTop();
+    form.setValue("timeSlotId", timeSlot.id, { shouldValidate: true });
+    form.setValue("date", new Date(timeSlot.date).toISOString(), { shouldValidate: true });
   };
   
   // Handle date selection for services that use a project date instead of a fixed studio time slot.
   useEffect(() => {
     if (selectedDate && (isMixingService || isProductionService)) {
-      // Scroll to top
-      scrollToTop();
-      
       // Use a placeholder time slot ID that will be handled differently on the server
       form.setValue("timeSlotId", -1);
       
@@ -412,21 +463,39 @@ export default function BookingForm({
   };
   
   // Contract signing handler
-  const handleContractSigned = () => {
-    setContractSigned(true);
-    setCurrentStep('payment');
-    
-    // Scroll to top
-    scrollToTop();
+  const handleContractSigned = async () => {
+    if (!bookingData) return;
+    try {
+      let paymentBooking = bookingData;
+      if (!bookingData.id) {
+        const response = await apiRequest("POST", "/api/bookings", {
+          ...bookingData,
+          status: "pending",
+          paymentStatus: "unpaid",
+        });
+        const createdBooking = await response.json();
+        paymentBooking = { ...bookingData, id: createdBooking.id, amount: createdBooking.amount, paymentStatus: createdBooking.paymentStatus };
+        setBookingData(paymentBooking);
+      }
+      setContractSigned(true);
+      setCurrentStep('payment');
+      scrollToTop();
+    } catch (error) {
+      console.error("Error creating booking hold:", error);
+      const description = error instanceof Error && error.message
+        ? error.message
+        : "Your booking could not be initialized. Please try again.";
+      toast({ title: "Unable to start checkout", description, variant: "destructive" });
+    }
   };
   
   // Form submission
-  const onSubmit = (data: FormData) => {
+  const onSubmit = async (data: FormData) => {
     console.log("Form submitted with data:", data);
     const structuredData = {
       ...data,
       amount: calculateAmountCents(),
-      details: buildStructuredDetails(data.details),
+      details: buildStructuredDetails(),
     };
     const pricing = getPricingResult();
 
@@ -451,38 +520,45 @@ export default function BookingForm({
       return;
     }
 
-    setBookingData(structuredData);
-    setCurrentStep('contract');
-    // Scroll to top
-    scrollToTop();
+    try {
+      const response = await apiRequest("POST", "/api/contracts/preview", {
+        serviceId: data.serviceId,
+        servicePath: getBookingServicePath(),
+        durationMinutes: data.duration,
+        date: data.date,
+        customerName: data.name,
+        customerEmail: data.email,
+        beatLicenseProduct: intakeDetails.beatLicenseProduct || undefined,
+        requestedAddOns: intakeDetails.deliveryOptions || undefined,
+        portfolioReleaseRequested: intakeDetails.portfolioRelease === "discuss",
+      });
+      const preview = await response.json();
+      if (!response.ok) throw new Error(preview.error || "Unable to prepare the agreement");
+
+      setBookingData({
+        ...structuredData,
+        amount: preview.pricing.finalTotal,
+        contractId: preview.contract.id,
+      });
+      setCurrentStep("contract");
+      scrollToTop();
+    } catch (error) {
+      console.error("Error generating booking agreement:", error);
+      toast({
+        title: "Unable to prepare agreement",
+        description: error instanceof Error ? error.message : "Please review your booking details and try again.",
+        variant: "destructive",
+      });
+    }
   };
   
   // Payment completion handler
   const handlePaymentComplete = (transactionId: string) => {
-    // Process the booking with payment information
-    apiRequest("POST", "/api/bookings", {
-      ...bookingData,
-      transactionId,
-      paymentStatus: paymentOption === 'deposit' ? 'deposit_paid' : 'paid',
-      status: 'confirmed',
-    }).then(() => {
-      // Scroll to top
-      scrollToTop();
-      
-      // Reset tip amount if needed
-      if (tipAmount > 0) {
-        setTipAmount(0);
-      }
-      
-      setCurrentStep('confirmation');
-    }).catch(error => {
-      console.error("Error finalizing booking:", error);
-      toast({
-        title: "Error",
-        description: "There was an error finalizing your booking. Please contact support.",
-        variant: "destructive"
-      });
-    });
+    // Stripe has already verified and recorded the payment server-side.
+    setBookingData((current) => current ? { ...current, paymentStatus: paymentOption === 'deposit' ? 'deposit_paid' : 'paid', status: 'confirmed' } : current);
+    if (tipAmount > 0) setTipAmount(0);
+    scrollToTop();
+    setCurrentStep('confirmation');
   };
   
   console.log("Current step:", currentStep);
@@ -508,16 +584,16 @@ export default function BookingForm({
   
   if (currentStep === 'contract' && bookingData) {
     // Determine which contract to show based on the service type
-    let contractId = 1; // Default Studio Rules Contract ID
-    let contractTitle = "Studio Rules & Agreement";
+    let contractId = bookingData.contractId ?? 1;
+    let contractTitle = bookingData.contractId ? "Transaction Agreement" : "Studio Rules & Agreement";
     
     // If service is mixing/mastering, use different contract
-    if (isMixingService) {
+    if (!bookingData.contractId && isMixingService) {
       contractId = 2; // Use mixing/mastering contract
       contractTitle = "Mixing & Mastering Agreement";
     } 
     // For recording sessions, make sure we use the studio rules contract
-    else if (isRecordingService) {
+    else if (!bookingData.contractId && isRecordingService) {
       contractId = 1; // Studio Rules Contract ID
       contractTitle = "Studio Rules & Agreement";
     }
@@ -573,6 +649,7 @@ export default function BookingForm({
             entityId={undefined} // Will be set after booking is created
             email={bookingData?.email || ""}
             name={bookingData?.name || ""}
+            plainLanguageSummary={getCheckoutSummary()}
             onContractSigned={handleContractSigned}
             onCheckExistingSignature={false}
           />
@@ -633,7 +710,7 @@ export default function BookingForm({
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="deposit" className="flex gap-2 items-center">
                 <Clock className="h-4 w-4" />
-                Pay Deposit (25%)
+                Pay Deposit (50%)
               </TabsTrigger>
               <TabsTrigger value="full" className="flex gap-2 items-center">
                 <DollarSign className="h-4 w-4" />
@@ -643,11 +720,11 @@ export default function BookingForm({
             
             <TabsContent value="deposit">
               <p className="text-sm text-muted-foreground mb-4">
-                Pay 25% now to secure your booking. The remaining balance will be due at the session.
+                Pay 50% now to secure your booking. The remaining balance will be due at the session.
               </p>
               <div className="font-medium flex justify-between">
                 <span>Deposit Due Now:</span>
-                <span>{formatPrice((bookingData?.amount || 0) * 0.25)}</span>
+                <span>{formatPrice(Math.round((bookingData?.amount || 0) * 0.5))}</span>
               </div>
             </TabsContent>
             
@@ -666,7 +743,6 @@ export default function BookingForm({
                     size="sm" 
                     onClick={() => {
                       setTipAmount(0);
-                      scrollToTop();
                     }}
                     className="text-xs py-1 h-auto"
                   >
@@ -677,7 +753,6 @@ export default function BookingForm({
                     size="sm" 
                     onClick={() => {
                       setTipAmount(Math.round((bookingData?.amount || 0) * 0.10));
-                      scrollToTop();
                     }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
@@ -689,7 +764,6 @@ export default function BookingForm({
                     size="sm" 
                     onClick={() => {
                       setTipAmount(Math.round((bookingData?.amount || 0) * 0.15));
-                      scrollToTop();
                     }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
@@ -701,7 +775,6 @@ export default function BookingForm({
                     size="sm" 
                     onClick={() => {
                       setTipAmount(Math.round((bookingData?.amount || 0) * 0.20));
-                      scrollToTop();
                     }}
                     className="text-xs py-1 h-auto flex flex-col items-center justify-center"
                   >
@@ -745,8 +818,8 @@ export default function BookingForm({
           </Tabs>
         </div>
         
-        {/* Braintree Payment Form */}
-        <BraintreePaymentForm
+        {/* Stripe Payment Form */}
+        <StripePaymentForm
           bookingData={bookingData!}
           onComplete={handlePaymentComplete}
           isDeposit={paymentOption === 'deposit'}
@@ -766,7 +839,21 @@ export default function BookingForm({
   // Default: Initial booking form
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={form.handleSubmit(onSubmit, () => {
+          const missing = !selectedDate
+            ? "Select a date."
+            : isRecordingService && !selectedTime
+              ? "Select an available start time for your session."
+              : "Enter your artist name and email before continuing.";
+          toast({
+            title: "Complete the booking details",
+            description: missing,
+            variant: "destructive",
+          });
+        })}
+        className="space-y-6"
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {shouldShowServiceSelect ? (
             <FormField
@@ -1046,8 +1133,8 @@ export default function BookingForm({
                     <span>{formatPrice(calculateAmountCents())}</span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>25% Deposit Required</span>
-                    <span>{formatPrice(calculateAmountCents() * 0.25)}</span>
+                    <span>50% Deposit Required</span>
+                    <span>{formatPrice(Math.round(calculateAmountCents() * 0.5))}</span>
                   </div>
                 </div>
               </div>
@@ -1085,9 +1172,9 @@ export default function BookingForm({
             name="name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Full Name</FormLabel>
+                <FormLabel>Artist / Stage Name</FormLabel>
                 <FormControl>
-                  <Input placeholder="Your name" {...field} />
+                  <Input placeholder="Artist or stage name" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -1101,7 +1188,12 @@ export default function BookingForm({
               <FormItem>
                 <FormLabel>Phone Number <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
                 <FormControl>
-                  <Input placeholder="Your phone number" {...field} />
+                  <Input
+                    placeholder="555-123-4567"
+                    inputMode="tel"
+                    {...field}
+                    onChange={(event) => field.onChange(formatPhoneNumber(event.target.value))}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -1122,23 +1214,6 @@ export default function BookingForm({
             )}
           />
           
-          <FormField
-            control={form.control}
-            name="details"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Additional Details <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
-                <FormControl>
-                  <Textarea 
-                    placeholder="Please provide any additional details about your booking needs" 
-                    className="min-h-[80px]" 
-                    {...field} 
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
         </div>
 
         {selectedService && (
@@ -1152,16 +1227,14 @@ export default function BookingForm({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input placeholder="Artist name" value={intakeDetails.artistName} onChange={(event) => updateIntake("artistName", event.target.value)} />
+              <div className={`grid grid-cols-1 gap-4 ${isRecordingService && recordingOption === "hourly" ? "md:grid-cols-1" : "md:grid-cols-2"}`}>
                 {isProductionService ? (
                   <Input placeholder="Artist, company, or project name" value={intakeDetails.projectName} onChange={(event) => updateIntake("projectName", event.target.value)} />
                 ) : recordingOption === "release-ready" ? (
                   <Input placeholder="Song title" value={intakeDetails.songTitle} onChange={(event) => updateIntake("songTitle", event.target.value)} />
                 ) : (
-                  <Input placeholder="Session focus or reference" value={intakeDetails.recordingType} onChange={(event) => updateIntake("recordingType", event.target.value)} />
+                  <Input placeholder="What are you working on? (optional)" value={intakeDetails.sessionFocus} onChange={(event) => updateIntake("sessionFocus", event.target.value)} />
                 )}
-                <Input placeholder="Genre or style" value={intakeDetails.genre} onChange={(event) => updateIntake("genre", event.target.value)} />
                 {(isProductionService || recordingOption === "release-ready") && (
                   <Input placeholder={isProductionService ? "Desired completion date" : "Desired release date"} value={intakeDetails.desiredDeadline} onChange={(event) => updateIntake("desiredDeadline", event.target.value)} />
                 )}
@@ -1169,10 +1242,17 @@ export default function BookingForm({
 
               {isRecordingService && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input placeholder="Number of artists attending" value={intakeDetails.numberOfArtists} onChange={(event) => updateIntake("numberOfArtists", event.target.value)} />
-                  {recordingOption === "release-ready" && (
-                    <Input placeholder="Estimated number of songs" value={intakeDetails.estimatedSongs} onChange={(event) => updateIntake("estimatedSongs", event.target.value)} />
-                  )}
+                  <Select value={intakeDetails.numberOfArtists} onValueChange={(value) => updateIntake("numberOfArtists", value)}>
+                    <SelectTrigger><SelectValue placeholder="How many people are attending?" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 person</SelectItem>
+                      <SelectItem value="2">2 people</SelectItem>
+                      <SelectItem value="3">3 people</SelectItem>
+                      <SelectItem value="4">4 people</SelectItem>
+                      <SelectItem value="5">5 people</SelectItem>
+                      <SelectItem value="6-plus">6 or more people</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Select value={intakeDetails.recordingType} onValueChange={(value) => updateIntake("recordingType", value)}>
                     <SelectTrigger><SelectValue placeholder="Recording type" /></SelectTrigger>
                     <SelectContent>
@@ -1184,7 +1264,6 @@ export default function BookingForm({
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input placeholder="Beat or reference link" value={intakeDetails.referenceLink} onChange={(event) => updateIntake("referenceLink", event.target.value)} />
                 </div>
               )}
 
@@ -1281,21 +1360,6 @@ export default function BookingForm({
 
               {isProductionService && (
                 <div className="space-y-4">
-                  <Select value={intakeDetails.projectType} onValueChange={(value) => updateIntake("projectType", value)}>
-                    <SelectTrigger><SelectValue placeholder="Project type" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="custom-artist-beat">Custom artist beat</SelectItem>
-                      <SelectItem value="build-a-song">Build-a-Song session</SelectItem>
-                      <SelectItem value="complete-custom-single">Complete custom single</SelectItem>
-                      <SelectItem value="film-score">Film score</SelectItem>
-                      <SelectItem value="youtube-music">YouTube music</SelectItem>
-                      <SelectItem value="podcast-theme">Podcast intro or theme</SelectItem>
-                      <SelectItem value="game-music">Game music</SelectItem>
-                      <SelectItem value="commercial">Commercial or advertisement</SelectItem>
-                      <SelectItem value="background-music">Background music</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <Textarea placeholder="Project description" value={intakeDetails.projectDescription} onChange={(event) => updateIntake("projectDescription", event.target.value)} />
                   <Textarea placeholder="Intended use and desired style" value={`${intakeDetails.intendedUse}${intakeDetails.intendedUse && intakeDetails.desiredStyle ? "\n" : ""}${intakeDetails.desiredStyle}`} onChange={(event) => {
                     updateIntake("intendedUse", event.target.value);
@@ -1307,14 +1371,86 @@ export default function BookingForm({
                     <Input placeholder="Estimated budget" value={intakeDetails.estimatedBudget} onChange={(event) => updateIntake("estimatedBudget", event.target.value)} />
                     <Input placeholder="Preferred contact method" value={intakeDetails.preferredContact} onChange={(event) => updateIntake("preferredContact", event.target.value)} />
                   </div>
-                  <Textarea placeholder="Do you need exclusivity, full ownership, stems, alternate versions, or rush delivery?" value={intakeDetails.rightsNeeds} onChange={(event) => updateIntake("rightsNeeds", event.target.value)} />
-                  <Input placeholder="Reference songs or sound examples" value={intakeDetails.referenceLink} onChange={(event) => updateIntake("referenceLink", event.target.value)} />
+                  {productionOption !== "media-quote" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Select value={intakeDetails.beatLicenseProduct} onValueChange={(value) => updateIntake("beatLicenseProduct", value)}>
+                        <SelectTrigger><SelectValue placeholder="Select beat rights" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="commercial_lease">Commercial Beat Lease</SelectItem>
+                          <SelectItem value="paid_nonexclusive">Paid Nonexclusive License</SelectItem>
+                          <SelectItem value="exclusive">Exclusive Rights (manual review)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={intakeDetails.portfolioRelease} onValueChange={(value) => updateIntake("portfolioRelease", value)}>
+                        <SelectTrigger><SelectValue placeholder="Portfolio use" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="no">No portfolio request</SelectItem>
+                          <SelectItem value="discuss">Discuss portfolio use separately</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <Textarea placeholder="Other rights, stems, alternate versions, or rush needs?" value={intakeDetails.rightsNeeds} onChange={(event) => updateIntake("rightsNeeds", event.target.value)} />
                 </div>
               )}
 
-              <p className="text-sm text-muted-foreground">
-                File uploads are noted for the request, but real upload storage still needs to be connected before launch.
-              </p>
+              {isMixingService && (
+                <div className="space-y-2 rounded-md border border-dashed p-4">
+                  <label htmlFor="reference-audio" className="text-sm font-medium">Reference track <span className="text-muted-foreground font-normal">(optional)</span></label>
+                  <Input
+                    id="reference-audio"
+                    type="file"
+                    accept=".mp3,.wav,audio/mpeg,audio/wav"
+                    onChange={(event) => updateIntake("referenceAudioName", event.target.files?.[0]?.name || "")}
+                  />
+                  <p className="text-xs text-muted-foreground">MP3 or WAV. The filename will be attached to this request; upload storage will be connected next.</p>
+                </div>
+              )}
+
+              {(isRecordingService || isProductionService) && (
+                <div className="space-y-3 rounded-md border border-dashed p-4">
+                  <div>
+                    <label htmlFor="beat-or-tracks" className="text-sm font-medium">Beat, tracks, or source audio</label>
+                    <p className="text-xs text-muted-foreground mt-1">Upload what you are bringing, or paste a link so Wiz can review the source material.</p>
+                  </div>
+                  <Input
+                    id="beat-or-tracks"
+                    type="file"
+                    accept=".mp3,.wav,.aiff,.zip,audio/mpeg,audio/wav,audio/aiff,application/zip"
+                    onChange={(event) => updateIntake("beatOrTracksFileName", event.target.files?.[0]?.name || "")}
+                  />
+                  <Input
+                    type="url"
+                    placeholder="YouTube, SoundCloud, Google Drive, or other link"
+                    value={intakeDetails.beatOrTracksLink}
+                    onChange={(event) => updateIntake("beatOrTracksLink", event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">The file name and link will be attached to this request. Secure audio storage will be connected next.</p>
+                </div>
+              )}
+
+              {(isMixingService || isProductionService) && (
+                <FormField
+                  control={form.control}
+                  name="details"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Anything else Wiz should know? <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder={isMixingService
+                            ? "Share any important mix direction, problem areas, references, or revision notes."
+                            : "Share anything else about the project, scope, rights, or delivery needs."
+                          }
+                          className="min-h-[90px]"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </CardContent>
           </Card>
         )}
@@ -1353,27 +1489,19 @@ export default function BookingForm({
                 <div className="pt-4 border-t">
                   <h4 className="font-medium mb-2">Payment Summary</h4>
                   
-                  <div className="flex justify-between mb-2">
-                    <span>
-                      {selectedService.name} 
-                      {isMixingService 
-                        ? ` (${selectedDuration / 60} ${selectedDuration === 60 ? 'song' : 'songs'})` 
-                        : isProductionService
-                          ? ""
-                          : ` (${selectedDuration / 60} ${selectedDuration === 60 ? 'hour' : 'hours'})`
-                      }
-                    </span>
+                  <div className="flex justify-between mb-2 text-muted-foreground text-sm">
+                    <span>Total</span>
                     <span>{formatPrice(calculateAmountCents())}</span>
                   </div>
-                  
+
                   <div className="flex justify-between mb-2 text-muted-foreground text-sm">
-                    <span>Due Today (25% Deposit)</span>
-                    <span>{formatPrice(calculateAmountCents() * 0.25)}</span>
+                    <span>Due Today (50% Deposit)</span>
+                    <span>{formatPrice(Math.round(calculateAmountCents() * 0.5))}</span>
                   </div>
                   
                   <div className="flex justify-between text-sm">
                     <span>Remaining Balance</span>
-                    <span>{formatPrice(calculateAmountCents() * 0.75)}</span>
+                    <span>{formatPrice(calculateAmountCents() * 0.5)}</span>
                   </div>
                 </div>
               </div>
@@ -1385,7 +1513,6 @@ export default function BookingForm({
           <Button 
             type="submit" 
             size="lg"
-            disabled={Boolean(!selectedServiceId || !selectedDuration || (isRecordingService && !selectedTime && !selectedDate))}
           >
             Continue to Contract
           </Button>

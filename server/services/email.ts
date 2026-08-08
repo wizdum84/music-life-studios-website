@@ -27,7 +27,7 @@ export async function sendClientConfirmationEmail(booking: Booking, transactionI
     - Transaction ID: ${transactionId}
     
     Please arrive 15 minutes before your session start time. If you need to 
-    reschedule or cancel, please contact us at least 48 hours in advance.
+    reschedule or cancel, please contact us at least 24 hours in advance.
     
     We look forward to working with you!
     

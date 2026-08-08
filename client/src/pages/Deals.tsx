@@ -7,6 +7,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { MEMBERSHIP_PLAN_CATALOG, formatCents } from "@shared/membership";
 import { useAuth } from "@/hooks/use-auth";
 
+const passportLevels = [
+  ["Passport Starter", "3 paid months", "2 studio hours + 1 beat lease", "/assets/lifer-passport-starter.png", "Music Lifer Passport emblem"],
+  ["Passport Builder", "2 paid months", "3 studio hours + 1 beat lease + Quick Finish discount", "/assets/lifer-passport-builder.png", "Music Lifer Passport sound emblem"],
+  ["Passport Release", "2 paid months", "3 studio hours + 2 beat leases + larger service discount", "/assets/lifer-passport-release.png", "Music Lifer Passport release emblem"],
+];
+
+const passportFrameClasses = [
+  "border-[#8a5a1c] shadow-[8px_8px_0_#6d4918]",
+  "border-[#b06b18] shadow-[8px_8px_0_#b06b18]",
+  "border-[#ff8a00] shadow-[8px_8px_0_#ff8a00]",
+];
+
 const bundleGroups = [
   {
     title: "Recording Blocks",
@@ -110,7 +122,7 @@ export default function Deals() {
               <Button asChild size="lg" className="bg-[#FF8C00] hover:bg-[#FFA333] text-[#1A1A1A]">
                 <Link href={membershipHref}>Join a Membership</Link>
               </Button>
-              <Button asChild size="lg" variant="outline" className="bg-transparent border-white text-white hover:bg-white hover:text-primary">
+              <Button asChild size="lg" variant="outline" className="border-white bg-transparent text-white hover:bg-white hover:text-black">
                 <Link href="/booking">Book a Session</Link>
               </Button>
             </div>
@@ -118,26 +130,26 @@ export default function Deals() {
         </div>
       </section>
 
-      <section className="py-12 bg-white">
+      <section className="bg-[#141414] py-12 text-white">
         <div className="container mx-auto px-4 space-y-10">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
+            <Card className="rounded-none border-2 border-[#6d4918] bg-[#1d1d1d] text-white shadow-none">
               <CardHeader>
-                <Tag className="h-6 w-6 text-primary mb-2" />
+                <Tag className="mb-2 h-6 w-6 text-[#ff8a00]" />
                 <CardTitle>Bundle Savings</CardTitle>
                 <CardDescription>Buy more time, songs, or production work in one order and lower the effective rate.</CardDescription>
               </CardHeader>
             </Card>
-            <Card>
+            <Card className="rounded-none border-2 border-[#6d4918] bg-[#1d1d1d] text-white shadow-none">
               <CardHeader>
-                <Music className="h-6 w-6 text-primary mb-2" />
+                <Music className="mb-2 h-6 w-6 text-[#ff8a00]" />
                 <CardTitle>Monthly Memberships</CardTitle>
                 <CardDescription>Predictable studio access, finishing credits, member discounts, and priority booking.</CardDescription>
               </CardHeader>
             </Card>
-            <Card>
+            <Card className="rounded-none border-2 border-[#6d4918] bg-[#1d1d1d] text-white shadow-none">
               <CardHeader>
-                <Gift className="h-6 w-6 text-primary mb-2" />
+                <Gift className="mb-2 h-6 w-6 text-[#ff8a00]" />
                 <CardTitle>Loyalty Rewards</CardTitle>
                 <CardDescription>Keep coming back and earn rewards without a long-term commitment.</CardDescription>
               </CardHeader>
@@ -145,31 +157,41 @@ export default function Deals() {
           </div>
 
           <div>
-            <h2 className="text-3xl font-bold mb-4">Music Life Artist Memberships</h2>
+            <h2 className="mb-4 text-3xl font-black">Passport Program</h2>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {MEMBERSHIP_PLAN_CATALOG.map((plan) => (
-                <Card key={plan.tier}>
+              {MEMBERSHIP_PLAN_CATALOG.map((plan, index) => (
+                <Card key={plan.tier} className={`overflow-hidden rounded-none border-2 bg-[#1d1d1d] text-white shadow-none ${passportFrameClasses[index]}`}>
+                  <div className="relative h-44 overflow-hidden border-b-2 border-[#8a5a1c] bg-black">
+                    <img src={passportLevels[index][3]} alt={passportLevels[index][4]} className="h-full w-full object-cover brightness-[0.82] contrast-[1.15]" />
+                    <div className="absolute inset-0 bg-black/25" />
+                    <p className="absolute bottom-3 left-4 text-xs font-black uppercase tracking-[0.2em] text-[#ffb84d]">Passport {String(index + 1).padStart(2, "0")}</p>
+                  </div>
                   <CardHeader>
-                    <CardTitle>{plan.name}</CardTitle>
-                    <CardDescription>{plan.bestFor}</CardDescription>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff8a00]">{passportLevels[index][0]}</p>
+                    <CardTitle className="mt-2 text-2xl font-black">{plan.name}</CardTitle>
+                    <CardDescription className="text-white/65">{plan.bestFor}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
-                      <p className="text-3xl font-bold">{formatCents(plan.monthlyPriceCents)}</p>
-                      <p className="text-sm text-muted-foreground">per month</p>
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-3xl font-black">{formatCents(plan.monthlyPriceCents)}</p>
+                      <p className="text-sm text-white/55">per month</p>
+                      <p className="mt-1 text-sm text-white/55">
                         Optional prepaid: {formatCents(plan.prepaidThreeMonthPriceCents)} for 3 months
                       </p>
+                    </div>
+                    <div className="border-2 border-[#8a5a1c] bg-[#2a2115] p-4">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#ffb84d]">Reward after {passportLevels[index][1]}</p>
+                      <p className="mt-2 font-black leading-tight text-white">{passportLevels[index][2]}</p>
                     </div>
                     <ul className="space-y-2 text-sm">
                       {plan.benefits.slice(0, 7).map((benefit) => (
                         <li key={benefit} className="flex gap-2">
-                          <Check className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#ff8a00]" />
                           <span>{benefit}</span>
                         </li>
                       ))}
                     </ul>
-                    <Button asChild className="w-full">
+                    <Button asChild className="w-full bg-[#ff8a00] text-black hover:bg-[#ffac3d]">
                       <Link href={membershipHref}>Start Enrollment</Link>
                     </Button>
                   </CardContent>
@@ -182,10 +204,10 @@ export default function Deals() {
             <h2 className="text-3xl font-bold mb-4">Bundle Price Tables</h2>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               {bundleGroups.map((group) => (
-                <Card key={group.title}>
+                <Card key={group.title} className="rounded-none border-2 border-[#6d4918] bg-[#1d1d1d] text-white shadow-none">
                   <CardHeader>
                     <CardTitle>{group.title}</CardTitle>
-                    <CardDescription>{group.subtitle}</CardDescription>
+                    <CardDescription className="text-white/65">{group.subtitle}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <Table>
@@ -205,31 +227,31 @@ export default function Deals() {
                         ))}
                       </TableBody>
                     </Table>
-                    <p className="mt-4 text-sm text-muted-foreground">{group.note}</p>
+                    <p className="mt-4 text-sm text-white/55">{group.note}</p>
                   </CardContent>
                 </Card>
               ))}
             </div>
           </div>
 
-          <Card>
+          <Card className="rounded-none border-2 border-black bg-[#141414] text-white shadow-none">
             <CardHeader>
-              <Clock className="h-6 w-6 text-primary mb-2" />
-              <CardTitle>Loyalty Program</CardTitle>
-              <CardDescription>Reward consistency without forcing a commitment.</CardDescription>
+              <Clock className="mb-2 h-6 w-6 text-[#ff8a00]" />
+              <CardTitle className="text-white">Music Lifer Loyalty</CardTitle>
+              <CardDescription className="text-white/65">Reward consistency without forcing a membership commitment.</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="bg-muted/50 p-4">
-                <h3 className="font-semibold mb-2">Every 5 sessions</h3>
-                <p className="text-muted-foreground">The existing account loyalty program tracks completed paid sessions toward a free-session reward.</p>
+              <div className="bg-white/[0.06] p-4">
+                <h3 className="mb-2 font-semibold">Free Music Lifer</h3>
+                <p className="text-white/65">Five eligible completed sessions earn 2 studio hours plus 1 beat lease.</p>
               </div>
-              <div className="bg-muted/50 p-4">
-                <h3 className="font-semibold mb-2">Membership milestone</h3>
-                <p className="text-muted-foreground">Launch rule: three consecutive paid months earns one bonus recording hour.</p>
+              <div className="bg-white/[0.06] p-4">
+                <h3 className="mb-2 font-semibold">Passport stamps</h3>
+                <p className="text-white/65">Successful monthly payments earn stamps. Higher Passport tiers reach better rewards faster.</p>
               </div>
-              <div className="bg-muted/50 p-4">
-                <h3 className="font-semibold mb-2">No pressure</h3>
-                <p className="text-muted-foreground">Memberships are month-to-month and can be canceled before the next billing date.</p>
+              <div className="bg-white/[0.06] p-4">
+                <h3 className="mb-2 font-semibold">No pressure</h3>
+                <p className="text-white/65">Passport memberships are month-to-month and can be canceled before the next billing date.</p>
               </div>
             </CardContent>
           </Card>

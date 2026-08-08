@@ -21,6 +21,7 @@ import {
   MembershipRedemption, InsertMembershipRedemption,
   MembershipDiscount, InsertMembershipDiscount,
   MembershipEvent, InsertMembershipEvent,
+  MembershipPaymentAssociation, InsertMembershipPaymentAssociation,
   MembershipPause, InsertMembershipPause,
   MembershipLoyaltyMilestone, InsertMembershipLoyaltyMilestone,
   MembershipLoyaltyReward, InsertMembershipLoyaltyReward,
@@ -29,7 +30,7 @@ import {
   promotions, loyaltyRecords,
   membershipPlans, membershipPlanVersions, membershipSubscriptions,
   membershipBillingPeriods, membershipBenefitDefinitions, membershipBenefitLedger,
-  membershipRedemptions, membershipDiscounts, membershipEvents, membershipPauses,
+  membershipRedemptions, membershipDiscounts, membershipEvents, membershipPauses, membershipPaymentAssociations,
   membershipLoyaltyMilestones, membershipLoyaltyRewards
 } from "@shared/schema";
 import { db } from "./db";
@@ -46,6 +47,7 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getAdminUser(): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User | undefined>;
   updateUserLoginTime(id: number): Promise<User | undefined>;
@@ -96,12 +98,17 @@ export interface IStorage {
   createMembershipRedemption(redemption: InsertMembershipRedemption): Promise<MembershipRedemption>;
   getMembershipEvents(subscriptionId: number): Promise<MembershipEvent[]>;
   createMembershipEvent(event: InsertMembershipEvent): Promise<MembershipEvent>;
+  getMembershipPaymentAssociations(subscriptionId: number): Promise<MembershipPaymentAssociation[]>;
+  getMembershipPaymentAssociationByProviderId(paymentProviderId: string): Promise<MembershipPaymentAssociation | undefined>;
+  createMembershipPaymentAssociation(association: InsertMembershipPaymentAssociation): Promise<MembershipPaymentAssociation>;
   getMembershipPauses(subscriptionId: number): Promise<MembershipPause[]>;
   createMembershipPause(pause: InsertMembershipPause): Promise<MembershipPause>;
   getMembershipLoyaltyMilestones(planId: number): Promise<MembershipLoyaltyMilestone[]>;
   createMembershipLoyaltyMilestone(milestone: InsertMembershipLoyaltyMilestone): Promise<MembershipLoyaltyMilestone>;
   getMembershipLoyaltyRewards(subscriptionId: number): Promise<MembershipLoyaltyReward[]>;
   createMembershipLoyaltyReward(reward: InsertMembershipLoyaltyReward): Promise<MembershipLoyaltyReward>;
+  getMembershipLoyaltyReward(id: number): Promise<MembershipLoyaltyReward | undefined>;
+  updateMembershipLoyaltyReward(id: number, reward: Partial<InsertMembershipLoyaltyReward>): Promise<MembershipLoyaltyReward | undefined>;
   
   // Services
   getAllServices(): Promise<Service[]>;
@@ -172,7 +179,7 @@ export interface IStorage {
   getBeatPurchasesByEmail(email: string): Promise<BeatPurchase[]>;
   getBeatPurchase(id: number): Promise<BeatPurchase | undefined>;
   createBeatPurchase(purchase: InsertBeatPurchase): Promise<BeatPurchase>;
-  updateBeatPurchaseContract(id: number, contractSigned: boolean): Promise<BeatPurchase | undefined>;
+  updateBeatPurchaseContract(id: number, contractSigned: boolean, patch?: Partial<InsertBeatPurchase>): Promise<BeatPurchase | undefined>;
   incrementBeatPurchaseDownloadCount(id: number): Promise<BeatPurchase | undefined>;
   
   // Contracts
@@ -237,6 +244,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    return result[0];
+  }
+
+  async getAdminUser(): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.role, "admin")).limit(1);
     return result[0];
   }
 
@@ -607,9 +619,9 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async updateBeatPurchaseContract(id: number, contractSigned: boolean): Promise<BeatPurchase | undefined> {
+  async updateBeatPurchaseContract(id: number, contractSigned: boolean, patch: Partial<InsertBeatPurchase> = {}): Promise<BeatPurchase | undefined> {
     const result = await db.update(beatPurchases)
-      .set({ contractSigned })
+      .set({ contractSigned, contractSignedAt: contractSigned ? new Date() : null, ...patch })
       .where(eq(beatPurchases.id, id))
       .returning();
     return result[0];
@@ -1067,6 +1079,24 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getMembershipPaymentAssociations(subscriptionId: number): Promise<MembershipPaymentAssociation[]> {
+    return db.select().from(membershipPaymentAssociations)
+      .where(eq(membershipPaymentAssociations.subscriptionId, subscriptionId))
+      .orderBy(desc(membershipPaymentAssociations.createdAt));
+  }
+
+  async getMembershipPaymentAssociationByProviderId(paymentProviderId: string): Promise<MembershipPaymentAssociation | undefined> {
+    const result = await db.select().from(membershipPaymentAssociations)
+      .where(eq(membershipPaymentAssociations.paymentProviderId, paymentProviderId))
+      .limit(1);
+    return result[0];
+  }
+
+  async createMembershipPaymentAssociation(association: InsertMembershipPaymentAssociation): Promise<MembershipPaymentAssociation> {
+    const result = await db.insert(membershipPaymentAssociations).values(association).returning();
+    return result[0];
+  }
+
   async getMembershipPauses(subscriptionId: number): Promise<MembershipPause[]> {
     return db.select().from(membershipPauses).where(eq(membershipPauses.subscriptionId, subscriptionId)).orderBy(desc(membershipPauses.createdAt));
   }
@@ -1091,6 +1121,16 @@ export class DatabaseStorage implements IStorage {
 
   async createMembershipLoyaltyReward(reward: InsertMembershipLoyaltyReward): Promise<MembershipLoyaltyReward> {
     const result = await db.insert(membershipLoyaltyRewards).values(reward).returning();
+    return result[0];
+  }
+
+  async getMembershipLoyaltyReward(id: number): Promise<MembershipLoyaltyReward | undefined> {
+    const result = await db.select().from(membershipLoyaltyRewards).where(eq(membershipLoyaltyRewards.id, id)).limit(1);
+    return result[0];
+  }
+
+  async updateMembershipLoyaltyReward(id: number, reward: Partial<InsertMembershipLoyaltyReward>): Promise<MembershipLoyaltyReward | undefined> {
+    const result = await db.update(membershipLoyaltyRewards).set(reward).where(eq(membershipLoyaltyRewards.id, id)).returning();
     return result[0];
   }
 }
@@ -1119,6 +1159,7 @@ class MemoryStorage implements IStorage {
   private membershipRedemptionsData: MembershipRedemption[] = [];
   private membershipDiscountsData: MembershipDiscount[] = [];
   private membershipEventsData: MembershipEvent[] = [];
+  private membershipPaymentAssociationsData: MembershipPaymentAssociation[] = [];
   private membershipPausesData: MembershipPause[] = [];
   private membershipLoyaltyMilestonesData: MembershipLoyaltyMilestone[] = [];
   private membershipLoyaltyRewardsData: MembershipLoyaltyReward[] = [];
@@ -1156,6 +1197,12 @@ class MemoryStorage implements IStorage {
         contractUrl: null,
         tags: ["smooth", "release-ready", "hip-hop"],
         featured: true,
+        availabilityStatus: "available_nonexclusive",
+        availabilityUpdatedAt: null,
+        starterRewardEligible: true,
+        commercialLeaseEligible: true,
+        contentIdRestricted: true,
+        licenseVersion: 1,
         createdAt: new Date(),
       },
       {
@@ -1172,6 +1219,12 @@ class MemoryStorage implements IStorage {
         contractUrl: null,
         tags: ["trap", "bounce", "melodic"],
         featured: true,
+        availabilityStatus: "available_nonexclusive",
+        availabilityUpdatedAt: null,
+        starterRewardEligible: true,
+        commercialLeaseEligible: true,
+        contentIdRestricted: true,
+        licenseVersion: 1,
         createdAt: new Date(),
       },
     ];
@@ -1181,7 +1234,7 @@ class MemoryStorage implements IStorage {
         id: this.nextId("contracts"),
         title: "Studio Rules & Policies",
         description: "Studio booking, conduct, cancellation, and session-file policies.",
-        content: "A 25% non-refundable deposit is required to secure bookings. Please arrive on time, respect the studio, and bring properly labeled session files.",
+        content: "A 50% deposit is required to secure bookings. Changes inside the 24-hour notice window follow the applicable late-cancellation and no-show policy. Please arrive on time, respect the studio, and bring properly labeled session files.",
         fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/studio_rules.pdf",
         fileType: "pdf",
         category: "studio_rules",
@@ -1232,6 +1285,7 @@ class MemoryStorage implements IStorage {
   async getUser(id: number) { return this.usersData.find((user) => user.id === id); }
   async getUserByUsername(username: string) { return this.usersData.find((user) => user.username === username); }
   async getUserByEmail(email: string) { return this.usersData.find((user) => user.email === email); }
+  async getAdminUser() { return this.usersData.find((user) => user.role === "admin"); }
   async createUser(user: InsertUser) {
     const newUser = { id: this.nextId("users"), firstName: null, lastName: null, phone: null, sessionCount: 0, loyaltyPoints: 0, createdAt: new Date(), lastLogin: null, ...user, role: user.role ?? "customer" } as User;
     this.usersData.push(newUser);
@@ -1380,6 +1434,17 @@ class MemoryStorage implements IStorage {
     this.membershipEventsData.push(newEvent);
     return newEvent;
   }
+  async getMembershipPaymentAssociations(subscriptionId: number) {
+    return this.membershipPaymentAssociationsData.filter((association) => association.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  async getMembershipPaymentAssociationByProviderId(paymentProviderId: string) {
+    return this.membershipPaymentAssociationsData.find((association) => association.paymentProviderId === paymentProviderId);
+  }
+  async createMembershipPaymentAssociation(association: InsertMembershipPaymentAssociation) {
+    const newAssociation = { id: this.nextId("membershipPaymentAssociations"), status: "pending", createdAt: new Date(), ...association } as MembershipPaymentAssociation;
+    this.membershipPaymentAssociationsData.push(newAssociation);
+    return newAssociation;
+  }
   async getMembershipPauses(subscriptionId: number) {
     return this.membershipPausesData.filter((pause) => pause.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
@@ -1400,9 +1465,13 @@ class MemoryStorage implements IStorage {
     return this.membershipLoyaltyRewardsData.filter((reward) => reward.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
   async createMembershipLoyaltyReward(reward: InsertMembershipLoyaltyReward) {
-    const newReward = { id: this.nextId("membershipLoyaltyRewards"), issuedAt: new Date(), expiresAt: null, redeemedAt: null, status: "issued", createdAt: new Date(), ...reward } as MembershipLoyaltyReward;
+    const newReward = { id: this.nextId("membershipLoyaltyRewards"), earnedAt: new Date(), issuedAt: new Date(), expiresAt: null, redeemedAt: null, sourcePaymentAssociationId: null, status: "issued", createdAt: new Date(), ...reward } as MembershipLoyaltyReward;
     this.membershipLoyaltyRewardsData.push(newReward);
     return newReward;
+  }
+  async getMembershipLoyaltyReward(id: number) { return this.membershipLoyaltyRewardsData.find((reward) => reward.id === id); }
+  async updateMembershipLoyaltyReward(id: number, reward: Partial<InsertMembershipLoyaltyReward>) {
+    return this.updateById(this.membershipLoyaltyRewardsData, id, reward);
   }
   async resumeMembershipSubscription(id: number) {
     return this.updateById(this.membershipSubscriptionsData, id, {
@@ -1437,7 +1506,7 @@ class MemoryStorage implements IStorage {
   async getAllBookings() { return this.bookingsData; }
   async getBooking(id: number) { return this.bookingsData.find((booking) => booking.id === id); }
   async createBooking(booking: InsertBooking) {
-    const newBooking = { id: this.nextId("bookings"), userId: null, phone: null, details: null, status: "pending", paymentIntentId: null, paymentStatus: "unpaid", tipAmount: 0, transactionId: null, paymentMethod: null, paymentErrorMessage: null, paymentMetadata: null, discountCode: null, discountAmount: null, loyaltyApplied: false, createdAt: new Date(), ...booking } as Booking;
+    const newBooking = { id: this.nextId("bookings"), userId: null, phone: null, details: null, status: "pending", paymentIntentId: null, paymentStatus: "unpaid", tipAmount: 0, transactionId: null, paymentMethod: null, paymentErrorMessage: null, paymentMetadata: null, discountCode: null, discountAmount: null, loyaltyApplied: false, retentionPolicy: "guest", retentionDays: 30, retentionDeadline: null, retentionPolicyVersion: 1, retentionTrigger: "project_completion", createdAt: new Date(), ...booking } as Booking;
     this.bookingsData.push(newBooking);
     return newBooking;
   }
@@ -1496,7 +1565,7 @@ class MemoryStorage implements IStorage {
   async getBeatsByGenre(genre: string) { return this.beatsData.filter((beat) => beat.genre === genre); }
   async getBeat(id: number) { return this.beatsData.find((beat) => beat.id === id); }
   async createBeat(beat: InsertBeat) {
-    const newBeat = { id: this.nextId("beats"), imageUrl: null, contractUrl: null, tags: null, featured: false, createdAt: new Date(), licensingOptions: {}, ...beat } as Beat;
+    const newBeat = { id: this.nextId("beats"), imageUrl: null, contractUrl: null, tags: null, featured: false, availabilityStatus: "available_nonexclusive", availabilityUpdatedAt: null, starterRewardEligible: true, commercialLeaseEligible: true, contentIdRestricted: true, licenseVersion: 1, createdAt: new Date(), licensingOptions: {}, ...beat } as Beat;
     this.beatsData.push(newBeat);
     return newBeat;
   }
@@ -1508,11 +1577,11 @@ class MemoryStorage implements IStorage {
   async getBeatPurchasesByEmail(email: string) { return this.beatPurchasesData.filter((purchase) => purchase.customerEmail === email); }
   async getBeatPurchase(id: number) { return this.beatPurchasesData.find((purchase) => purchase.id === id); }
   async createBeatPurchase(purchase: InsertBeatPurchase) {
-    const newPurchase = { id: this.nextId("beatPurchases"), downloadCount: 0, contractSigned: false, contractSignedAt: null, purchaseDate: new Date(), ...purchase } as BeatPurchase;
+    const newPurchase = { id: this.nextId("beatPurchases"), downloadCount: 0, contractSigned: false, contractSignedAt: null, userId: null, licenseProduct: "paid_nonexclusive", licenseVersion: 1, nonexclusive: true, licenseStartDate: null, rightsSnapshot: null, contentIdAcknowledged: false, rewardSourceType: null, rewardSourceId: null, licenseStatus: "pending", signedSnapshotHash: null, purchaseDate: new Date(), ...purchase } as BeatPurchase;
     this.beatPurchasesData.push(newPurchase);
     return newPurchase;
   }
-  async updateBeatPurchaseContract(id: number, contractSigned: boolean) { return this.updateById(this.beatPurchasesData, id, { contractSigned, contractSignedAt: contractSigned ? new Date() : null }); }
+  async updateBeatPurchaseContract(id: number, contractSigned: boolean, patch: Partial<InsertBeatPurchase> = {}) { return this.updateById(this.beatPurchasesData, id, { contractSigned, contractSignedAt: contractSigned ? new Date() : null, ...patch }); }
   async incrementBeatPurchaseDownloadCount(id: number) {
     const purchase = await this.getBeatPurchase(id);
     return purchase ? this.updateById(this.beatPurchasesData, id, { downloadCount: (purchase.downloadCount || 0) + 1 }) : undefined;
@@ -1543,7 +1612,7 @@ class MemoryStorage implements IStorage {
     return this.contractSignaturesData.find((signature) => signature.relatedEntityType === relatedEntityType && signature.relatedEntityId === relatedEntityId && signature.customerEmail === email);
   }
   async createContractSignature(signature: InsertContractSignature) {
-    const newSignature = { id: this.nextId("contractSignatures"), ipAddress: null, relatedEntityType: null, relatedEntityId: null, createdAt: new Date(), ...signature } as ContractSignature;
+    const newSignature = { id: this.nextId("contractSignatures"), ipAddress: null, relatedEntityType: null, relatedEntityId: null, contractVersion: 1, termsSnapshot: null, signedDocumentHash: null, createdAt: new Date(), ...signature } as ContractSignature;
     this.contractSignaturesData.push(newSignature);
     return newSignature;
   }

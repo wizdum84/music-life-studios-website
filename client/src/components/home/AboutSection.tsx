@@ -1,59 +1,68 @@
-import { Check, MapPin, Mail, Phone, Clock, Instagram, Music, Linkedin } from "lucide-react";
+import { Check, MapPin, Mail, Phone, Clock, Instagram, Music, Linkedin, Mic2, Radio } from "lucide-react";
+import { Link } from "wouter";
 
 export default function AboutSection() {
   return (
-    <section id="about" className="py-20 bg-white">
+    <section id="about" className="bg-[#141414] py-20 text-white">
       <div className="container mx-auto px-4">
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
             <div>
-              <div 
-                className="rounded-lg shadow-lg w-full h-auto overflow-hidden"
-                style={{ 
-                  backgroundImage: "url('https://images.unsplash.com/photo-1589903308904-1010c2294adc?ixlib=rb-1.2.1&auto=format&fit=crop&w=600&h=750&q=80')",
-                  paddingBottom: "125%", // Maintain aspect ratio
-                  backgroundSize: "cover",
-                  backgroundPosition: "center"
-                }}
-              />
+              <div className="border-2 border-black bg-[#ff8a00] p-5 shadow-[10px_10px_0_#141414]">
+                <div className="flex min-h-[420px] flex-col justify-between border-2 border-black bg-[#f3eee4] p-6 text-black">
+                  <div className="flex items-center justify-between border-b-2 border-black pb-4">
+                    <p className="text-xs font-black uppercase tracking-[0.2em]">Wiz / Music Life</p>
+                    <Radio className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <Mic2 className="h-12 w-12" />
+                    <p className="mt-6 text-6xl font-black leading-[0.82]">MOBILE<br />BY DESIGN.</p>
+                    <p className="mt-5 max-w-xs font-semibold text-black/65">Bring the work. I bring the recording support, ear, and finish.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs font-black uppercase tracking-[0.14em]">
+                    <Link href="/booking" className="border-2 border-black bg-black p-3 text-[#ff8a00] transition-colors hover:bg-[#2a2115]">Record</Link>
+                    <Link href="/deals" className="border-2 border-black p-3 transition-colors hover:bg-white">Release</Link>
+                  </div>
+                </div>
+              </div>
             </div>
             
             <div>
               <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-6">About Me</h2>
-              <p className="text-muted-foreground mb-4">
+              <p className="mb-4 text-white/65">
                 Music Life Studios is the business, but Wiz is the person you are booking. I work directly with artists to set up sessions, capture clean vocals, shape ideas, produce records, and keep the project moving toward a finished release.
               </p>
-              <p className="text-muted-foreground mb-6">
+              <p className="mb-6 text-white/65">
                 I can bring recording support to your home setup, help arrange a rental location for the right session, and handle mixing or mastering remotely. As Wizdum the Lionheart, I also understand the artist side of the process, so the work stays technical without losing the feeling.
               </p>
-              <p className="text-muted-foreground mb-6">
+              <p className="mb-6 text-white/65">
                 Audio engineering since 2012, graduated with honors from SAE Institute. Get a free 2-hour session after every 5 paid sessions, plus a qualifying 3-month beat lease option.
               </p>
               
               <div className="mb-8">
                 <h3 className="font-semibold text-xl mb-4">What I Bring</h3>
                 <ul className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  <li className="flex items-center text-muted-foreground">
+                  <li className="flex items-center text-white/65">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
                     <span>Mobile recording setup</span>
                   </li>
-                  <li className="flex items-center text-muted-foreground">
+                  <li className="flex items-center text-white/65">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
                     <span>Session prep</span>
                   </li>
-                  <li className="flex items-center text-muted-foreground">
+                  <li className="flex items-center text-white/65">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
                     <span>Vocal production</span>
                   </li>
-                  <li className="flex items-center text-muted-foreground">
+                  <li className="flex items-center text-white/65">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
                     <span>Mix/master delivery</span>
                   </li>
-                  <li className="flex items-center text-muted-foreground">
+                  <li className="flex items-center text-white/65">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
                     <span>Custom beats</span>
                   </li>
-                  <li className="flex items-center text-muted-foreground">
+                  <li className="flex items-center text-white/65">
                     <Check className="h-4 w-4 text-[#FF8C00] mr-2" />
                     <span>Release guidance</span>
                   </li>

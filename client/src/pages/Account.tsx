@@ -48,8 +48,9 @@ import PageHeader from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
-import { Booking, LoyaltyRecord, Service, MembershipPlan, MembershipSubscription } from "@shared/schema";
+import { Booking, Contract, LoyaltyRecord, Service, MembershipPlan, MembershipSubscription } from "@shared/schema";
 import { MEMBERSHIP_CANCELLATION_LANGUAGE, MEMBERSHIP_PLAN_CATALOG, formatCents } from "@shared/membership";
+import { ContractRequirement } from "@/components/contracts/ContractRequirement";
 
 type MembershipAccountPayload = {
   subscription: MembershipSubscription | null;
@@ -128,7 +129,10 @@ export default function Account() {
   const { data: loyaltyData = { records: [], points: 0, sessionCount: 0 }, isLoading: isLoadingLoyalty } = useQuery<{ 
     records: LoyaltyRecord[],
     points: number,
-    sessionCount: number
+    sessionCount: number,
+    stampCount?: number,
+    completedRewardCycles?: number,
+    availableRewards?: number
   }>({
     queryKey: ["/api/user/loyalty"],
     queryFn: getQueryFn({ on401: "returnEmptyObject" }),
@@ -170,16 +174,48 @@ export default function Account() {
     queryClient.invalidateQueries({ queryKey: ["/api/membership/plans"] });
   };
 
+  const [enrollmentContract, setEnrollmentContract] = useState<{
+    planId: number;
+    prepaidTermMonths: number;
+    contract: Contract;
+  } | null>(null);
+
+  const beginEnrollment = async (planId: number, prepaidTermMonths = 1) => {
+    try {
+      const response = await apiRequest("POST", "/api/user/membership/contract-preview", { planId, prepaidTermMonths });
+      const data = await response.json();
+      setEnrollmentContract({ planId, prepaidTermMonths, contract: data.contract });
+    } catch (error: any) {
+      toast({ title: "Agreement unavailable", description: error.message, variant: "destructive" });
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    if (!user || params.get("checkout") !== "success" || !sessionId) return;
+    apiRequest("POST", "/api/user/membership/complete-checkout", { sessionId })
+      .then(() => {
+        refreshMembership();
+        toast({ title: "Passport activated", description: "Your Stripe payment was verified and your benefits are active." });
+      })
+      .catch((error: Error) => toast({ title: "Membership verification pending", description: error.message, variant: "destructive" }));
+  }, [user]);
+
   const subscribeMutation = useMutation({
-    mutationFn: async ({ planId, prepaidTermMonths }: { planId: number; prepaidTermMonths?: number }) => {
-      const response = await apiRequest("POST", "/api/user/membership/subscribe", { planId, prepaidTermMonths });
+    mutationFn: async ({ planId, prepaidTermMonths, contractId }: { planId: number; prepaidTermMonths?: number; contractId: number }) => {
+      const response = await apiRequest("POST", "/api/user/membership/subscribe", { planId, prepaidTermMonths, contractId });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.checkoutUrl) {
+        window.location.assign(data.checkoutUrl);
+        return;
+      }
       refreshMembership();
       toast({
         title: "Membership enrollment started",
-        description: "Payment verification is pending before benefits become active.",
+        description: "Payment verification is pending before benefits become active. Stripe checkout is unavailable for this enrollment.",
       });
     },
     onError: (error: Error) => {
@@ -251,7 +287,7 @@ export default function Account() {
   const membershipStatus = membershipSubscription ? membershipSubscription.status : "none";
 
   // Calculate loyalty program progress
-  const sessionCount = loyaltyData.sessionCount || user.sessionCount || 0;
+  const sessionCount = loyaltyData.stampCount ?? loyaltyData.sessionCount ?? user.sessionCount ?? 0;
   const loyaltyPoints = loyaltyData.points || user.loyaltyPoints || 0;
   const progressToNextFree = sessionCount % 5;
   const progressPercentage = (progressToNextFree / 5) * 100;
@@ -365,14 +401,14 @@ export default function Account() {
                     <Progress value={progressPercentage} className="h-2" />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>{progressToNextFree} of 5 sessions</span>
-                      <span>{sessionsUntilNextFree} more to free session</span>
+                      <span>{sessionsUntilNextFree} more to next reward cycle</span>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 p-3 bg-muted/50 rounded-md">
                     <Gift className="h-5 w-5 text-primary mt-0.5" />
                     <div>
                       <p className="text-sm font-medium">Loyalty Rewards</p>
-                      <p className="text-xs text-muted-foreground">For every 5 sessions, receive a free 3-hour session</p>
+                      <p className="text-xs text-muted-foreground">Every 5 eligible paid sessions: 2 recording hours + 1 Starter Reward Beat License</p>
                     </div>
                   </div>
                 </div>
@@ -707,11 +743,39 @@ export default function Account() {
               ) : (
                 <>
                   <div className="rounded-lg border p-4">
-                    <h3 className="font-semibold mb-2">Choose a Month-to-Month Plan</h3>
+                    <h3 className="font-semibold mb-2">Choose a Passport Plan</h3>
                     <p className="text-sm text-muted-foreground">
-                      Payment collection is not automated in this build. Starting enrollment creates a pending membership for admin payment verification.
+                      Review and sign your selected Passport agreement before payment. Monthly enrollment continues through Stripe after agreement acceptance.
                     </p>
                   </div>
+                  {enrollmentContract && (
+                    <Card className="border-primary/40">
+                      <CardHeader>
+                        <CardTitle>Review Your Passport Agreement</CardTitle>
+                        <CardDescription>
+                          Read the selected terms carefully. Signing records the exact agreement version attached to this enrollment.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ContractRequirement
+                          contractId={enrollmentContract.contract.id}
+                          entityType="membership_enrollment"
+                          entityId={enrollmentContract.planId}
+                          email={user.email}
+                          name={[user.firstName, user.lastName].filter(Boolean).join(" ") || user.username}
+                          onCheckExistingSignature={false}
+                          onContractSigned={() => {
+                            subscribeMutation.mutate({
+                              planId: enrollmentContract.planId,
+                              prepaidTermMonths: enrollmentContract.prepaidTermMonths,
+                              contractId: enrollmentContract.contract.id,
+                            });
+                            setEnrollmentContract(null);
+                          }}
+                        />
+                      </CardContent>
+                    </Card>
+                  )}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {membershipPlans.map((plan) => {
                       const catalog = MEMBERSHIP_PLAN_CATALOG.find((item) => item.tier === plan.tier);
@@ -740,11 +804,11 @@ export default function Account() {
                               ))}
                             </ul>
                             <div className="grid grid-cols-1 gap-2">
-                              <Button onClick={() => subscribeMutation.mutate({ planId: plan.id })} disabled={subscribeMutation.isPending}>
+                              <Button onClick={() => beginEnrollment(plan.id)} disabled={subscribeMutation.isPending}>
                                 Start Monthly Enrollment
                               </Button>
                               {catalog && (
-                                <Button variant="outline" onClick={() => subscribeMutation.mutate({ planId: plan.id, prepaidTermMonths: 3 })} disabled={subscribeMutation.isPending}>
+                                <Button variant="outline" onClick={() => beginEnrollment(plan.id, 3)} disabled={subscribeMutation.isPending}>
                                   Start Prepaid Enrollment
                                 </Button>
                               )}
@@ -880,8 +944,8 @@ export default function Account() {
                       <p className="text-3xl font-bold">{loyaltyPoints}</p>
                     </div>
                     <div className="bg-muted/50 p-4 rounded-lg text-center">
-                      <p className="text-sm text-muted-foreground mb-1">Free Sessions Earned</p>
-                      <p className="text-3xl font-bold">{Math.floor(sessionCount / 5)}</p>
+                      <p className="text-sm text-muted-foreground mb-1">Reward Cycles Completed</p>
+                      <p className="text-3xl font-bold">{loyaltyData.completedRewardCycles ?? Math.floor(sessionCount / 5)}</p>
                     </div>
                   </div>
                   
@@ -890,7 +954,7 @@ export default function Account() {
                     <Progress value={progressPercentage} className="h-2" />
                     <div className="flex justify-between text-sm text-muted-foreground">
                       <span>{progressToNextFree}/5 sessions completed</span>
-                      <span>{sessionsUntilNextFree} sessions until free reward</span>
+                      <span>{sessionsUntilNextFree} sessions until next reward</span>
                     </div>
                   </div>
                 </div>
@@ -964,14 +1028,14 @@ export default function Account() {
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">3</div>
                     <div>
                       <h4 className="font-medium">Get Rewards</h4>
-                      <p className="text-sm text-muted-foreground">After every 5 paid sessions, you'll receive a free 3-hour session</p>
+                      <p className="text-sm text-muted-foreground">Every 5 eligible completed paid sessions earns 2 recording hours plus 1 Starter Reward Beat License.</p>
                     </div>
                   </div>
                   <div className="flex gap-3">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">4</div>
                     <div>
                       <h4 className="font-medium">Redeem Your Reward</h4>
-                      <p className="text-sm text-muted-foreground">Apply your free session during the booking process</p>
+                      <p className="text-sm text-muted-foreground">Reward cycles repeat. A reward-funded booking does not earn another stamp.</p>
                     </div>
                   </div>
                 </div>

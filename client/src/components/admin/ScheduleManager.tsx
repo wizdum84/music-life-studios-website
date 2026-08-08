@@ -18,15 +18,17 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { CalendarIcon, PlusCircle, Clock, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { format, startOfWeek, endOfWeek, parseISO, addWeeks } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO, addWeeks, addMonths } from "date-fns";
 
 export default function ScheduleManager() {
   const { toast } = useToast();
-  const [startDate, setStartDate] = useState<Date>(startOfWeek(new Date()));
-  const [endDate, setEndDate] = useState<Date>(endOfWeek(new Date()));
+  const [rangeMode, setRangeMode] = useState<"month" | "week">("month");
+  const [startDate, setStartDate] = useState<Date>(startOfMonth(new Date()));
+  const [endDate, setEndDate] = useState<Date>(endOfMonth(new Date()));
+  const [selectedPreviewDate, setSelectedPreviewDate] = useState<Date>();
   const [scheduleForm, setScheduleForm] = useState({
-    startDate: startOfWeek(new Date()),
-    endDate: endOfWeek(new Date()),
+    startDate: startOfMonth(new Date()),
+    endDate: endOfMonth(new Date()),
     dailyStartTime: "09:00",
     dailyEndTime: "17:00",
     slotDuration: 60, // in minutes
@@ -53,16 +55,24 @@ export default function ScheduleManager() {
     acc[dateStr].push(slot);
     return acc;
   }, {} as Record<string, TimeSlot[]>);
+
+  const previewSlotDates = Object.keys(timeSlotsByDate).map((dateStr) => new Date(`${dateStr}T12:00:00`));
+  const selectedPreviewSlots = selectedPreviewDate
+    ? (timeSlotsByDate[format(selectedPreviewDate, "yyyy-MM-dd")] ?? [])
+    : [];
+  const hasValidTimeRange = scheduleForm.dailyEndTime > scheduleForm.dailyStartTime;
   
   // Create weekly schedule mutation
   const createScheduleMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest("POST", "/api/time-slots/weekly", data);
+      const response = await apiRequest("POST", "/api/schedule/weekly", data);
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (slots: TimeSlot[]) => {
       queryClient.invalidateQueries({ queryKey: ['/api/time-slots'] });
       toast({
         title: "Schedule created successfully",
+        description: `${slots.length} available time slot${slots.length === 1 ? "" : "s"} added.`,
       });
     },
     onError: (error: any) => {
@@ -77,7 +87,7 @@ export default function ScheduleManager() {
   // Delete time slots mutation
   const deleteSlotsMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest("DELETE", "/api/time-slots/range", data);
+      return apiRequest("DELETE", "/api/schedule/range", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/time-slots'] });
@@ -94,9 +104,27 @@ export default function ScheduleManager() {
     }
   });
   
-  // Generate and create weekly schedule
-  const generateWeeklySchedule = () => {
+  // Generate availability across the selected week or month.
+  const generateSchedule = () => {
+    if (!hasValidTimeRange) {
+      toast({
+        title: "Check the schedule hours",
+        description: "The daily end time must be later than the daily start time.",
+        variant: "destructive",
+      });
+      return;
+    }
     createScheduleMutation.mutate(scheduleForm);
+  };
+
+  const setScheduleRange = (mode: "month" | "week", offset = 0) => {
+    const baseDate = mode === "month" ? addMonths(new Date(), offset) : addWeeks(new Date(), offset);
+    const nextStart = mode === "month" ? startOfMonth(baseDate) : startOfWeek(baseDate);
+    const nextEnd = mode === "month" ? endOfMonth(baseDate) : endOfWeek(baseDate);
+    setRangeMode(mode);
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
+    setScheduleForm((current) => ({ ...current, startDate: nextStart, endDate: nextEnd }));
   };
   
   // Clear time slots in selected date range
@@ -121,16 +149,11 @@ export default function ScheduleManager() {
     }
   };
   
-  // Navigate to next week
-  const nextWeek = () => {
-    setStartDate(prev => addWeeks(prev, 1));
-    setEndDate(prev => addWeeks(prev, 1));
-  };
-  
-  // Navigate to previous week
-  const prevWeek = () => {
-    setStartDate(prev => addWeeks(prev, -1));
-    setEndDate(prev => addWeeks(prev, -1));
+  const shiftView = (offset: number) => {
+    const nextStart = rangeMode === "month" ? addMonths(startDate, offset) : addWeeks(startDate, offset);
+    const nextEnd = rangeMode === "month" ? endOfMonth(nextStart) : endOfWeek(nextStart);
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
   };
   
   // Format date for display
@@ -183,14 +206,26 @@ export default function ScheduleManager() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Weekly Schedule Manager</CardTitle>
-        <CardDescription>Create and manage your studio availability schedule</CardDescription>
+        <CardTitle>Schedule Manager</CardTitle>
+        <CardDescription>Build your availability a month at a time, or use a weekly range when your schedule is changing.</CardDescription>
       </CardHeader>
       
       <CardContent className="space-y-6">
         {/* Schedule Generation Form */}
         <div className="border rounded-lg p-4 bg-muted/30">
-          <h3 className="text-lg font-medium mb-4">Generate Weekly Schedule</h3>
+          <h3 className="text-lg font-medium mb-4">Auto-generate availability</h3>
+
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <Button type="button" variant={rangeMode === "month" ? "default" : "outline"} onClick={() => setScheduleRange("month")}>
+              Current Month
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setScheduleRange("month", 1)}>
+              Next Month
+            </Button>
+            <Button type="button" variant={rangeMode === "week" ? "default" : "outline"} onClick={() => setScheduleRange("week")}>
+              One Week
+            </Button>
+          </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="space-y-2">
@@ -211,6 +246,7 @@ export default function ScheduleManager() {
                 value={scheduleForm.dailyEndTime}
                 onChange={(e) => setScheduleForm({...scheduleForm, dailyEndTime: e.target.value})}
               />
+              {!hasValidTimeRange && <p className="text-sm text-destructive">End time must be later than start time.</p>}
             </div>
             
             <div className="space-y-2">
@@ -234,7 +270,7 @@ export default function ScheduleManager() {
             </div>
             
             <div className="space-y-2">
-              <Label>Week Range</Label>
+              <Label>{rangeMode === "month" ? "Month Range" : "Week Range"}</Label>
               <div className="flex items-center space-x-2">
                 <Popover>
                   <PopoverTrigger asChild>
@@ -247,11 +283,14 @@ export default function ScheduleManager() {
                     <Calendar
                       mode="single"
                       selected={scheduleForm.startDate}
-                      onSelect={(date) => date && setScheduleForm({
-                        ...scheduleForm, 
-                        startDate: startOfWeek(date),
-                        endDate: endOfWeek(date)
-                      })}
+                      onSelect={(date) => {
+                        if (!date) return;
+                        const nextStart = rangeMode === "month" ? startOfMonth(date) : startOfWeek(date);
+                        const nextEnd = rangeMode === "month" ? endOfMonth(date) : endOfWeek(date);
+                        setStartDate(nextStart);
+                        setEndDate(nextEnd);
+                        setScheduleForm({ ...scheduleForm, startDate: nextStart, endDate: nextEnd });
+                      }}
                     />
                   </PopoverContent>
                 </Popover>
@@ -267,10 +306,51 @@ export default function ScheduleManager() {
           </div>
           
           <div className="flex justify-end mt-4">
-            <Button onClick={generateWeeklySchedule}>
+            <Button onClick={generateSchedule} disabled={createScheduleMutation.isPending || scheduleForm.daysOfWeek.length === 0 || !hasValidTimeRange}>
               <PlusCircle className="mr-2 h-4 w-4" />
-              Generate Schedule
+              {createScheduleMutation.isPending ? "Generating..." : `Generate ${rangeMode === "month" ? "Month" : "Week"}`}
             </Button>
+          </div>
+        </div>
+
+        <div className="border rounded-lg p-4">
+          <div className="mb-4">
+            <h3 className="text-lg font-medium">Calendar Preview</h3>
+            <p className="text-sm text-muted-foreground">Days with generated availability are highlighted. Select a day to inspect its start times.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr] lg:items-start">
+            <Calendar
+              mode="single"
+              month={startDate}
+              selected={selectedPreviewDate}
+              onSelect={setSelectedPreviewDate}
+              modifiers={{ hasSlots: previewSlotDates }}
+              modifiersClassNames={{ hasSlots: "bg-primary/15 font-semibold text-primary hover:bg-primary/25" }}
+              className="rounded-md border"
+            />
+            <div className="min-h-[180px] rounded-md bg-muted/30 p-4">
+              {selectedPreviewDate ? (
+                <>
+                  <h4 className="font-medium">{format(selectedPreviewDate, "EEEE, MMMM d")}</h4>
+                  {selectedPreviewSlots.length > 0 ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {selectedPreviewSlots
+                        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                        .map((slot) => (
+                          <div key={slot.id} className={`rounded border px-3 py-2 text-center text-sm ${slot.available ? "border-green-300 bg-green-50 text-green-800" : "border-red-300 bg-red-50 text-red-800"}`}>
+                            {formatTimeString(new Date(slot.date).toISOString())}
+                            {!slot.available && <div className="text-xs">Booked</div>}
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-muted-foreground">No time slots generated for this date.</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">Select a calendar day to see its generated times.</p>
+              )}
+            </div>
           </div>
         </div>
         
@@ -280,14 +360,14 @@ export default function ScheduleManager() {
             <h3 className="text-lg font-medium">Schedule Preview</h3>
             
             <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={prevWeek}>
-                Previous Week
+              <Button variant="outline" size="sm" onClick={() => shiftView(-1)}>
+                Previous {rangeMode === "month" ? "Month" : "Week"}
               </Button>
               <div className="text-sm font-medium">
                 {formatDate(startDate)} - {formatDate(endDate)}
               </div>
-              <Button variant="outline" size="sm" onClick={nextWeek}>
-                Next Week
+              <Button variant="outline" size="sm" onClick={() => shiftView(1)}>
+                Next {rangeMode === "month" ? "Month" : "Week"}
               </Button>
             </div>
           </div>
@@ -299,9 +379,9 @@ export default function ScheduleManager() {
           ) : Object.keys(timeSlotsByDate).length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <Clock className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
-              <p>No time slots scheduled for this week.</p>
-              <Button className="mt-4" variant="outline" onClick={generateWeeklySchedule}>
-                Generate Time Slots
+              <p>No time slots scheduled for this {rangeMode}.</p>
+              <Button className="mt-4" variant="outline" onClick={generateSchedule}>
+                Generate {rangeMode === "month" ? "Month" : "Week"} of Time Slots
               </Button>
             </div>
           ) : (

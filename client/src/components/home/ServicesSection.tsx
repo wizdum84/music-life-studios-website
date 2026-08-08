@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Check, Mic, Sliders, Music, Film } from "lucide-react";
+import { Check } from "lucide-react";
 import { Service } from "@shared/schema";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,13 +12,17 @@ interface ServicesSectionProps {
 }
 
 const ServiceCard = ({ service }: { service: Service }) => {
-  // Service icon based on name
-  const getIcon = () => {
+  const isCustomProduction = service.name.toLowerCase().includes("production") || service.name.toLowerCase().includes("producer");
+
+  const getArtwork = () => {
     const name = service.name.toLowerCase();
-    if (name.includes("recording")) return <Mic className="h-12 w-12 text-primary" />;
-    if (name.includes("mixing")) return <Sliders className="h-12 w-12 text-primary" />;
-    if (name.includes("producer") || name.includes("production")) return <Film className="h-12 w-12 text-primary" />;
-    return <Music className="h-12 w-12 text-primary" />;
+    if (name.includes("recording") || name.includes("session")) {
+      return ["/assets/passport-starter-mic.png", "Modern recording mic"];
+    }
+    if (name.includes("mixing") || name.includes("master")) {
+      return ["/assets/passport-builder-speakers.png", "Nearfield studio speakers"];
+    }
+    return ["/assets/passport-release-laptop.png", "Laptop and speakers"];
   };
   
   // Button text based on name
@@ -37,13 +41,14 @@ const ServiceCard = ({ service }: { service: Service }) => {
   };
   
   return (
-    <Card className="bg-light rounded-lg overflow-hidden shadow-md transition-transform hover:shadow-lg hover:-translate-y-1">
-      <div className="h-48 bg-primary/10 flex items-center justify-center">
-        {getIcon()}
+    <Card className={`rounded-none border-2 bg-[#1d1d1d] text-white shadow-none transition-transform hover:-translate-y-1 hover:shadow-[8px_8px_0_#8a5a1c] ${isCustomProduction ? "border-[#9a641c]" : "border-[#6d4918]"}`}>
+      <div className={`relative h-48 overflow-hidden border-b-2 bg-black ${isCustomProduction ? "border-[#9a641c]" : "border-[#6d4918]"}`}>
+        <img src={getArtwork()[0]} alt={getArtwork()[1]} className="h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-black/25" />
       </div>
-      <CardContent className="p-6">
+      <CardContent className={`p-6 ${isCustomProduction ? "bg-[#211b13]" : ""}`}>
         <h3 className="font-semibold text-xl mb-3">{service.name}</h3>
-        <p className="text-muted-foreground mb-4">
+        <p className="mb-4 text-white/65">
           {service.description}
         </p>
         <ul className="mb-6 space-y-2">
@@ -101,12 +106,12 @@ const ServiceCardSkeleton = () => (
 
 export default function ServicesSection({ services, isLoading }: ServicesSectionProps) {
   return (
-    <section id="services" className="py-20 bg-white">
+    <section id="services" className="bg-[#141414] py-20 text-white">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
-          <h2 className="font-bold text-3xl md:text-4xl text-foreground mb-2">Work With Wiz</h2>
-          <h3 className="font-medium text-2xl text-primary mb-3">Music Life Studios, personal from the first session</h3>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+          <h2 className="mb-2 text-3xl font-black md:text-4xl">Work With Wiz</h2>
+          <h3 className="mb-3 text-2xl font-medium text-[#ff8a00]">Music Life Studios, personal from the first session</h3>
+          <p className="mx-auto max-w-2xl text-lg text-white/65">
             Book the person touching the record: recording support, mix/master work, custom beats, and production direction built around your project.
           </p>
         </div>

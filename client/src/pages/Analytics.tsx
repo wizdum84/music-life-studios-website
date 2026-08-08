@@ -169,9 +169,9 @@ export default function Analytics() {
     const totalRevenue = filteredBookings.reduce((acc, booking) => {
       // Only count bookings that have been paid
       if (booking.paymentStatus === 'paid' || booking.paymentStatus === 'deposit_paid') {
-        // If deposit paid, count 25% of amount
+        // If deposit paid, count the verified 50% deposit
         const paidAmount = booking.paymentStatus === 'deposit_paid' 
-          ? booking.amount * 0.25
+          ? booking.amount * 0.5
           : booking.amount;
         
         // If there's a discount amount, subtract it
@@ -256,7 +256,7 @@ export default function Analytics() {
         
         if (service) {
           const paidAmount = booking.paymentStatus === 'deposit_paid' 
-            ? booking.amount * 0.25
+            ? booking.amount * 0.5
             : booking.amount;
             
           service.value += paidAmount;
@@ -321,7 +321,7 @@ export default function Analytics() {
         if (bookingDate >= startDate && bookingDate <= endDate) {
           if (booking.paymentStatus === 'paid' || booking.paymentStatus === 'deposit_paid') {
             const paidAmount = booking.paymentStatus === 'deposit_paid' 
-              ? booking.amount * 0.25
+            ? booking.amount * 0.5
               : booking.amount;
               
             servicesRevenue += paidAmount;

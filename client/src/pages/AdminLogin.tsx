@@ -1,5 +1,6 @@
-import { useEffect } from "react";
-import { useLocation } from "wouter";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { Eye, EyeOff } from "lucide-react";
 import { Helmet } from "react-helmet";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
@@ -30,6 +31,7 @@ const formSchema = z.object({
 export default function AdminLogin() {
   const [location, navigate] = useLocation();
   const { user, isLoading, loginMutation } = useAuth();
+  const [showPassword, setShowPassword] = useState(false);
   
   // Scroll to top on component mount
   useEffect(() => {
@@ -100,7 +102,18 @@ export default function AdminLogin() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="********" {...field} />
+                      <div className="relative">
+                        <Input type={showPassword ? "text" : "password"} placeholder="********" className="pr-10" {...field} />
+                        <button
+                          type="button"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                          title={showPassword ? "Hide password" : "Show password"}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:text-foreground"
+                          onClick={() => setShowPassword((visible) => !visible)}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -122,6 +135,10 @@ export default function AdminLogin() {
               </Button>
             </form>
           </Form>
+
+          <p className="text-center text-sm text-muted-foreground">
+            First setup? <Link href="/admin/setup" className="text-primary hover:underline">Create the first administrator</Link>
+          </p>
         </div>
       </div>
     </>

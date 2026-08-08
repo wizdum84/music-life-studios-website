@@ -42,7 +42,7 @@ export default function Navbar() {
       <nav className="container mx-auto px-4 py-4 flex justify-between items-center">
         <div className="flex items-center">
           <Link href="/" className="flex items-center">
-            <span className="text-primary font-bold text-2xl">Music Life</span>
+            <span className="text-[#ff8a00] font-bold text-2xl">Music Life</span>
             <span className="text-foreground font-medium ml-1 text-lg">Studios</span>
             <span className="hidden lg:inline text-muted-foreground text-xs font-medium ml-3">by Wiz</span>
           </Link>
@@ -75,9 +75,9 @@ export default function Navbar() {
           <div className="flex items-center space-x-2">
             {user ? (
               <Button variant="outline" size="sm" asChild className="flex items-center">
-                <Link href="/account">
+                <Link href={user.role === "admin" ? "/admin" : "/account"}>
                   <User className="h-4 w-4 mr-2" />
-                  My Account
+                  {user.role === "admin" ? "Admin Dashboard" : "My Account"}
                 </Link>
               </Button>
             ) : (
@@ -86,7 +86,7 @@ export default function Navbar() {
               </Button>
             )}
             
-            <Button asChild className="bg-primary hover:bg-primary-600">
+            <Button asChild className="bg-[#ff8a00] text-black hover:bg-[#ffac3d]">
               <Link href="/booking">Book Now</Link>
             </Button>
           </div>
@@ -132,12 +132,12 @@ export default function Navbar() {
             )}
             {user ? (
               <Link 
-                href="/account" 
+                href={user.role === "admin" ? "/admin" : "/account"}
                 className="flex items-center font-medium py-2 hover:text-primary transition-colors" 
                 onClick={handleLinkClick}
               >
                 <User className="h-4 w-4 mr-2" />
-                My Account
+                {user.role === "admin" ? "Admin Dashboard" : "My Account"}
               </Link>
             ) : (
               <Link 
@@ -149,7 +149,7 @@ export default function Navbar() {
               </Link>
             )}
             <div className="pt-2">
-              <Button asChild className="bg-primary hover:bg-primary-600 w-full justify-center">
+              <Button asChild className="w-full justify-center bg-[#ff8a00] text-black hover:bg-[#ffac3d]">
                 <Link href="/booking">Book Now</Link>
               </Button>
             </div>
