@@ -40,6 +40,13 @@ const isProductionService = (name: string) => {
 const roundCents = (value: number) => Math.round(value);
 
 export function calculatePricing(input: PricingInput): PricingResult {
+  if (!Number.isFinite(input.serviceId) || input.serviceId <= 0) {
+    throw new Error("Service ID must be a positive number.");
+  }
+  if (!Number.isFinite(input.duration) || input.duration <= 0) {
+    throw new Error("Duration must be greater than zero.");
+  }
+
   const { serviceId, serviceName, duration, recordingOption = "hourly", mixOption = "quick-finish", productionOption = "custom-beat" } = input;
   const isRecording = isRecordingService(serviceName);
   const isMixing = isMixingService(serviceName);
@@ -213,6 +220,12 @@ export function calculatePricing(input: PricingInput): PricingResult {
       } else {
         finalTotal = bundlePrices[quantity] ?? standardTotal;
       }
+    } else if (productionOption === "build-song") {
+      unitType = "project";
+      quantity = 1;
+      standardUnitPrice = 25000;
+      standardTotal = 25000;
+      finalTotal = 25000;
     } else if (productionOption === "complete-single") {
       const bundlePrices: Record<number, number> = {
         1: 32500,

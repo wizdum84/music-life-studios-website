@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { apiRequest, getBookingPaymentStatus } from "@/lib/queryClient";
+import { getBookingPaymentStatus, getPaymentLinkStatus } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -62,6 +62,24 @@ export default function CompletePayment() {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("id");
     const email = params.get("email");
+    const token = params.get("token");
+
+    if (token) {
+      getPaymentLinkStatus(token)
+        .then((response) => {
+          if (response.booking) {
+            setBooking({ ...response.booking, paymentToken: token });
+            setRemainingAmount(response.remainingAmount);
+            if (response.booking.paymentStatus === "paid") {
+              setStep("complete");
+            } else {
+              setStep("tip");
+            }
+          }
+        })
+        .catch(() => toast({ title: "Payment link unavailable", description: "This payment link is invalid or expired. Please request a new one.", variant: "destructive" }));
+      return;
+    }
     
     if (id && email) {
       searchForm.setValue("bookingId", id);
@@ -77,7 +95,7 @@ export default function CompletePayment() {
       const response = await getBookingPaymentStatus(data.bookingId, data.email);
       
       if (response.booking) {
-        setBooking(response.booking);
+        setBooking({ ...response.booking, paymentToken: response.paymentToken || undefined });
         setRemainingAmount(response.remainingAmount);
         
         // If booking is already fully paid
@@ -112,26 +130,19 @@ export default function CompletePayment() {
   
   // Handle payment completion
   const handlePaymentComplete = (transactionId: string) => {
-    // Update booking payment status with transaction info and tip
-    apiRequest("POST", `/api/bookings/${booking.id}/update-payment`, {
-      transactionId: transactionId,
+    // StripePaymentForm already verified and recorded the payment server-side.
+    setBooking((current: any) => current ? {
+      ...current,
       paymentStatus: "paid",
-      tipAmount: tipAmount,
-      totalPaid: remainingAmount + tipAmount
-    }).then(() => {
-      setStep("complete");
-      toast({
-        title: "Payment Complete",
-        description: "Thank you for completing your payment.",
-        variant: "default"
-      });
-    }).catch(error => {
-      console.error("Error updating payment status:", error);
-      toast({
-        title: "Error",
-        description: "There was an error recording your payment. Please contact support.",
-        variant: "destructive"
-      });
+      transactionId,
+      tipAmount,
+    } : current);
+    setRemainingAmount(0);
+    setStep("complete");
+    toast({
+      title: "Payment Complete",
+      description: "Thank you for completing your payment.",
+      variant: "default"
     });
   };
   

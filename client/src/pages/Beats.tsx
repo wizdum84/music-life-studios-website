@@ -8,151 +8,126 @@ import { Slider } from "@/components/ui/slider";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PlayCircle, PauseCircle, Download, ShoppingCart } from "lucide-react";
+import { Pause, Play, Search, ShoppingCart, Volume2, VolumeX } from "lucide-react";
 import { formatPrice, scrollToTop } from "@/lib/utils";
+import { useAudio } from "@/hooks/useAudio";
 import { ContractRequirement } from "@/components/contracts";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
-// Audio player for previewing beats
-const BeatPlayer = ({ beat, isPlaying, onPlay, onPause, isLoading = false }: { 
-  beat: Beat; 
-  isPlaying: boolean; 
-  onPlay: () => void; 
-  onPause: () => void;
-  isLoading?: boolean;
-}) => {
+const formatTime = (seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${remainingSeconds}`;
+};
+
+const coverArt = [
+  "/assets/beats/covers/cover-character.png",
+  "/assets/beats/covers/cover-mascot.png",
+  "/assets/beats/covers/cover-city.png",
+  "/assets/beats/covers/cover-profile.png",
+  "/assets/beats/covers/cover-car.png",
+  "/assets/beats/covers/cover-neon.png",
+  "/assets/beats/covers/cover-chrome.png",
+  "/assets/beats/covers/cover-cartoon.png",
+  "/assets/beats/covers/cover-sculpture.png",
+  "/assets/beats/covers/cover-masked.png",
+];
+
+// Every beat row uses the same audio element as the persistent player dock.
+const BeatPlayer = ({ beat }: { beat: Beat }) => {
+  const { audioSrc, playing, currentTime, duration, volume, muted, play, pause, seek, setVolume, toggleMute } = useAudio();
+  const isActive = audioSrc === beat.previewUrl;
+  const displayDuration = isActive && duration > 0 ? duration : (beat.durationSeconds || 45);
+  const progress = displayDuration > 0 && isActive ? Math.min(100, (currentTime / displayDuration) * 100) : 0;
+
+  const handleToggle = () => {
+    if (isActive && playing) {
+      pause();
+    } else {
+      void play(beat.previewUrl || undefined, beat.title);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-2 w-full">
-      <button
-        onClick={isPlaying ? onPause : onPlay}
-        className={`rounded-full p-1 transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary/10 cursor-pointer'}`}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <div className="relative w-12 h-12">
-            <PlayCircle size={48} className="text-primary/50 absolute inset-0" />
-            <svg className="animate-spin absolute inset-0 w-12 h-12 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          </div>
-        ) : isPlaying ? (
-          <PauseCircle size={48} className="text-primary" />
-        ) : (
-          <PlayCircle size={48} className="text-primary" />
-        )}
+    <div className="flex flex-wrap items-center gap-3 rounded-none border border-[#6b481b] bg-[#11100f] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <button type="button" aria-label={isActive && playing ? `Pause ${beat.title}` : `Play ${beat.title}`} onClick={handleToggle} className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border transition-all ${isActive && playing ? "border-primary bg-primary text-black shadow-[0_0_0_4px_rgba(255,138,0,0.12)]" : "border-[#8a5a1c] bg-[#231d16] text-primary hover:border-primary hover:bg-[#2a2117]"}`}>
+        {isActive && playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
       </button>
-      <div className="w-full">
-        <Slider 
-          defaultValue={[0]} 
-          max={100} 
-          step={1} 
-          className={`w-full ${isLoading ? 'opacity-50' : ''}`}
-          disabled={isLoading}
-        />
-        <div className="flex justify-between text-xs text-muted-foreground mt-1">
-          <span>00:00</span>
-          {isLoading ? (
-            <span className="inline-flex items-center">
-              <span className="animate-pulse">Loading audio</span>
-              <span className="ml-1 flex">
-                <span className="animate-bounce h-1 w-1 bg-primary rounded-full mx-[1px] delay-75"></span>
-                <span className="animate-bounce h-1 w-1 bg-primary rounded-full mx-[1px] delay-150"></span>
-                <span className="animate-bounce h-1 w-1 bg-primary rounded-full mx-[1px] delay-300"></span>
-              </span>
-            </span>
-          ) : (
-            <span>03:45</span>
-          )}
+      <div className="min-w-[12rem] flex-1">
+        <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-[#8d806f]">
+          <span>{isActive && playing ? "Now playing" : "Preview"}</span>
+          <span>{formatTime(displayDuration)} sample</span>
+        </div>
+        <div className="relative h-1.5 overflow-hidden bg-[#3e3020]">
+          <div className="absolute inset-y-0 left-0 bg-primary transition-[width]" style={{ width: `${progress}%` }} />
+          <input aria-label={`Seek ${beat.title}`} type="range" min="0" max={displayDuration} step="0.1" value={isActive ? Math.min(currentTime, displayDuration) : 0} onChange={(event) => seek(Number(event.target.value))} className="beat-range absolute inset-0 h-full w-full cursor-pointer" />
+        </div>
+        <div className="mt-2 flex justify-between text-xs text-[#c9bca9]">
+          <span>{isActive ? formatTime(currentTime) : "0:00"}</span>
+          <span>{formatTime(displayDuration)}</span>
         </div>
       </div>
+      <button type="button" aria-label={muted || volume === 0 ? "Unmute audio" : "Mute audio"} onClick={toggleMute} className="flex h-9 w-9 items-center justify-center rounded-full border border-transparent text-[#ffb84d] transition-colors hover:border-[#6b481b] hover:bg-[#231d16] hover:text-white">
+        {muted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+      </button>
+      <input aria-label={`Volume for ${beat.title}`} type="range" min="0" max="1" step="0.01" value={muted ? 0 : volume} onChange={(event) => setVolume(Number(event.target.value))} className="beat-range w-20" />
     </div>
   );
 };
 
-// Beat card for displaying individual beats
-const BeatCard = ({ beat }: { beat: Beat }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
+const BeatCover = ({ beat, index, playing, onPlay }: { beat: Beat; index: number; playing: boolean; onPlay: () => void }) => {
+  const artwork = beat.imageUrl || coverArt[Math.abs(beat.id || index) % coverArt.length];
+ return (
+    <div className="group relative aspect-square overflow-hidden border-b border-[#6b481b] bg-[#1b1713]">
+      <img src={artwork} alt={`${beat.title} cover art`} loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/20" />
+      <div className="absolute inset-x-4 top-4 flex items-start justify-between gap-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white">
+        <span className="border border-white/50 bg-black/30 px-2 py-1 backdrop-blur-sm">ML {String(index + 1).padStart(2, "0")}</span>
+      </div>
+      <div className="absolute inset-x-4 bottom-4 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs uppercase tracking-[0.16em] text-white/70">{beat.genre}</p>
+          <p className="mt-1 truncate text-sm font-semibold text-white">{beat.catalogNumber || "Original cut"}</p>
+        </div>
+        <button type="button" aria-label={playing ? `Pause ${beat.title}` : `Play ${beat.title}`} onClick={onPlay} className={playing ? "flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-white bg-primary text-black shadow-xl" : "flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-white/80 bg-black/60 text-white shadow-xl transition hover:scale-105 hover:bg-primary hover:text-black"}>
+          {playing ? <Pause className="h-6 w-6" /> : <Play className="ml-1 h-6 w-6" />}
+        </button>
+      </div>
+    </div>
+    );
+};
+// Catalog row for displaying an individual beat and its license paths.
+const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
   const [selectedLicense, setSelectedLicense] = useState("basic");
-  const [isAudioLoading, setIsAudioLoading] = useState(false);
-  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [contractStep, setContractStep] = useState(false);
+  const [contractSigningToken, setContractSigningToken] = useState<string | null>(null);
+  const [licenseContractId, setLicenseContractId] = useState<number | null>(null);
   const [contractSigned, setContractSigned] = useState(false);
   const [contentIdAcknowledged, setContentIdAcknowledged] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const { audioSrc, playing, play, pause } = useAudio();
+  const isBeatPlaying = audioSrc === beat.previewUrl && playing;
+  const handleCoverPlay = () => {
+    if (isBeatPlaying) pause();
+    else void play(beat.previewUrl || undefined, beat.title);
+  };
   
-  // Create audio element when component mounts
-  useEffect(() => {
-    const audio = new Audio(beat.previewUrl || 'dummy-url');
-    setAudioElement(audio);
-    
-    // Cleanup on unmount
-    return () => {
-      if (audio) {
-        audio.pause();
-        audio.src = '';
-      }
-    };
-  }, [beat.previewUrl]);
-  
-  // Setup audio event listeners
-  useEffect(() => {
-    if (!audioElement) return;
-    
-    const handleAudioPlay = () => {
-      setIsAudioLoading(false);
-      setIsPlaying(true);
-    };
-    
-    const handleAudioPause = () => {
-      setIsPlaying(false);
-    };
-    
-    const handleAudioEnded = () => {
-      setIsPlaying(false);
-    };
-    
-    const handleLoadStart = () => {
-      setIsAudioLoading(true);
-    };
-    
-    const handleCanPlay = () => {
-      setIsAudioLoading(false);
-    };
-    
-    const handleError = () => {
-      setIsAudioLoading(false);
-      console.error("Error loading audio file");
-    };
-    
-    // Add event listeners
-    audioElement.addEventListener('play', handleAudioPlay);
-    audioElement.addEventListener('pause', handleAudioPause);
-    audioElement.addEventListener('ended', handleAudioEnded);
-    audioElement.addEventListener('loadstart', handleLoadStart);
-    audioElement.addEventListener('canplay', handleCanPlay);
-    audioElement.addEventListener('error', handleError);
-    
-    // Cleanup listeners on unmount or when audio element changes
-    return () => {
-      audioElement.removeEventListener('play', handleAudioPlay);
-      audioElement.removeEventListener('pause', handleAudioPause);
-      audioElement.removeEventListener('ended', handleAudioEnded);
-      audioElement.removeEventListener('loadstart', handleLoadStart);
-      audioElement.removeEventListener('canplay', handleCanPlay);
-      audioElement.removeEventListener('error', handleError);
-    };
-  }, [audioElement]);
-  
+  const getLicensePrice = (type: string) => {
+    const options = beat.licensingOptions as any;
+    const option = options?.[type];
+    if (typeof option === "number") return option * 100;
+    return option?.price || beat.price;
+  };
+
   // Get price based on selected license
   const getPrice = () => {
-    const options = beat.licensingOptions as any;
-    return options[selectedLicense]?.price || beat.price;
+    return getLicensePrice(selectedLicense);
   };
   
   // Get features based on license type 
@@ -172,40 +147,18 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
     } else if (type === "exclusive") {
       features.push("All audio formats + stems");
       features.push("Unlimited streams");
-      features.push("Full ownership rights");
+      features.push("Exclusive use, subject to prior licenses");
       features.push("No credit required");
     }
     
     return features;
   };
   
-  // Play/pause handlers
-  const handlePlay = () => {
-    if (!audioElement) return;
-    
-    // Stop all other playing audio elements first
-    document.querySelectorAll('audio').forEach(audio => {
-      if (audio !== audioElement) audio.pause();
-    });
-    
-    // Try to play this audio
-    setIsAudioLoading(true);
-    audioElement.play().catch(error => {
-      console.error("Error playing audio:", error);
-      setIsAudioLoading(false);
-    });
-  };
-  
-  const handlePause = () => {
-    if (!audioElement) return;
-    audioElement.pause();
-  };
-
   const handlePurchaseClick = () => {
     setPurchaseDialogOpen(true);
   };
 
-  const handleContinueToContract = () => {
+  const handleContinueToContract = async () => {
     if (!customerName || !customerEmail) {
       toast({
         title: "Missing information",
@@ -225,7 +178,21 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
       return;
     }
 
-    setContractStep(true);
+    try {
+      const response = await apiRequest("POST", "/api/beat-license/contract-preview", {
+        beatId: beat.id,
+        licenseType: selectedLicense,
+        customerName,
+        customerEmail,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.signingToken || !data.contract?.id) throw new Error(data.error || data.message || "Unable to prepare the license agreement");
+      setLicenseContractId(data.contract.id);
+      setContractSigningToken(data.signingToken);
+      setContractStep(true);
+    } catch (error: any) {
+      toast({ title: "Agreement unavailable", description: error.message || "Please try again.", variant: "destructive" });
+    }
   };
 
   const handleContractSigned = () => {
@@ -253,6 +220,7 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
         customerEmail,
         licenseType: selectedLicense,
         price: getPrice(),
+        contractId: licenseContractId,
         contentIdAcknowledged,
       });
 
@@ -261,9 +229,15 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
         throw new Error(errorData.message || "Failed to process purchase");
       }
 
+      const purchase = await response.json();
+      if (purchase.checkoutUrl) {
+        window.location.assign(purchase.checkoutUrl);
+        return;
+      }
+
       toast({
         title: "License request recorded",
-        description: "Your signed license request is recorded and will remain pending until payment and fulfillment are verified.",
+        description: "Your signed license request is recorded. Secure checkout is being prepared.",
         variant: "default"
       });
 
@@ -271,6 +245,8 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
       setPurchaseDialogOpen(false);
       setContractStep(false);
       setContractSigned(false);
+      setLicenseContractId(null);
+      setContractSigningToken(null);
       setCustomerName("");
       setCustomerEmail("");
     } catch (err: any) {
@@ -287,66 +263,59 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
   
   return (
     <>
-      <Card className="overflow-hidden transition-all hover:shadow-md border-muted hover:border-primary/30">
-        <div 
-          className="h-44 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center relative" 
-          style={{
-            backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center'
-          }}
-        >
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-            <div className="text-center">
-              <h3 className="text-white text-xl font-semibold">{beat.title}</h3>
-              {beat.featured && (
-                <span className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded mt-1 inline-block">
-                  Featured
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        
+      <article className="group flex h-full flex-col overflow-hidden border border-[#463019] bg-[#171513] text-[#f6efe3] transition-colors hover:border-primary/80">
+        <BeatCover beat={beat} index={index} playing={isBeatPlaying} onPlay={handleCoverPlay} />
+       <div className="flex min-w-0 flex-1 flex-col">
         <CardHeader className="p-4 pb-0">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <span className="inline-block px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium">{beat.genre}</span>
-              <p className="font-medium mt-1">{beat.bpm} BPM</p>
+              <p className="mb-2 text-xs uppercase tracking-[0.18em] text-primary">Music Life beat {String(index + 1).padStart(2, "0")}</p>
+              <h3 className="truncate text-lg font-black tracking-tight">{beat.title}</h3>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[#c9bca9]">
+                <span className="border border-[#6b481b] px-2 py-1 text-xs font-medium uppercase tracking-[0.12em] text-primary">{beat.genre}</span>
+                <span>{beat.bpm} BPM{beat.musicalKey ? ` · ${beat.musicalKey}` : ""}</span>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">Starting at</p>
-              <p className="font-semibold text-primary">{formatPrice(beat.price)}</p>
+            <div className="text-left sm:text-right">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-[#8d806f]">Licenses from</p>
+              <p className="mt-1 text-xl font-black text-primary">{formatPrice(beat.price)}</p>
             </div>
           </div>
           {beat.availabilityStatus !== "available_nonexclusive" && (
-            <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700">
+            <p className="mt-3 border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-200">
               {beat.availabilityStatus === "pending_exclusive" ? "New licenses are temporarily paused while an exclusive sale is reviewed." : "This beat is exclusively sold. Existing licenses remain governed by their signed terms."}
             </p>
           )}
         </CardHeader>
         
         <CardContent className="p-4">
-          <BeatPlayer 
-            beat={beat} 
-            isPlaying={isPlaying} 
-            onPlay={handlePlay} 
-            onPause={handlePause}
-            isLoading={isAudioLoading}
-          />
+          <div className="mt-4 flex items-center justify-between border-y border-[#3e3020] py-3 text-xs uppercase tracking-[0.12em] text-[#8d806f]">
+            <span>{beat.bpm} BPM{beat.musicalKey ? ` / ${beat.musicalKey}` : ""}</span>
+            <span>{formatTime(beat.durationSeconds || 45)} preview</span>
+          </div>
           
-          <div className="mt-5">
-            <Tabs defaultValue="basic" onValueChange={setSelectedLicense} className="border rounded-md p-2">
-              <TabsList className="grid grid-cols-3 w-full mb-2">
-                <TabsTrigger value="basic">Basic</TabsTrigger>
-                <TabsTrigger value="premium">Premium</TabsTrigger>
-                <TabsTrigger value="exclusive">Exclusive</TabsTrigger>
+          <div className="mt-4">
+            <Tabs defaultValue="basic" onValueChange={(license) => {
+              setSelectedLicense(license);
+              setContractStep(false);
+              setContractSigned(false);
+              setLicenseContractId(null);
+              setContractSigningToken(null);
+            }} className="border-t border-[#6b481b] pt-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.18em] text-[#c9bca9]">Choose your rights</p>
+                <p className="text-xs text-[#8d806f]">One beat. Three paths.</p>
+              </div>
+              <TabsList className="mb-2 grid w-full grid-cols-3 rounded-none border-y border-[#6b481b] bg-transparent p-0">
+                <TabsTrigger value="basic" className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Basic</TabsTrigger>
+                <TabsTrigger value="premium" className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Premium</TabsTrigger>
+                <TabsTrigger value="exclusive" className="rounded-none py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Exclusive</TabsTrigger>
               </TabsList>
               
-              <TabsContent value="basic" className="mt-2 space-y-2">
+              <TabsContent value="basic" className="mt-2 space-y-2 text-sm text-[#d9cdbd]">
                 <div className="flex justify-between items-center">
                   <h4 className="font-medium">Basic License</h4>
-                  <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).basic.price)}</p>
+                  <p className="font-semibold text-primary">{formatPrice(getLicensePrice("basic"))}</p>
                 </div>
                 <ul className="text-sm space-y-1">
                   {getLicenseFeatures("basic").map((feature, index) => (
@@ -358,10 +327,10 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
                 </ul>
               </TabsContent>
               
-              <TabsContent value="premium" className="mt-2 space-y-2">
+              <TabsContent value="premium" className="mt-2 space-y-2 text-sm text-[#d9cdbd]">
                 <div className="flex justify-between items-center">
                   <h4 className="font-medium">Premium License</h4>
-                  <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).premium.price)}</p>
+                  <p className="font-semibold text-primary">{formatPrice(getLicensePrice("premium"))}</p>
                 </div>
                 <ul className="text-sm space-y-1">
                   {getLicenseFeatures("premium").map((feature, index) => (
@@ -373,10 +342,10 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
                 </ul>
               </TabsContent>
               
-              <TabsContent value="exclusive" className="mt-2 space-y-2">
+              <TabsContent value="exclusive" className="mt-2 space-y-2 text-sm text-[#d9cdbd]">
                 <div className="flex justify-between items-center">
                   <h4 className="font-medium">Exclusive License</h4>
-                  <p className="font-semibold text-primary">{formatPrice((beat.licensingOptions as any).exclusive.price)}</p>
+                  <p className="font-semibold text-primary">{formatPrice(getLicensePrice("exclusive"))}</p>
                 </div>
                 <ul className="text-sm space-y-1">
                   {getLicenseFeatures("exclusive").map((feature, index) => (
@@ -391,17 +360,21 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
           </div>
         </CardContent>
         
-        <CardFooter className="p-4 pt-0">
-          <Button className="w-full bg-primary hover:bg-primary-600" onClick={handlePurchaseClick} disabled={beat.availabilityStatus !== "available_nonexclusive"}>
+        <CardFooter className="mt-auto p-4 pt-0">
+          <Button className="w-full rounded-none border border-primary bg-primary px-5 text-primary-foreground shadow-[4px_4px_0_#6d4918] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-primary/90 hover:shadow-[2px_2px_0_#6d4918]" onClick={handlePurchaseClick} disabled={beat.availabilityStatus !== "available_nonexclusive"}>
             <ShoppingCart className="h-4 w-4 mr-2" />
             Purchase {selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License
           </Button>
         </CardFooter>
-      </Card>
+        </div>
+      </article>
 
       {/* Purchase Dialog */}
       <Dialog open={purchaseDialogOpen} onOpenChange={setPurchaseDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent
+          className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain sm:max-h-[calc(100dvh-2rem)] sm:max-w-[640px]"
+          onInteractOutside={(event) => event.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>
               Purchase {selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License
@@ -436,7 +409,7 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
                   placeholder="Enter your email address"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Your download link will be sent to this email.
+                  License updates and fulfillment instructions will be sent to this email after payment is verified.
                 </p>
               </div>
               
@@ -479,15 +452,16 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
           ) : (
             <div className="py-4">
               {/* Contract requirement component */}
-              <ContractRequirement 
-                contractId={1} // This would be from the beat's contract or a default beat contract
-                entityType="beat"
+              {licenseContractId && contractSigningToken ? <ContractRequirement
+                contractId={licenseContractId}
+                entityType="beat_license"
                 entityId={beat.id}
                 email={customerEmail}
                 name={customerName}
+                signingToken={contractSigningToken || undefined}
                 onContractSigned={handleContractSigned}
                 onCheckExistingSignature={false}
-              />
+              /> : <p className="text-sm text-destructive">The selected license agreement could not be prepared. Go back and try again.</p>}
               
               <DialogFooter className="pt-6">
                 <Button 
@@ -506,7 +480,7 @@ const BeatCard = ({ beat }: { beat: Beat }) => {
                       Processing...
                     </span>
                   ) : (
-                    <>Complete Purchase</>
+                    <>Submit License Request</>
                   )}
                 </Button>
               </DialogFooter>
@@ -618,9 +592,10 @@ const FilterSidebar = ({
 };
 
 export default function Beats() {
-  const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
-  
-  // Scroll to top when page loads
+ const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
+ const [searchTerm, setSearchTerm] = useState("");
+ 
+ // Scroll to top when page loads
   useEffect(() => {
     scrollToTop();
   }, []);
@@ -635,92 +610,87 @@ export default function Beats() {
   const genres = Array.from(new Set(beats.map(beat => beat.genre)));
   
   // Filter beats by selected genre
-  const filteredBeats = selectedGenre 
-    ? beats.filter(beat => beat.genre === selectedGenre) 
-    : beats;
-  
-  // Featured beats
-  const featuredBeats = beats.filter(beat => beat.featured);
+  const filteredBeats = beats.filter((beat) => {
+    const matchesGenre = !selectedGenre || beat.genre === selectedGenre;
+    const query = searchTerm.trim().toLowerCase();
+    const matchesSearch = !query || `${beat.title} ${beat.genre} ${beat.producerName || ""} ${(beat.tags || []).join(" ")}`.toLowerCase().includes(query);
+    return matchesGenre && matchesSearch;
+  });
   
   return (
-    <div className="py-16 container mx-auto">
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary to-primary-600 bg-clip-text text-transparent">Beats & Licensing</h1>
-        <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Browse our collection of premium beats available for licensing. Find the perfect sound for your next project.
-        </p>
-        <div className="mt-6 bg-muted/30 p-5 rounded-lg max-w-3xl mx-auto">
-          <h3 className="text-xl font-semibold mb-2">How It Works</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
-            <div className="p-3">
-              <div className="bg-primary/10 w-8 h-8 rounded-full flex items-center justify-center mb-2">
-                <span className="font-semibold">1</span>
+    <div className="beat-page min-h-screen bg-[#11100f] pb-32 pt-10 text-[#f6efe3]">
+      <div className="container mx-auto max-w-7xl px-4">
+        <header className="mb-12 border-b border-[#6b481b] pb-10">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="max-w-3xl">
+              <div className="mb-5 flex items-center gap-3 text-xs uppercase tracking-[0.22em] text-primary">
+                <span className="h-px w-10 bg-primary" />
+                <span>The Music Life beat shelf</span>
               </div>
-              <h4 className="font-medium mb-1">Browse & Listen</h4>
-              <p className="text-sm">Preview beats and find the perfect match for your project</p>
+              <h1 className="max-w-2xl text-5xl font-black leading-[0.95] tracking-tight md:text-7xl">Find the pocket.</h1>
+              <p className="mt-5 max-w-xl text-lg leading-8 text-[#c9bca9]">Original cuts from Wiz. Press play, catch the feeling, then choose the license that fits the record.</p>
             </div>
-            <div className="p-3">
-              <div className="bg-primary/10 w-8 h-8 rounded-full flex items-center justify-center mb-2">
-                <span className="font-semibold">2</span>
-              </div>
-              <h4 className="font-medium mb-1">Choose License</h4>
-              <p className="text-sm">Select from Basic, Premium or Exclusive ownership options</p>
-            </div>
-            <div className="p-3">
-              <div className="bg-primary/10 w-8 h-8 rounded-full flex items-center justify-center mb-2">
-                <span className="font-semibold">3</span>
-              </div>
-              <h4 className="font-medium mb-1">Download & Create</h4>
-              <p className="text-sm">Get high-quality files instantly after purchase</p>
+            <div className="flex items-end gap-5 border-l border-[#6b481b] pl-5 lg:pb-1">
+              <span className="text-6xl font-black leading-none text-primary">{beats.length}</span>
+              <div className="pb-1 text-xs uppercase leading-5 tracking-[0.18em] text-[#c9bca9]">sounds<br />in the catalog</div>
             </div>
           </div>
-        </div>
-      </div>
+        </header>
 
-      {featuredBeats.length > 0 && (
-        <div className="mb-16">
-          <h2 className="text-2xl font-bold mb-6">Featured Beats</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredBeats.map((beat: Beat) => (
-              <BeatCard key={beat.id} beat={beat} />
-            ))}
+        <div className="mb-10 grid gap-7 border-b border-[#3e3020] pb-7 lg:grid-cols-[12rem_minmax(0,1fr)]">
+          <aside>
+            <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Browse by sound</p>
+            <div className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1">
+              <button type="button" onClick={() => setSelectedGenre(null)} className={`whitespace-nowrap border px-3 py-2 text-left text-sm transition-colors lg:block lg:w-full ${!selectedGenre ? "border-primary bg-primary text-primary-foreground" : "border-[#463019] text-[#c9bca9] hover:border-primary hover:text-primary"}`}>All sounds</button>
+              {genres.map((genre) => (
+                <button type="button" key={genre} onClick={() => setSelectedGenre(genre)} className={`whitespace-nowrap border px-3 py-2 text-left text-sm transition-colors lg:block lg:w-full ${selectedGenre === genre ? "border-primary bg-primary text-primary-foreground" : "border-[#463019] text-[#c9bca9] hover:border-primary hover:text-primary"}`}>{genre}</button>
+              ))}
+            </div>
+          </aside>
+          <div className="min-w-0">
+            <div className="relative max-w-xl">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" />
+              <Input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search beats, genres, or producers" className="h-12 rounded-none border-[#6b481b] bg-[#1a1815] pl-10 text-[#f6efe3] placeholder:text-[#8d806f]" />
+            </div>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.16em] text-[#8d806f]">
+              <span>{selectedGenre || "All sounds"} / {filteredBeats.length} cuts</span>
+              <span>Preview up to 45 seconds / licenses available at checkout</span>
+            </div>
           </div>
-        </div>
-      )}
-      
-      <div className="flex flex-col lg:flex-row gap-8">
-        <FilterSidebar 
-          selectedGenre={selectedGenre} 
-          onGenreChange={setSelectedGenre} 
-          genres={genres} 
-        />
-        
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold mb-6">All Beats</h2>
+       </div>
+
+        <section>
+          <div className="mb-5 flex items-end justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-primary">The catalog</p>
+              <h2 className="mt-1 text-2xl font-bold">Choose a cut</h2>
+            </div>
+            <span className="text-sm text-[#8d806f]">{filteredBeats.length} shown</span>
+          </div>
           {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {[1, 2, 3, 4].map(i => (
-                <Card key={i} className="animate-pulse">
-                  <div className="h-40 bg-muted"></div>
-                  <CardContent className="p-4">
-                    <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
-                    <div className="h-4 bg-muted rounded w-1/2"></div>
+            <div className="space-y-4">
+              {[1, 2, 3, 4].map((i) => (
+                <Card key={i} className="animate-pulse rounded-none border-[#3e3020] bg-[#1a1815]">
+                  <div className="h-48 bg-[#261f17]"></div>
+                  <CardContent className="p-5">
+                    <div className="mb-2 h-4 w-3/4 bg-[#3e3020]"></div>
+                    <div className="h-4 w-1/2 bg-[#3e3020]"></div>
                   </CardContent>
                 </Card>
               ))}
             </div>
           ) : filteredBeats.length === 0 ? (
-            <p className="text-center py-12 text-muted-foreground">
-              No beats found matching your filters. Try adjusting your criteria.
+            <p className="border border-[#6b481b] py-16 text-center text-[#c9bca9]">
+              Nothing on the shelf matches that search yet.
             </p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {filteredBeats.map((beat: Beat) => (
-                <BeatCard key={beat.id} beat={beat} />
-              ))}
-            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+             {filteredBeats.map((beat: Beat, index: number) => (
+               <BeatCard key={beat.id} beat={beat} index={index} />
+             ))}
+           </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

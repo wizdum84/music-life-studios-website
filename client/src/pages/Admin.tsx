@@ -7,6 +7,7 @@ import BookingManager from "@/components/admin/BookingManager";
 import ContentManager from "@/components/admin/ContentManager";
 import ScheduleManager from "@/components/admin/ScheduleManager";
 import MembershipManager from "@/components/admin/MembershipManager";
+import AdminSecurity from "@/components/admin/AdminSecurity";
 import { Loader2, BarChart2, ExternalLink, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -128,6 +129,7 @@ export default function Admin() {
               <TabsTrigger value="content" className="px-4">Content Manager</TabsTrigger>
               <TabsTrigger value="memberships" className="px-4">Memberships</TabsTrigger>
               <TabsTrigger value="schedule" className="px-4">Schedule Manager</TabsTrigger>
+              <TabsTrigger value="security" className="px-4">Security</TabsTrigger>
             </TabsList>
           </div>
           
@@ -149,6 +151,10 @@ export default function Admin() {
           
           <TabsContent value="schedule">
             <ScheduleManager />
+          </TabsContent>
+
+          <TabsContent value="security">
+            <AdminSecurity />
           </TabsContent>
         </Tabs>
       </div>

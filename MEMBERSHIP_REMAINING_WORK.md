@@ -29,10 +29,11 @@ The project now has:
 
 ## Payment Provider Work Remaining
 
-- Stripe signed webhook handling now covers checkout completion, recurring invoice success, failed invoice state, and provider cancellation.
-- Add refund, dispute, and chargeback event handling with benefit and reward reversal rules.
+- Stripe signed webhook handling now covers checkout completion, recurring invoice success, failed invoice state, provider cancellation, full refunds, and dispute creation.
+- Refund and dispute handlers reverse unused benefits, mark issued rewards for review when already redeemed, update payment and membership status, and write an audit event.
+- Add dispute-closure, chargeback reconciliation, and admin review outcomes.
 - Add optional prepaid three-month checkout flow.
-- Store provider subscription IDs and transaction IDs in membership payment association records.
+- Provider subscription IDs, transaction IDs, and webhook event IDs are stored in membership payment association records.
 - Activate memberships only after verified server-side payment success.
 - Extend idempotent webhook handling to cover:
   - enrollment payment success

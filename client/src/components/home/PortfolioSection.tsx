@@ -4,6 +4,7 @@ import AudioPlayer from "@/components/audio/AudioPlayer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Play, Music } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAudio } from "@/hooks/useAudio";
 
 interface PortfolioSectionProps {
   tracks: Track[];
@@ -12,9 +13,11 @@ interface PortfolioSectionProps {
 
 export default function PortfolioSection({ tracks, isLoading }: PortfolioSectionProps) {
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+  const { play } = useAudio();
   
   const handleTrackSelect = (track: Track) => {
     setSelectedTrack(track);
+    void play(track.audioUrl, track.title);
   };
   
   return (

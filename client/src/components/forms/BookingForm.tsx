@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
@@ -76,7 +77,7 @@ const formSchema = z.object({
 });
 
 type FormData = z.infer<typeof formSchema>;
-type BookingDraft = FormData & { id?: number; contractId?: number; paymentStatus?: string; status?: string };
+type BookingDraft = FormData & { id?: number; contractId?: number; contractSigningToken?: string; uploadToken?: string; paymentStatus?: string; status?: string };
 
 function getLocalDateKey(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);
@@ -177,6 +178,11 @@ export default function BookingForm({
   const [paymentOption, setPaymentOption] = useState<'deposit' | 'full'>('deposit');
   const [tipAmount, setTipAmount] = useState(0);
   const [bookingComplete, setBookingComplete] = useState(false);
+  const [quoteSubmitted, setQuoteSubmitted] = useState(false);
+  const [referenceAudioFile, setReferenceAudioFile] = useState<File | null>(null);
+  const [sourceAudioFile, setSourceAudioFile] = useState<File | null>(null);
+  const [filesUploaded, setFilesUploaded] = useState(false);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   
   const { toast } = useToast();
   
@@ -262,7 +268,12 @@ export default function BookingForm({
     if (isMixingService || recordingOption === "release-ready") {
       return `${getSongCount()} ${getSongCount() === 1 ? "song" : "songs"}`;
     }
-    if (isProductionService) return "Project inquiry";
+    if (isProductionService) {
+      const pricing = getPricingResult();
+      if (productionOption === "media-quote") return "Custom project inquiry";
+      const label = pricing.unitType === "beat" ? "beat" : pricing.unitType === "song" ? "song" : "project";
+      return `${pricing.quantity} ${label}${pricing.quantity === 1 ? "" : "s"}`;
+    }
     return `${selectedDuration / 60} ${selectedDuration === 60 ? "hour" : "hours"}`;
   };
 
@@ -377,6 +388,22 @@ export default function BookingForm({
     }
   }, [form, isRecordingService, recordingOption, selectedDuration]);
 
+  useEffect(() => {
+    if (!isProductionService || !["build-song", "media-quote"].includes(productionOption)) return;
+    if (selectedDuration !== 60) {
+      setSelectedDuration(60);
+      form.setValue("duration", 60);
+    }
+  }, [form, isProductionService, productionOption, selectedDuration]);
+
+  useEffect(() => {
+    if (!isProductionService || productionOption !== "media-quote") return;
+    form.setValue("date", new Date().toISOString());
+    form.setValue("timeSlotId", -1);
+    setSelectedDate(null);
+    setSelectedTime(null);
+  }, [form, isProductionService, productionOption]);
+
   const selectedServiceName = selectedService ? selectedService.name : null;
   
   // Sync external preselected service into internal state
@@ -474,8 +501,27 @@ export default function BookingForm({
           paymentStatus: "unpaid",
         });
         const createdBooking = await response.json();
-        paymentBooking = { ...bookingData, id: createdBooking.id, amount: createdBooking.amount, paymentStatus: createdBooking.paymentStatus };
+        paymentBooking = { ...bookingData, id: createdBooking.id, amount: createdBooking.amount, paymentStatus: createdBooking.paymentStatus, uploadToken: createdBooking.uploadToken };
         setBookingData(paymentBooking);
+      }
+      if (!filesUploaded && paymentBooking.id && (referenceAudioFile || sourceAudioFile)) {
+        setIsUploadingFiles(true);
+        const uploadFile = async (file: File, kind: "reference-audio" | "source-audio") => {
+          const body = new FormData();
+          body.append("file", file);
+          body.append("kind", kind);
+          if (paymentBooking.uploadToken) body.append("uploadToken", paymentBooking.uploadToken);
+          const response = await fetch(`/api/bookings/${paymentBooking.id}/uploads`, { method: "POST", body, credentials: "include" });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || `Unable to upload ${file.name}`);
+        };
+        try {
+          if (referenceAudioFile) await uploadFile(referenceAudioFile, "reference-audio");
+          if (sourceAudioFile) await uploadFile(sourceAudioFile, "source-audio");
+          setFilesUploaded(true);
+        } finally {
+          setIsUploadingFiles(false);
+        }
       }
       setContractSigned(true);
       setCurrentStep('payment');
@@ -500,13 +546,13 @@ export default function BookingForm({
     const pricing = getPricingResult();
 
     if (pricing.requiresManualQuote) {
-      apiRequest("POST", "/api/bookings", {
-        ...structuredData,
-        amount: 0,
-        paymentStatus: "unpaid",
-        status: "pending",
+      apiRequest("POST", "/api/contact", {
+        name: structuredData.name,
+        email: structuredData.email,
+        subject: `${getBookingPathLabel()} request`,
+        message: buildStructuredDetails(pricing.quoteReason || "Custom quote requested."),
       }).then(() => {
-        setBookingData({ ...structuredData, amount: 0 });
+        setQuoteSubmitted(true);
         setCurrentStep("confirmation");
         scrollToTop();
       }).catch(error => {
@@ -539,6 +585,7 @@ export default function BookingForm({
         ...structuredData,
         amount: preview.pricing.finalTotal,
         contractId: preview.contract.id,
+        contractSigningToken: preview.signingToken,
       });
       setCurrentStep("contract");
       scrollToTop();
@@ -571,9 +618,11 @@ export default function BookingForm({
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-6">
           <Check className="h-8 w-8 text-green-600" />
         </div>
-        <h3 className="text-2xl font-bold mb-2">Booking Confirmed!</h3>
+        <h3 className="text-2xl font-bold mb-2">{quoteSubmitted ? "Quote Request Received" : "Booking Confirmed!"}</h3>
         <p className="text-muted-foreground mb-6">
-          Thank you for your booking. We'll see you soon!
+          {quoteSubmitted
+            ? "Thanks for sharing your project. We’ll review the scope, price, rights, delivery, and timing before any payment or appointment is created."
+            : "Thank you for your booking. We'll see you soon!"}
         </p>
         <Button asChild className="bg-primary hover:bg-primary-600">
           <a href="/">Return to Homepage</a>
@@ -647,12 +696,19 @@ export default function BookingForm({
             contractId={contractId}
             entityType="booking"
             entityId={undefined} // Will be set after booking is created
+            signingToken={bookingData.contractSigningToken}
             email={bookingData?.email || ""}
             name={bookingData?.name || ""}
             plainLanguageSummary={getCheckoutSummary()}
             onContractSigned={handleContractSigned}
             onCheckExistingSignature={false}
           />
+          {isUploadingFiles && (
+            <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Securely uploading your audio files before checkout...
+            </div>
+          )}
         </div>
       </div>
     );
@@ -841,7 +897,7 @@ export default function BookingForm({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit, () => {
-          const missing = !selectedDate
+          const missing = !(isProductionService && productionOption === "media-quote") && !selectedDate
             ? "Select a date."
             : isRecordingService && !selectedTime
               ? "Select an available start time for your session."
@@ -906,7 +962,7 @@ export default function BookingForm({
             name="duration"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Session Length</FormLabel>
+                <FormLabel>{isProductionService ? "Package Quantity" : "Session Length"}</FormLabel>
                 <Select 
                   onValueChange={(value) => {
                     field.onChange(parseInt(value));
@@ -932,8 +988,8 @@ export default function BookingForm({
                       </>
                     ) : isProductionService ? (
                       <>
-                        <SelectItem value="60">1 {productionOption === "custom-beat" ? "beat" : "song"}</SelectItem>
-                        {productionOption !== "media-quote" && (
+                        <SelectItem value="60">{productionOption === "build-song" ? "1 project" : productionOption === "media-quote" ? "1 custom project inquiry" : `1 ${productionOption === "custom-beat" ? "beat" : "song"}`}</SelectItem>
+                        {!["build-song", "media-quote"].includes(productionOption) && (
                           <>
                             <SelectItem value="120">2 {productionOption === "custom-beat" ? "beats" : "songs"}</SelectItem>
                             <SelectItem value="180">3 {productionOption === "custom-beat" ? "beats" : "songs"}</SelectItem>
@@ -1080,6 +1136,7 @@ export default function BookingForm({
         )}
         
         <div className="space-y-4">
+          {!(isProductionService && productionOption === "media-quote") && (
           <div>
             <h4 className="font-medium mb-2">Select Date</h4>
             <Calendar
@@ -1102,6 +1159,7 @@ export default function BookingForm({
               className="rounded-md border"
             />
           </div>
+          )}
           
           {/* For mixing services - show estimated completion time */}
           {isMixingService && selectedDuration && (
@@ -1236,7 +1294,14 @@ export default function BookingForm({
                   <Input placeholder="What are you working on? (optional)" value={intakeDetails.sessionFocus} onChange={(event) => updateIntake("sessionFocus", event.target.value)} />
                 )}
                 {(isProductionService || recordingOption === "release-ready") && (
-                  <Input placeholder={isProductionService ? "Desired completion date" : "Desired release date"} value={intakeDetails.desiredDeadline} onChange={(event) => updateIntake("desiredDeadline", event.target.value)} />
+                  isProductionService ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="desired-delivery-date">Desired delivery date <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                      <Input id="desired-delivery-date" type="date" value={intakeDetails.desiredDeadline} onChange={(event) => updateIntake("desiredDeadline", event.target.value)} />
+                    </div>
+                  ) : (
+                    <Input placeholder="Desired release date" value={intakeDetails.desiredDeadline} onChange={(event) => updateIntake("desiredDeadline", event.target.value)} />
+                  )
                 )}
               </div>
 
@@ -1401,13 +1466,18 @@ export default function BookingForm({
                     id="reference-audio"
                     type="file"
                     accept=".mp3,.wav,audio/mpeg,audio/wav"
-                    onChange={(event) => updateIntake("referenceAudioName", event.target.files?.[0]?.name || "")}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      setReferenceAudioFile(file);
+                      setFilesUploaded(false);
+                      updateIntake("referenceAudioName", file?.name || "");
+                    }}
                   />
-                  <p className="text-xs text-muted-foreground">MP3 or WAV. The filename will be attached to this request; upload storage will be connected next.</p>
+                  <p className="text-xs text-muted-foreground">MP3 or WAV. The file will be stored privately and attached to this booking after the agreement is signed.</p>
                 </div>
               )}
 
-              {(isRecordingService || isProductionService) && (
+              {(isRecordingService || (isProductionService && productionOption !== "media-quote")) && (
                 <div className="space-y-3 rounded-md border border-dashed p-4">
                   <div>
                     <label htmlFor="beat-or-tracks" className="text-sm font-medium">Beat, tracks, or source audio</label>
@@ -1417,7 +1487,12 @@ export default function BookingForm({
                     id="beat-or-tracks"
                     type="file"
                     accept=".mp3,.wav,.aiff,.zip,audio/mpeg,audio/wav,audio/aiff,application/zip"
-                    onChange={(event) => updateIntake("beatOrTracksFileName", event.target.files?.[0]?.name || "")}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      setSourceAudioFile(file);
+                      setFilesUploaded(false);
+                      updateIntake("beatOrTracksFileName", file?.name || "");
+                    }}
                   />
                   <Input
                     type="url"
@@ -1425,7 +1500,7 @@ export default function BookingForm({
                     value={intakeDetails.beatOrTracksLink}
                     onChange={(event) => updateIntake("beatOrTracksLink", event.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">The file name and link will be attached to this request. Secure audio storage will be connected next.</p>
+                  <p className="text-xs text-muted-foreground">The selected file will be stored privately in R2 and attached to the booking after the agreement is signed.</p>
                 </div>
               )}
 
@@ -1459,9 +1534,18 @@ export default function BookingForm({
         {selectedService && selectedDuration && (
           <Card className="bg-muted/30">
             <CardHeader className="pb-3">
-              <CardTitle>Booking Summary</CardTitle>
+              <CardTitle>{isProductionService && productionOption === "media-quote" ? "Quote Request Summary" : "Booking Summary"}</CardTitle>
             </CardHeader>
             <CardContent>
+              {isProductionService && productionOption === "media-quote" ? (
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between gap-4"><span className="text-muted-foreground">Request</span><span className="text-right">Custom Media Quote</span></div>
+                  {intakeDetails.projectName && <div className="flex justify-between gap-4"><span className="text-muted-foreground">Project</span><span className="text-right">{intakeDetails.projectName}</span></div>}
+                  {intakeDetails.intendedUse && <div className="flex justify-between gap-4"><span className="text-muted-foreground">Intended use</span><span className="text-right">{intakeDetails.intendedUse}</span></div>}
+                  {intakeDetails.desiredDeadline && <div className="flex justify-between gap-4"><span className="text-muted-foreground">Desired delivery date</span><span className="text-right">{intakeDetails.desiredDeadline}</span></div>}
+                  <p className="border-t pt-3 text-muted-foreground">No appointment or payment will be created. Scope, price, rights, delivery, and timing will be confirmed after review.</p>
+                </div>
+              ) : (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -1505,6 +1589,7 @@ export default function BookingForm({
                   </div>
                 </div>
               </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1514,7 +1599,7 @@ export default function BookingForm({
             type="submit" 
             size="lg"
           >
-            Continue to Contract
+            {isProductionService && productionOption === "media-quote" ? "Submit Quote Request" : "Continue to Contract"}
           </Button>
         </div>
       </form>

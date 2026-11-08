@@ -24,6 +24,16 @@ interface Contract {
   updatedAt: string;
 }
 
+interface ContractSignature {
+  id: number;
+  contractId: number;
+  customerName: string;
+  customerEmail: string;
+  relatedEntityType?: string | null;
+  relatedEntityId?: number | null;
+  createdAt: string;
+}
+
 export default function ContractManager() {
   const { toast } = useToast();
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -37,6 +47,25 @@ export default function ContractManager() {
     fileType: "pdf",
     category: "licensing"
   });
+  const { data: signedAgreements = [] } = useQuery<ContractSignature[]>({
+    queryKey: ["/api/contract-signatures"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/contract-signatures");
+      if (!response.ok) throw new Error("Unable to load signed agreements");
+      return response.json();
+    },
+  });
+
+  const downloadSignedAgreement = async (signature: ContractSignature) => {
+    try {
+      const response = await apiRequest("GET", `/api/contract-signatures/${signature.id}/download`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Unable to prepare the download");
+      window.open(data.url, "_blank", "noopener,noreferrer");
+    } catch (error: any) {
+      toast({ title: "Download failed", description: error.message, variant: "destructive" });
+    }
+  };
   
   // Sample contracts (in a real app, we'd fetch these from an API)
   const contracts = [
@@ -63,7 +92,7 @@ export default function ContractManager() {
     {
       id: 3,
       title: "Exclusive License Agreement",
-      description: "Full ownership rights transfer agreement",
+      description: "Exclusive-use terms subject to prior licenses; copyright transfer requires a separate agreement",
       fileUrl: "https://storage.musiclifestudios.com/contracts/exclusive-license.pdf",
       fileType: "pdf",
       category: "licensing",
@@ -270,6 +299,7 @@ export default function ContractManager() {
             <TabsTrigger value="licensing">Beat Licensing</TabsTrigger>
             <TabsTrigger value="services">Studio Services</TabsTrigger>
             <TabsTrigger value="other">Other Documents</TabsTrigger>
+            <TabsTrigger value="signed">Signed Agreements</TabsTrigger>
           </TabsList>
           
           <TabsContent value="licensing" className="space-y-4">
@@ -418,6 +448,24 @@ export default function ContractManager() {
                     </TableRow>
                   ))
                 )}
+              </TableBody>
+            </Table>
+          </TabsContent>
+
+          <TabsContent value="signed" className="space-y-4">
+            <Table>
+              <TableHeader><TableRow><TableHead>Customer</TableHead><TableHead>Related record</TableHead><TableHead>Signed</TableHead><TableHead className="text-right">Private copy</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {signedAgreements.length === 0 ? (
+                  <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">No signed agreements yet</TableCell></TableRow>
+                ) : signedAgreements.map((signature) => (
+                  <TableRow key={signature.id}>
+                    <TableCell><div className="font-medium">{signature.customerName}</div><div className="text-xs text-muted-foreground">{signature.customerEmail}</div></TableCell>
+                    <TableCell>{signature.relatedEntityType && signature.relatedEntityId ? `${signature.relatedEntityType} #${signature.relatedEntityId}` : `Contract #${signature.contractId}`}</TableCell>
+                    <TableCell>{new Date(signature.createdAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => downloadSignedAgreement(signature)}><Download className="mr-1 h-4 w-4" />Download</Button></TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </TabsContent>

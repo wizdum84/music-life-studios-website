@@ -36,6 +36,11 @@ export default function AccountLogin() {
     setIsLoading(true);
     try {
       const loggedInUser = await loginMutation.mutateAsync(values);
+      if ("mfaRequired" in loggedInUser) {
+        sessionStorage.setItem("adminMfaToken", loggedInUser.mfaToken);
+        navigate("/admin/login");
+        return;
+      }
       toast({
         title: "Login successful",
         description: "Welcome back to Music Life Studios!",
@@ -107,6 +112,7 @@ export default function AccountLogin() {
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? "Logging in..." : "Login"}
                 </Button>
+                <div className="text-center text-sm"><Link href="/forgot-password" className="text-primary hover:underline">Forgot password?</Link></div>
                 <div className="text-center text-sm text-muted-foreground">
                   <span>Don't have an account? </span>
                   <Link href="/account/register">

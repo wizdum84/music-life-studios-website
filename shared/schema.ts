@@ -16,6 +16,9 @@ export const users = pgTable("users", {
   loyaltyPoints: integer("loyalty_points").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLogin: timestamp("last_login"),
+  emailVerifiedAt: timestamp("email_verified_at"),
+  mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
+  mfaSecret: text("mfa_secret"),
 });
 
 export const insertUserSchema = createInsertSchema(users)
@@ -24,11 +27,14 @@ export const insertUserSchema = createInsertSchema(users)
     sessionCount: true, 
     loyaltyPoints: true, 
     createdAt: true, 
-    lastLogin: true 
+    lastLogin: true,
+    emailVerifiedAt: true,
+    mfaEnabled: true,
+    mfaSecret: true,
   })
   .extend({
     email: z.string().email("Please enter a valid email"),
-    password: z.string().min(6, "Password must be at least 6 characters"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
     firstName: z.string().optional(),
     lastName: z.string().optional(),
     phone: z.string().optional(),
@@ -191,6 +197,16 @@ export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 
 // Beats schema for licensing
+const mediaUrlSchema = z.string().refine((value) => {
+  if (value.startsWith("/")) return true;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}, "Media URL must be an absolute URL or a site asset path");
+
 export const beats = pgTable("beats", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
@@ -211,6 +227,12 @@ export const beats = pgTable("beats", {
   commercialLeaseEligible: boolean("commercial_lease_eligible").default(true).notNull(),
   contentIdRestricted: boolean("content_id_restricted").default(true).notNull(),
   licenseVersion: integer("license_version").default(1).notNull(),
+  isrcCode: text("isrc_code"),
+  catalogNumber: text("catalog_number"),
+  producerName: text("producer_name"),
+  musicalKey: text("musical_key"),
+  durationSeconds: integer("duration_seconds"),
+  metadata: json("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -220,21 +242,27 @@ export const insertBeatSchema = createInsertSchema(beats)
     title: z.string().min(2, "Title must be at least 2 characters"),
     genre: z.string(),
     description: z.string().min(10, "Description must be at least 10 characters"),
-    previewUrl: z.string().url("Preview URL must be a valid URL"),
-    fullAudioUrl: z.string().url("Full audio URL must be a valid URL"),
-    imageUrl: z.string().url("Image URL must be a valid URL").optional(),
+    previewUrl: mediaUrlSchema,
+    fullAudioUrl: mediaUrlSchema,
+    imageUrl: mediaUrlSchema.optional(),
     bpm: z.number().min(1, "BPM must be at least 1"),
     price: z.number().min(1, "Price must be at least 1 cent"),
     licensingOptions: z.unknown(), // We'll validate this on the client side
     contractUrl: z.string().url("Contract URL must be a valid URL").optional(),
     tags: z.array(z.string()).optional(),
     featured: z.boolean().optional(),
-    availabilityStatus: z.enum(["available_nonexclusive", "pending_exclusive", "exclusively_sold"]).optional(),
+    availabilityStatus: z.enum(["draft", "available_nonexclusive", "pending_exclusive", "exclusively_sold"]).optional(),
     availabilityUpdatedAt: z.coerce.date().nullable().optional(),
     starterRewardEligible: z.boolean().optional(),
     commercialLeaseEligible: z.boolean().optional(),
     contentIdRestricted: z.boolean().optional(),
     licenseVersion: z.number().int().positive().optional(),
+    isrcCode: z.string().trim().regex(/^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$/, "ISRC must use the standard 12-character format").optional(),
+    catalogNumber: z.string().trim().optional(),
+    producerName: z.string().trim().optional(),
+    musicalKey: z.string().trim().optional(),
+    durationSeconds: z.number().int().min(1).optional(),
+    metadata: z.record(z.unknown()).optional(),
   });
 
 // Beat purchases
@@ -438,6 +466,7 @@ export const membershipSubscriptions = pgTable("membership_subscriptions", {
   planId: integer("plan_id").notNull(),
   planVersionId: integer("plan_version_id"),
   status: text("status").default("active").notNull(),
+  paymentStatus: text("payment_status").default("pending").notNull(),
   startDate: timestamp("start_date").defaultNow().notNull(),
   currentPeriodStart: timestamp("current_period_start").notNull(),
   currentPeriodEnd: timestamp("current_period_end").notNull(),
@@ -539,6 +568,9 @@ export const membershipPaymentAssociations = pgTable("membership_payment_associa
   id: serial("id").primaryKey(),
   subscriptionId: integer("subscription_id").notNull(),
   paymentProviderId: text("payment_provider_id").notNull(),
+  paymentProviderSubscriptionId: text("payment_provider_subscription_id"),
+  paymentProviderTransactionId: text("payment_provider_transaction_id"),
+  paymentProviderEventId: text("payment_provider_event_id"),
   amountCents: integer("amount_cents").notNull(),
   status: text("status").default("pending").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

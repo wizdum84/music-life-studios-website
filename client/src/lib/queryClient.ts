@@ -35,6 +35,11 @@ export async function getBookingPaymentStatus(bookingId: string, email: string) 
   return await response.json();
 }
 
+export async function getPaymentLinkStatus(token: string) {
+  const response = await apiRequest("GET", `/api/payment-links/${encodeURIComponent(token)}`);
+  return await response.json();
+}
+
 type UnauthorizedBehavior = "returnNull" | "returnEmptyArray" | "returnEmptyObject" | "throw";
 export function getQueryFn<T>(options?: {
   on401?: UnauthorizedBehavior;

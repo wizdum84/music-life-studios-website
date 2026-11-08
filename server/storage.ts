@@ -37,7 +37,7 @@ import { db } from "./db";
 import { eq, and, gte, lte, desc, sql, asc } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
-import { pool } from "./db";
+import { pool, bookingLockPool } from "./db";
 
 // Initialize PostgreSQL session store
 const PgSessionStore = connectPg(session);
@@ -100,7 +100,9 @@ export interface IStorage {
   createMembershipEvent(event: InsertMembershipEvent): Promise<MembershipEvent>;
   getMembershipPaymentAssociations(subscriptionId: number): Promise<MembershipPaymentAssociation[]>;
   getMembershipPaymentAssociationByProviderId(paymentProviderId: string): Promise<MembershipPaymentAssociation | undefined>;
+  getMembershipPaymentAssociationByTransactionId(paymentProviderTransactionId: string): Promise<MembershipPaymentAssociation | undefined>;
   createMembershipPaymentAssociation(association: InsertMembershipPaymentAssociation): Promise<MembershipPaymentAssociation>;
+  updateMembershipPaymentAssociation(id: number, association: Partial<InsertMembershipPaymentAssociation>): Promise<MembershipPaymentAssociation | undefined>;
   getMembershipPauses(subscriptionId: number): Promise<MembershipPause[]>;
   createMembershipPause(pause: InsertMembershipPause): Promise<MembershipPause>;
   getMembershipLoyaltyMilestones(planId: number): Promise<MembershipLoyaltyMilestone[]>;
@@ -137,6 +139,7 @@ export interface IStorage {
     paymentErrorMessage?: string;
     paymentMetadata?: any;
     tipAmount?: number;
+    status?: string;
   }): Promise<Booking | undefined>;
   deleteBooking(id: number): Promise<boolean>;
   
@@ -389,15 +392,22 @@ export class DatabaseStorage implements IStorage {
     paymentErrorMessage?: string;
     paymentMetadata?: any;
     tipAmount?: number;
+    status?: string;
   }): Promise<Booking | undefined> {
+    const existing = await this.getBooking(id);
+    const existingMetadata = existing?.paymentMetadata && typeof existing.paymentMetadata === "object" ? existing.paymentMetadata as Record<string, unknown> : {};
+    const nextPaymentMetadata = transactionInfo.paymentMetadata && typeof transactionInfo.paymentMetadata === "object"
+      ? { ...existingMetadata, ...transactionInfo.paymentMetadata }
+      : existingMetadata;
     const result = await db.update(bookings)
       .set({ 
         transactionId: transactionInfo.transactionId,
         paymentStatus: transactionInfo.paymentStatus,
         paymentMethod: transactionInfo.paymentMethod,
         paymentErrorMessage: transactionInfo.paymentErrorMessage,
-        paymentMetadata: transactionInfo.paymentMetadata,
-        tipAmount: transactionInfo.tipAmount || 0
+        paymentMetadata: nextPaymentMetadata,
+        tipAmount: transactionInfo.tipAmount || 0,
+        ...(transactionInfo.status ? { status: transactionInfo.status } : {})
       })
       .where(eq(bookings.id, id))
       .returning();
@@ -1092,8 +1102,20 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getMembershipPaymentAssociationByTransactionId(paymentProviderTransactionId: string): Promise<MembershipPaymentAssociation | undefined> {
+    const result = await db.select().from(membershipPaymentAssociations)
+      .where(eq(membershipPaymentAssociations.paymentProviderTransactionId, paymentProviderTransactionId))
+      .limit(1);
+    return result[0];
+  }
+
   async createMembershipPaymentAssociation(association: InsertMembershipPaymentAssociation): Promise<MembershipPaymentAssociation> {
     const result = await db.insert(membershipPaymentAssociations).values(association).returning();
+    return result[0];
+  }
+
+  async updateMembershipPaymentAssociation(id: number, association: Partial<InsertMembershipPaymentAssociation>): Promise<MembershipPaymentAssociation | undefined> {
+    const result = await db.update(membershipPaymentAssociations).set(association).where(eq(membershipPaymentAssociations.id, id)).returning();
     return result[0];
   }
 
@@ -1203,6 +1225,12 @@ class MemoryStorage implements IStorage {
         commercialLeaseEligible: true,
         contentIdRestricted: true,
         licenseVersion: 1,
+        isrcCode: null,
+        catalogNumber: null,
+        producerName: null,
+        musicalKey: null,
+        durationSeconds: null,
+        metadata: null,
         createdAt: new Date(),
       },
       {
@@ -1225,6 +1253,12 @@ class MemoryStorage implements IStorage {
         commercialLeaseEligible: true,
         contentIdRestricted: true,
         licenseVersion: 1,
+        isrcCode: null,
+        catalogNumber: null,
+        producerName: null,
+        musicalKey: null,
+        durationSeconds: null,
+        metadata: null,
         createdAt: new Date(),
       },
     ];
@@ -1378,7 +1412,7 @@ class MemoryStorage implements IStorage {
       .sort((a, b) => b.currentPeriodEnd.getTime() - a.currentPeriodEnd.getTime())[0];
   }
   async createMembershipSubscription(subscription: InsertMembershipSubscription) {
-    const newSubscription = { id: this.nextId("membershipSubscriptions"), createdAt: new Date(), updatedAt: new Date(), ...subscription } as MembershipSubscription;
+    const newSubscription = { id: this.nextId("membershipSubscriptions"), paymentStatus: "pending", createdAt: new Date(), updatedAt: new Date(), ...subscription } as MembershipSubscription;
     this.membershipSubscriptionsData.push(newSubscription);
     return newSubscription;
   }
@@ -1440,10 +1474,24 @@ class MemoryStorage implements IStorage {
   async getMembershipPaymentAssociationByProviderId(paymentProviderId: string) {
     return this.membershipPaymentAssociationsData.find((association) => association.paymentProviderId === paymentProviderId);
   }
+  async getMembershipPaymentAssociationByTransactionId(paymentProviderTransactionId: string) {
+    return this.membershipPaymentAssociationsData.find((association) => association.paymentProviderTransactionId === paymentProviderTransactionId);
+  }
   async createMembershipPaymentAssociation(association: InsertMembershipPaymentAssociation) {
-    const newAssociation = { id: this.nextId("membershipPaymentAssociations"), status: "pending", createdAt: new Date(), ...association } as MembershipPaymentAssociation;
+    const newAssociation = {
+      id: this.nextId("membershipPaymentAssociations"),
+      paymentProviderSubscriptionId: null,
+      paymentProviderTransactionId: null,
+      paymentProviderEventId: null,
+      status: "pending",
+      createdAt: new Date(),
+      ...association,
+    } as MembershipPaymentAssociation;
     this.membershipPaymentAssociationsData.push(newAssociation);
     return newAssociation;
+  }
+  async updateMembershipPaymentAssociation(id: number, association: Partial<InsertMembershipPaymentAssociation>) {
+    return this.updateById(this.membershipPaymentAssociationsData, id, association);
   }
   async getMembershipPauses(subscriptionId: number) {
     return this.membershipPausesData.filter((pause) => pause.subscriptionId === subscriptionId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -1512,8 +1560,13 @@ class MemoryStorage implements IStorage {
   }
   async updateBooking(id: number, booking: Partial<InsertBooking>) { return this.updateById(this.bookingsData, id, booking); }
   async updateBookingPayment(id: number, paymentIntentId: string, status: string) { return this.updateById(this.bookingsData, id, { transactionId: paymentIntentId, paymentStatus: status }); }
-  async updateBookingTransactionInfo(id: number, transactionInfo: { transactionId: string; paymentStatus: string; paymentMethod?: string; paymentErrorMessage?: string; paymentMetadata?: any; tipAmount?: number; }) {
-    return this.updateById(this.bookingsData, id, transactionInfo);
+  async updateBookingTransactionInfo(id: number, transactionInfo: { transactionId: string; paymentStatus: string; paymentMethod?: string; paymentErrorMessage?: string; paymentMetadata?: any; tipAmount?: number; status?: string; }) {
+    const existing = await this.getBooking(id);
+    const existingMetadata = existing?.paymentMetadata && typeof existing.paymentMetadata === "object" ? existing.paymentMetadata as Record<string, unknown> : {};
+    const nextMetadata = transactionInfo.paymentMetadata && typeof transactionInfo.paymentMetadata === "object"
+      ? { ...existingMetadata, ...transactionInfo.paymentMetadata }
+      : existingMetadata;
+    return this.updateById(this.bookingsData, id, { ...transactionInfo, paymentMetadata: nextMetadata });
   }
   async deleteBooking(id: number) { return this.deleteById(this.bookingsData, id); }
 
@@ -1565,7 +1618,7 @@ class MemoryStorage implements IStorage {
   async getBeatsByGenre(genre: string) { return this.beatsData.filter((beat) => beat.genre === genre); }
   async getBeat(id: number) { return this.beatsData.find((beat) => beat.id === id); }
   async createBeat(beat: InsertBeat) {
-    const newBeat = { id: this.nextId("beats"), imageUrl: null, contractUrl: null, tags: null, featured: false, availabilityStatus: "available_nonexclusive", availabilityUpdatedAt: null, starterRewardEligible: true, commercialLeaseEligible: true, contentIdRestricted: true, licenseVersion: 1, createdAt: new Date(), licensingOptions: {}, ...beat } as Beat;
+    const newBeat = { id: this.nextId("beats"), imageUrl: null, contractUrl: null, tags: null, featured: false, availabilityStatus: "available_nonexclusive", availabilityUpdatedAt: null, starterRewardEligible: true, commercialLeaseEligible: true, contentIdRestricted: true, licenseVersion: 1, isrcCode: null, catalogNumber: null, producerName: null, musicalKey: null, durationSeconds: null, metadata: null, createdAt: new Date(), licensingOptions: {}, ...beat } as Beat;
     this.beatsData.push(newBeat);
     return newBeat;
   }
@@ -1658,3 +1711,34 @@ class MemoryStorage implements IStorage {
 }
 
 export const storage = process.env.DATABASE_URL ? new DatabaseStorage() : new MemoryStorage();
+
+const bookingLocks = new Map<number, Promise<unknown>>();
+
+// Serialize webhook, browser callback, and email retries for each booking.
+// A database advisory lock also protects deployments with multiple Node processes.
+export async function withBookingPaymentLock<T>(id: number, work: () => Promise<T>): Promise<T> {
+  if (process.env.DATABASE_URL) {
+    const client = await bookingLockPool.connect();
+    let transactionStarted = false;
+    let releaseError: Error | undefined;
+    try {
+      // Transaction-scoped locks work with transaction-pooling database URLs.
+      await client.query("BEGIN");
+      transactionStarted = true;
+      await client.query("SELECT pg_advisory_xact_lock(7711, $1::integer)", [id]);
+      return await work();
+    } finally {
+      try {
+        if (transactionStarted) await client.query("ROLLBACK");
+      } catch {
+        releaseError = new Error("Unable to release booking lock");
+      }
+      client.release(releaseError);
+    }
+  }
+  const previous = bookingLocks.get(id) || Promise.resolve();
+  const current = previous.catch(() => undefined).then(work);
+  bookingLocks.set(id, current);
+  try { return await current; }
+  finally { if (bookingLocks.get(id) === current) bookingLocks.delete(id); }
+}

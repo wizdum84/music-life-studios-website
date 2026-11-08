@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { getBookingPaidAmount } from "@shared/bookingPayments";
 import { 
   Tabs, 
   TabsContent, 
@@ -34,6 +35,7 @@ import {
   CreditCard, 
   Gift, 
   History, 
+  Download,
   Loader2,
   LogOut, 
   Pause,
@@ -42,13 +44,15 @@ import {
   User as UserIcon 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import PageHeader from "@/components/layout/PageHeader";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
-import { Booking, Contract, LoyaltyRecord, Service, MembershipPlan, MembershipSubscription } from "@shared/schema";
+import { BeatPurchase, Booking, Contract, LoyaltyRecord, Service, MembershipPlan, MembershipSubscription } from "@shared/schema";
 import { MEMBERSHIP_CANCELLATION_LANGUAGE, MEMBERSHIP_PLAN_CATALOG, formatCents } from "@shared/membership";
 import { ContractRequirement } from "@/components/contracts/ContractRequirement";
 
@@ -103,6 +107,21 @@ export default function Account() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isResendingVerification, setIsResendingVerification] = useState(false);
+
+  const resendVerification = async () => {
+    setIsResendingVerification(true);
+    try {
+      const response = await apiRequest("POST", "/api/email/resend");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      toast({ title: "Verification email sent", description: "Check your inbox and junk folder." });
+    } catch (error: any) {
+      toast({ title: "Unable to send verification", description: error.message, variant: "destructive" });
+    } finally { setIsResendingVerification(false); }
+  };
 
   // Redirect if not logged in
   useEffect(() => {
@@ -124,6 +143,27 @@ export default function Account() {
     queryFn: getQueryFn({ on401: "returnEmptyArray" }),
     enabled: !!user,
   });
+
+  const { data: beatLicenseRequests = [] } = useQuery<Array<BeatPurchase & { beatTitle: string; downloadReady: boolean }>>({
+    queryKey: ["/api/user/beat-license-requests"],
+    queryFn: getQueryFn({ on401: "returnEmptyArray" }),
+    enabled: !!user,
+  });
+  const [downloadingBeatId, setDownloadingBeatId] = useState<number | null>(null);
+
+  const downloadBeatFiles = async (purchaseId: number) => {
+    setDownloadingBeatId(purchaseId);
+    try {
+      const response = await fetch(`/api/user/beat-license-requests/${purchaseId}/download`, { credentials: "include" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to prepare download");
+      window.location.assign(data.url);
+    } catch (error: any) {
+      toast({ title: "Download unavailable", description: error.message, variant: "destructive" });
+    } finally {
+      setDownloadingBeatId(null);
+    }
+  };
 
   // Fetch loyalty data
   const { data: loyaltyData = { records: [], points: 0, sessionCount: 0 }, isLoading: isLoadingLoyalty } = useQuery<{ 
@@ -178,13 +218,14 @@ export default function Account() {
     planId: number;
     prepaidTermMonths: number;
     contract: Contract;
+    signingToken: string;
   } | null>(null);
 
   const beginEnrollment = async (planId: number, prepaidTermMonths = 1) => {
     try {
       const response = await apiRequest("POST", "/api/user/membership/contract-preview", { planId, prepaidTermMonths });
       const data = await response.json();
-      setEnrollmentContract({ planId, prepaidTermMonths, contract: data.contract });
+      setEnrollmentContract({ planId, prepaidTermMonths, contract: data.contract, signingToken: data.signingToken });
     } catch (error: any) {
       toast({ title: "Agreement unavailable", description: error.message, variant: "destructive" });
     }
@@ -200,6 +241,18 @@ export default function Account() {
         toast({ title: "Passport activated", description: "Your Stripe payment was verified and your benefits are active." });
       })
       .catch((error: Error) => toast({ title: "Membership verification pending", description: error.message, variant: "destructive" }));
+  }, [user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    if (!user || params.get("beat_checkout") !== "success" || !sessionId) return;
+    apiRequest("POST", "/api/user/beat-license/complete-checkout", { sessionId })
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/user/beat-license-requests"] });
+        toast({ title: "Beat license activated", description: "Your Stripe payment was verified. Fulfillment instructions will be sent separately." });
+      })
+      .catch((error: Error) => toast({ title: "Payment verification pending", description: error.message, variant: "destructive" }));
   }, [user]);
 
   const subscribeMutation = useMutation({
@@ -275,6 +328,27 @@ export default function Account() {
     }
   };
 
+  const handlePasswordChange = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast({ title: "Passwords do not match", description: "Enter the same new password twice.", variant: "destructive" });
+      return;
+    }
+    setIsChangingPassword(true);
+    try {
+      await apiRequest("POST", "/api/user/password", {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      toast({ title: "Password updated", description: "Your password was changed and your session was renewed." });
+    } catch (error: any) {
+      toast({ title: "Password change failed", description: error.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   if (!user) {
     return null; // Protected route takes care of this
   }
@@ -318,8 +392,9 @@ export default function Account() {
   };
 
   // Get booking status badge
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const getStatusBadge = (booking: Booking) => {
+    if (booking.paymentStatus === "paid") return <Badge variant="success">Paid</Badge>;
+    switch (booking.status) {
       case "confirmed":
         return <Badge variant="success">Confirmed</Badge>;
       case "completed":
@@ -343,6 +418,13 @@ export default function Account() {
           Log Out
         </Button>
       </div>
+
+      {!user.emailVerifiedAt && (
+        <div className="mb-6 flex flex-col gap-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="font-semibold">Verify your email address</p><p className="text-sm">Verification protects password recovery and account notices.</p></div>
+          <Button variant="outline" onClick={resendVerification} disabled={isResendingVerification}>{isResendingVerification ? "Sending..." : "Resend verification email"}</Button>
+        </div>
+      )}
       
       {isLoading && (
         <div className="flex items-center justify-center p-8">
@@ -432,7 +514,7 @@ export default function Account() {
                       <div key={booking.id} className="flex flex-col p-3 bg-muted/50 rounded-md">
                         <div className="flex justify-between items-start">
                           <p className="font-medium">{getServiceName(booking.serviceId)}</p>
-                          {getStatusBadge(booking.status)}
+                          {getStatusBadge(booking)}
                         </div>
                         <div className="mt-1 flex gap-2 text-xs text-muted-foreground">
                           <div className="flex items-center">
@@ -552,7 +634,7 @@ export default function Account() {
                   <div className="flex flex-col items-center justify-center p-4 bg-muted/50 rounded-lg">
                     <CreditCard className="h-8 w-8 text-primary mb-2" />
                     <h3 className="text-2xl font-bold">
-                      {formatCurrency(bookings.reduce((sum, b) => sum + b.amount, 0))}
+                      {formatCurrency(bookings.reduce((sum, booking) => sum + getBookingPaidAmount(booking), 0))}
                     </h3>
                     <p className="text-sm text-muted-foreground">Total Spent</p>
                   </div>
@@ -763,6 +845,7 @@ export default function Account() {
                           entityId={enrollmentContract.planId}
                           email={user.email}
                           name={[user.firstName, user.lastName].filter(Boolean).join(" ") || user.username}
+                          signingToken={enrollmentContract.signingToken}
                           onCheckExistingSignature={false}
                           onContractSigned={() => {
                             subscribeMutation.mutate({
@@ -825,6 +908,7 @@ export default function Account() {
         </TabsContent>
         
         <TabsContent value="bookings">
+          <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Your Bookings</CardTitle>
@@ -861,7 +945,7 @@ export default function Account() {
                                 </span>
                               </TableCell>
                               <TableCell>{booking.duration / 60} hours</TableCell>
-                              <TableCell>{getStatusBadge(booking.status)}</TableCell>
+                              <TableCell>{getStatusBadge(booking)}</TableCell>
                               <TableCell className="text-right">{formatCurrency(booking.amount)}</TableCell>
                             </TableRow>
                           ))}
@@ -904,7 +988,7 @@ export default function Account() {
                                 </span>
                               </TableCell>
                               <TableCell>{booking.duration / 60} hours</TableCell>
-                              <TableCell>{getStatusBadge(booking.status)}</TableCell>
+                              <TableCell>{getStatusBadge(booking)}</TableCell>
                               <TableCell className="text-right">{formatCurrency(booking.amount)}</TableCell>
                             </TableRow>
                           ))}
@@ -922,6 +1006,40 @@ export default function Account() {
               </Tabs>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Beat License Requests</CardTitle>
+              <CardDescription>Signed requests awaiting verified payment and fulfillment</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {beatLicenseRequests.length ? (
+                <Table>
+                  <TableHeader><TableRow><TableHead>Beat</TableHead><TableHead>License</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Price</TableHead><TableHead className="text-right">Files</TableHead></TableRow></TableHeader>
+                  <TableBody>{beatLicenseRequests.map((request) => (
+                    <TableRow key={request.id}>
+                      <TableCell className="font-medium">{request.beatTitle}</TableCell>
+                      <TableCell className="capitalize">{request.licenseType}</TableCell>
+                      <TableCell><Badge variant="secondary">{request.licenseStatus === "pending" ? "Pending payment" : request.licenseStatus.replaceAll("_", " ")}</Badge></TableCell>
+                      <TableCell className="text-right">{formatCurrency(request.price)}</TableCell>
+                      <TableCell className="text-right">
+                        {request.licenseStatus === "active" && request.downloadReady ? (
+                          <Button size="sm" variant="outline" disabled={downloadingBeatId === request.id} onClick={() => downloadBeatFiles(request.id)}>
+                            {downloadingBeatId === request.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                            Download
+                          </Button>
+                        ) : request.licenseStatus === "active" ? (
+                          <span className="text-xs text-muted-foreground">Delivery being prepared</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">After payment</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}</TableBody>
+                </Table>
+              ) : <p className="text-sm text-muted-foreground">No beat license requests yet.</p>}
+            </CardContent>
+          </Card>
+          </div>
         </TabsContent>
         
         <TabsContent value="loyalty">
@@ -1109,7 +1227,7 @@ export default function Account() {
                       <div>
                         <p className="text-xs text-muted-foreground">Total Spent</p>
                         <p className="text-lg font-bold">
-                          {formatCurrency(pastBookings.reduce((sum, b) => sum + b.amount, 0))}
+                          {formatCurrency(pastBookings.reduce((sum, booking) => sum + getBookingPaidAmount(booking), 0))}
                         </p>
                       </div>
                       <div>
@@ -1188,6 +1306,28 @@ export default function Account() {
                   <Button variant="outline" size="sm" asChild>
                     <a href="/#contact">Contact Us</a>
                   </Button>
+                </div>
+
+                <div className="p-4 rounded-lg border">
+                  <h3 className="font-medium mb-2">Change Password</h3>
+                  <p className="text-sm text-muted-foreground mb-4">Use a unique password with at least 8 characters.</p>
+                  <form onSubmit={handlePasswordChange} className="space-y-3 max-w-md">
+                    <div className="space-y-1">
+                      <Label htmlFor="current-password">Current password</Label>
+                      <Input id="current-password" type="password" autoComplete="current-password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))} required />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="new-password">New password</Label>
+                      <Input id="new-password" type="password" autoComplete="new-password" minLength={8} value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} required />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="confirm-password">Confirm new password</Label>
+                      <Input id="confirm-password" type="password" autoComplete="new-password" minLength={8} value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))} required />
+                    </div>
+                    <Button type="submit" disabled={isChangingPassword}>
+                      {isChangingPassword ? "Updating..." : "Update Password"}
+                    </Button>
+                  </form>
                 </div>
               </div>
             </CardContent>

@@ -1,5 +1,5 @@
 export type BeatLicenseProduct = "starter_reward" | "commercial_lease" | "paid_nonexclusive" | "exclusive";
-export type BeatAvailabilityStatus = "available_nonexclusive" | "pending_exclusive" | "exclusively_sold";
+export type BeatAvailabilityStatus = "draft" | "available_nonexclusive" | "pending_exclusive" | "exclusively_sold";
 
 export const NONEXCLUSIVE_DISCLOSURE =
   "This is a nonexclusive license. Other artists may also license and release music using the same instrumental. Your license grants only the rights stated in your agreement and does not transfer ownership of the underlying beat.";

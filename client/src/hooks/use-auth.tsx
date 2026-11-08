@@ -10,12 +10,13 @@ import { useToast } from "@/hooks/use-toast";
 
 // Type for user data without password
 type UserWithoutPassword = Omit<User, "password">;
+type LoginResult = UserWithoutPassword | { mfaRequired: true; mfaToken: string };
 
 type AuthContextType = {
   user: UserWithoutPassword | null;
   isLoading: boolean;
   error: Error | null;
-  loginMutation: UseMutationResult<UserWithoutPassword, Error, LoginData>;
+  loginMutation: UseMutationResult<LoginResult, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<UserWithoutPassword, Error, RegisterData>;
 };
@@ -56,8 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
       return data.user ?? data;
     },
-    onSuccess: (user: UserWithoutPassword) => {
-      queryClient.setQueryData(["/api/user"], user);
+    onSuccess: (result: LoginResult) => {
+      if ("id" in result) queryClient.setQueryData(["/api/user"], result);
     },
     onError: (error: Error) => {
       toast({

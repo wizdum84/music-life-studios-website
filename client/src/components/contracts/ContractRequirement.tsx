@@ -16,6 +16,7 @@ interface ContractRequirementProps {
   entityId?: number;
   email: string;
   name: string;
+  signingToken?: string;
   plainLanguageSummary?: string;
   onContractSigned: () => void;
   onCheckExistingSignature?: boolean;
@@ -27,6 +28,7 @@ export function ContractRequirement({
   entityId,
   email,
   name,
+  signingToken,
   plainLanguageSummary,
   onContractSigned,
   onCheckExistingSignature = true,
@@ -34,7 +36,7 @@ export function ContractRequirement({
   const [contract, setContract] = useState<Contract | null>(null);
   const [loading, setLoading] = useState(true);
   const [signaturePad, setSignaturePad] = useState<string | null>(null);
-  const [signatureMode, setSignatureMode] = useState<"draw" | "type">("draw");
+  const [signatureMode, setSignatureMode] = useState<"draw" | "type">("type");
   const [typedSignature, setTypedSignature] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -157,7 +159,8 @@ export function ContractRequirement({
         signatureData: effectiveSignature,
         agreedToTerms,
         relatedEntityType: entityType,
-        relatedEntityId: entityId || null
+        relatedEntityId: entityId || null,
+        signingToken,
       });
 
       if (!response.ok) {
@@ -382,11 +385,23 @@ export function ContractRequirement({
           <div className="space-y-3">
             <Label>Signature</Label>
             <div className="inline-flex rounded-md border bg-background p-1">
-              <Button type="button" size="sm" variant={signatureMode === "draw" ? "default" : "ghost"} onClick={() => setSignatureMode("draw")}>
+              <Button
+                type="button"
+                size="sm"
+                variant={signatureMode === "draw" ? "default" : "ghost"}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); setSignatureMode("draw"); }}
+              >
                 <PenLine className="mr-2 h-4 w-4" />
                 Draw
               </Button>
-              <Button type="button" size="sm" variant={signatureMode === "type" ? "default" : "ghost"} onClick={() => setSignatureMode("type")}>
+              <Button
+                type="button"
+                size="sm"
+                variant={signatureMode === "type" ? "default" : "ghost"}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); setSignatureMode("type"); }}
+              >
                 <FileText className="mr-2 h-4 w-4" />
                 Type
               </Button>

@@ -19,6 +19,7 @@ export async function createPaymentIntent(input: {
   customerEmail: string;
   isDeposit: boolean;
   tipAmount: number;
+  idempotencyKey?: string;
 }) {
   const client = assertStripeConfigured();
   return client.paymentIntents.create({
@@ -31,7 +32,7 @@ export async function createPaymentIntent(input: {
       tipAmount: String(input.tipAmount),
     },
     automatic_payment_methods: { enabled: true },
-  });
+  }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
 }
 
 export async function retrievePaymentIntent(paymentIntentId: string) {
@@ -80,6 +81,46 @@ export async function createMembershipCheckoutSession(input: {
 
 export async function retrieveCheckoutSession(sessionId: string) {
   return assertStripeConfigured().checkout.sessions.retrieve(sessionId, { expand: ["subscription"] });
+}
+
+export async function createBeatLicenseCheckoutSession(input: {
+  purchaseId: number;
+  beatId: number;
+  beatTitle: string;
+  licenseType: string;
+  customerEmail: string;
+  priceCents: number;
+  successUrl: string;
+  cancelUrl: string;
+}) {
+  const client = assertStripeConfigured();
+  return client.checkout.sessions.create({
+    mode: "payment",
+    customer_email: input.customerEmail,
+    line_items: [{
+      quantity: 1,
+      price_data: {
+        currency: "usd",
+        unit_amount: input.priceCents,
+        product_data: { name: `${input.beatTitle} - ${input.licenseType} beat license` },
+      },
+    }],
+    metadata: {
+      beatPurchaseId: String(input.purchaseId),
+      beatId: String(input.beatId),
+      licenseType: input.licenseType,
+    },
+    payment_intent_data: {
+      receipt_email: input.customerEmail,
+      metadata: {
+        beatPurchaseId: String(input.purchaseId),
+        beatId: String(input.beatId),
+        licenseType: input.licenseType,
+      },
+    },
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+  }, { idempotencyKey: `beat-license:${input.purchaseId}` });
 }
 
 export function constructWebhookEvent(payload: Buffer, signature: string | undefined) {

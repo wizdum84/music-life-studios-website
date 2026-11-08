@@ -18,6 +18,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 const formSchema = z.object({
   username: z.string().min(3, {
@@ -32,6 +34,10 @@ export default function AdminLogin() {
   const [location, navigate] = useLocation();
   const { user, isLoading, loginMutation } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
+  const [mfaToken, setMfaToken] = useState(() => sessionStorage.getItem("adminMfaToken") || "");
+  const [mfaCode, setMfaCode] = useState("");
+  const [isVerifying, setIsVerifying] = useState(false);
+  const { toast } = useToast();
   
   // Scroll to top on component mount
   useEffect(() => {
@@ -46,8 +52,26 @@ export default function AdminLogin() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    loginMutation.mutate(values);
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    const result = await loginMutation.mutateAsync(values);
+    if ("mfaRequired" in result) {
+      sessionStorage.setItem("adminMfaToken", result.mfaToken);
+      setMfaToken(result.mfaToken);
+    }
+  }
+
+  async function verifyMfa() {
+    setIsVerifying(true);
+    try {
+      const response = await apiRequest("POST", "/api/login/mfa", { mfaToken, code: mfaCode });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Verification failed");
+      sessionStorage.removeItem("adminMfaToken");
+      queryClient.setQueryData(["/api/user"], data.user);
+      navigate("/admin");
+    } catch (error: any) {
+      toast({ title: "Verification failed", description: error.message, variant: "destructive" });
+    } finally { setIsVerifying(false); }
   }
   
   // Redirect if already logged in
@@ -80,7 +104,14 @@ export default function AdminLogin() {
             </p>
           </div>
           
-          <Form {...form}>
+          {mfaToken ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">Enter the six-digit code from your authenticator app.</p>
+              <Input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, ""))} placeholder="000000" />
+              <Button className="w-full" onClick={verifyMfa} disabled={mfaCode.length !== 6 || isVerifying}>{isVerifying ? "Verifying..." : "Verify and sign in"}</Button>
+              <Button variant="ghost" className="w-full" onClick={() => { sessionStorage.removeItem("adminMfaToken"); setMfaToken(""); }}>Use password again</Button>
+            </div>
+          ) : <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
                 control={form.control}
@@ -134,8 +165,11 @@ export default function AdminLogin() {
                 )}
               </Button>
             </form>
-          </Form>
+          </Form>}
 
+          <p className="text-center text-sm text-muted-foreground">
+            <Link href="/forgot-password" className="text-primary hover:underline">Forgot password?</Link>
+          </p>
           <p className="text-center text-sm text-muted-foreground">
             First setup? <Link href="/admin/setup" className="text-primary hover:underline">Create the first administrator</Link>
           </p>

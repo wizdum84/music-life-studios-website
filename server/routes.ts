@@ -1,7 +1,14 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
-import { insertBookingSchema, insertMessageSchema, insertMembershipSubscriptionSchema } from "@shared/schema";
+import { createReadStream } from "node:fs";
+import { rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import multer from "multer";
+import ffmpegPath from "ffmpeg-static";
+import { storage, withBookingPaymentLock } from "./storage";
+import { insertBeatSchema, insertBookingSchema, insertMessageSchema, insertMembershipSubscriptionSchema, insertContractSignatureSchema, insertFeedbackSchema } from "@shared/schema";
 import { calculatePricing } from "@shared/pricing";
 import {
   MEMBERSHIP_CANCELLATION_LANGUAGE,
@@ -13,10 +20,248 @@ import {
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { getBeatRightsSnapshot, NONEXCLUSIVE_DISCLOSURE, CONTENT_ID_RESTRICTION, type BeatLicenseProduct } from "@shared/beatLicensing";
-import { assembleBookingAgreement, assembleMembershipAgreement, type ContractAccountStatus } from "@shared/contractGenerator";
-import { createHash } from "node:crypto";
+import { assembleBeatLicenseAgreement, assembleBookingAgreement, assembleMembershipAgreement, type ContractAccountStatus } from "@shared/contractGenerator";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import * as stripeService from "./services/stripe";
+import { getBookingChargeAmount, recordBookingPayment, recordBookingRefund } from "./services/booking-payment";
+import { queueBookingEmails } from "./services/booking-email-worker";
+import { sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail } from "./services/email";
 import { setupAuth } from "./auth";
+import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
+
+const BOOKING_DEPOSIT_RATE = 0.5;
+const beatDeliverableUpload = multer({
+  dest: path.join(tmpdir(), "music-life-studios-uploads"),
+  limits: { fileSize: 1024 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    const allowed = new Set([".wav", ".mp3", ".aiff", ".aif", ".zip"]);
+    if (allowed.has(extension)) callback(null, true);
+    else callback(new Error("Upload a WAV, MP3, AIFF, or ZIP file"));
+  },
+});
+const beatPreviewUpload = multer({
+  dest: path.join(tmpdir(), "music-life-studios-uploads"),
+  limits: { fileSize: 50 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    if ([".mp3", ".wav"].includes(extension)) callback(null, true);
+    else callback(new Error("Upload an MP3 or WAV preview"));
+  },
+});
+const beatMasterUpload = multer({
+  dest: path.join(tmpdir(), "music-life-studios-uploads"),
+  limits: { fileSize: 1024 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    if ([".mp3", ".wav", ".aiff", ".aif"].includes(extension)) callback(null, true);
+    else callback(new Error("Upload an MP3, WAV, or AIFF beat"));
+  },
+});
+const beatCoverUpload = multer({
+  dest: path.join(tmpdir(), "music-life-studios-uploads"),
+  limits: { fileSize: 20 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    if ([".jpg", ".jpeg", ".png", ".webp"].includes(extension)) callback(null, true);
+    else callback(new Error("Upload a JPG, PNG, or WebP cover"));
+  },
+});
+const bookingAudioUpload = multer({
+  dest: path.join(tmpdir(), "music-life-studios-uploads"),
+  limits: { fileSize: 1024 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    if ([".mp3", ".wav", ".aiff", ".aif", ".zip"].includes(extension)) callback(null, true);
+    else callback(new Error("Upload an MP3, WAV, AIFF, or ZIP file"));
+  },
+});
+
+function createBeatPreview(inputPath: string, outputPath: string) {
+  if (!ffmpegPath) throw new Error("Audio preview generator is unavailable");
+  const binaryPath: string = ffmpegPath;
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(binaryPath, [
+      "-y",
+      "-ss", "30",
+      "-i", inputPath,
+      "-t", "45",
+      "-af", "afade=t=in:st=0:d=0.75,afade=t=out:st=43.5:d=1.5,loudnorm=I=-14:TP=-1.5:LRA=11",
+      "-codec:a", "libmp3lame",
+      "-b:a", "192k",
+      outputPath,
+    ], { windowsHide: true });
+    let errorOutput = "";
+    child.stderr.on("data", (chunk: Buffer) => { errorOutput += String(chunk); });
+    child.on("error", reject);
+    child.on("close", (code: number | null) => code === 0
+      ? resolve()
+      : reject(new Error(`Audio preview generation failed${errorOutput ? `: ${errorOutput.slice(-500)}` : ""}`)));
+  });
+}
+
+type ContractSigningClaims = {
+  contractId: number;
+  email: string;
+  customerName: string;
+  entityType: string;
+  entityId?: number;
+  expiresAt: number;
+  nonce: string;
+};
+
+function beatLicensePrice(beat: { price: number; licensingOptions?: unknown }, licenseType: "basic" | "premium" | "exclusive") {
+  const options = beat.licensingOptions as Record<string, number | { price?: number }> | null;
+  const option = options?.[licenseType];
+  const price = typeof option === "number" ? option * 100 : option?.price;
+  return Number.isSafeInteger(price) && Number(price) > 0 ? Number(price) : beat.price;
+}
+
+function beatLicenseTitle(licenseType: "basic" | "premium" | "exclusive", beatTitle: string) {
+  const label = licenseType === "basic" ? "Basic Nonexclusive License"
+    : licenseType === "premium" ? "Premium Nonexclusive License" : "Exclusive Use License";
+  return `${label} - ${beatTitle}`;
+}
+
+function privateBeatObjectKey(fullAudioUrl: string) {
+  const prefix = "r2-private://";
+  return fullAudioUrl.startsWith(prefix) ? fullAudioUrl.slice(prefix.length) : null;
+}
+
+function beatDeliverableObjectKey(beat: { fullAudioUrl: string; metadata?: unknown }, licenseType: string) {
+  const metadata = beat.metadata && typeof beat.metadata === "object" ? beat.metadata as Record<string, unknown> : {};
+  const deliverables = metadata.deliverables && typeof metadata.deliverables === "object"
+    ? metadata.deliverables as Record<string, unknown>
+    : {};
+  const tierReference = typeof deliverables[licenseType] === "string" ? String(deliverables[licenseType]) : "";
+  if (tierReference) return privateBeatObjectKey(tierReference);
+  return licenseType === "basic" ? privateBeatObjectKey(beat.fullAudioUrl) : null;
+}
+
+type PaymentLinkClaims = {
+  bookingId: number;
+  email: string;
+  expiresAt: number;
+  nonce: string;
+};
+
+type BookingUploadClaims = {
+  bookingId: number;
+  email: string;
+  expiresAt: number;
+  nonce: string;
+};
+
+const usedContractSigningTokens = new Map<string, number>();
+
+function contractSigningSecret() {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) throw new Error("Contract signing secret is not configured");
+  return secret;
+}
+
+function issueContractSigningToken(input: Omit<ContractSigningClaims, "expiresAt" | "nonce">) {
+  const claims: ContractSigningClaims = {
+    ...input,
+    expiresAt: Date.now() + 15 * 60 * 1000,
+    nonce: cryptoRandomToken(),
+  };
+  const encodedClaims = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const signature = createHmac("sha256", contractSigningSecret()).update(encodedClaims).digest("base64url");
+  return `${encodedClaims}.${signature}`;
+}
+
+function cryptoRandomToken() {
+  return randomBytes(24).toString("base64url");
+}
+
+function issueBookingUploadToken(bookingId: number, email: string) {
+  const claims: BookingUploadClaims = {
+    bookingId,
+    email: email.toLowerCase(),
+    expiresAt: Date.now() + 60 * 60 * 1000,
+    nonce: cryptoRandomToken(),
+  };
+  const encoded = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const signature = createHmac("sha256", contractSigningSecret()).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function verifyBookingUploadToken(token: string | undefined) {
+  if (!token) return null;
+  try {
+    const [encoded, providedSignature] = token.split(".");
+    if (!encoded || !providedSignature) return null;
+    const expectedSignature = createHmac("sha256", contractSigningSecret()).update(encoded).digest("base64url");
+    const provided = Buffer.from(providedSignature);
+    const expected = Buffer.from(expectedSignature);
+    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
+    const claims = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as BookingUploadClaims;
+    return claims.expiresAt > Date.now() ? claims : null;
+  } catch {
+    return null;
+  }
+}
+
+function issuePaymentLinkToken(bookingId: number, email: string) {
+  const claims: PaymentLinkClaims = {
+    bookingId,
+    email: email.trim().toLowerCase(),
+    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    nonce: cryptoRandomToken(),
+  };
+  const encodedClaims = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const signature = createHmac("sha256", contractSigningSecret()).update(encodedClaims).digest("base64url");
+  return `${encodedClaims}.${signature}`;
+}
+
+function verifyPaymentLinkToken(token: unknown) {
+  if (typeof token !== "string") return null;
+  const [encodedClaims, suppliedSignature] = token.split(".");
+  if (!encodedClaims || !suppliedSignature) return null;
+
+  try {
+    const expectedSignature = createHmac("sha256", contractSigningSecret()).update(encodedClaims).digest("base64url");
+    const suppliedBuffer = Buffer.from(suppliedSignature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    if (suppliedBuffer.length !== expectedBuffer.length || !timingSafeEqual(suppliedBuffer, expectedBuffer)) return null;
+    const claims = JSON.parse(Buffer.from(encodedClaims, "base64url").toString("utf8")) as PaymentLinkClaims;
+    if (!Number.isInteger(claims.bookingId) || !claims.email || claims.expiresAt <= Date.now() || !claims.nonce) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+function consumeContractSigningToken(
+  token: unknown,
+  expected: { contractId: number; email: string; customerName: string; entityType: string; entityId?: number },
+) {
+  if (typeof token !== "string") return false;
+  const [encodedClaims, suppliedSignature] = token.split(".");
+  if (!encodedClaims || !suppliedSignature) return false;
+
+  try {
+    const expectedSignature = createHmac("sha256", contractSigningSecret()).update(encodedClaims).digest("base64url");
+    const suppliedBuffer = Buffer.from(suppliedSignature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    if (suppliedBuffer.length !== expectedBuffer.length || !timingSafeEqual(suppliedBuffer, expectedBuffer)) return false;
+
+    const claims = JSON.parse(Buffer.from(encodedClaims, "base64url").toString("utf8")) as ContractSigningClaims;
+    if (claims.expiresAt <= Date.now() || usedContractSigningTokens.has(claims.nonce)) return false;
+    if (claims.contractId !== expected.contractId || claims.email !== expected.email.trim().toLowerCase()) return false;
+    if (claims.customerName !== expected.customerName.trim() || claims.entityType !== expected.entityType) return false;
+    if (claims.entityId !== expected.entityId) return false;
+
+    usedContractSigningTokens.set(claims.nonce, claims.expiresAt);
+    usedContractSigningTokens.forEach((expiresAt, nonce) => {
+      if (expiresAt <= Date.now()) usedContractSigningTokens.delete(nonce);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Create default contracts if they don't exist
 async function ensureContractsExist() {
@@ -354,16 +599,6 @@ function addBillingCycles(date: Date, cycles: number) {
   return cycles > 0 ? addMonths(date, cycles) : null;
 }
 
-const BOOKING_DEPOSIT_RATE = 0.5;
-
-function getBookingChargeAmount(booking: { amount: number; paymentStatus?: string }, isDeposit: boolean, tipAmount = 0) {
-  if (isDeposit) return Math.round(booking.amount * BOOKING_DEPOSIT_RATE);
-  const remaining = booking.paymentStatus === "deposit_paid"
-    ? booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)
-    : booking.amount;
-  return remaining + Math.max(0, Math.round(tipAmount));
-}
-
 async function getRetentionPolicy(userId: number | null | undefined) {
   if (!userId) return { name: "guest", days: 30, version: 1 };
   const membership = await storage.getUserMembership(userId);
@@ -465,6 +700,54 @@ async function getMembershipAccountPayload(userId: number) {
   };
 }
 
+async function sendMembershipActivationEmailOnce(subscriptionId: number) {
+  const events = await storage.getMembershipEvents(subscriptionId);
+  if (events.some((event) => event.eventType === "membership_activation_email_sent")) return;
+  const membership = (await storage.getAllMembershipSubscriptions()).find((item) => item.id === subscriptionId);
+  if (!membership || membership.status !== "active") return;
+  const [user, plan] = await Promise.all([
+    storage.getUser(membership.userId),
+    storage.getMembershipPlan(membership.planId),
+  ]);
+  if (!user || !plan) return;
+  await sendMembershipConfirmationEmail(user, plan, membership);
+  await storage.createMembershipEvent({
+    subscriptionId,
+    eventType: "membership_activation_email_sent",
+    details: JSON.stringify({ recipient: user.email, sentAt: new Date().toISOString() }),
+  });
+}
+
+async function activateBeatLicenseCheckout(checkout: any, expectedUserId?: number) {
+  if (checkout.mode !== "payment" || checkout.payment_status !== "paid") {
+    throw new Error("Beat license payment is not complete");
+  }
+  const purchaseId = Number(checkout.metadata?.beatPurchaseId);
+  const purchase = await storage.getBeatPurchase(purchaseId);
+  if (!purchase) throw new Error("Beat license request not found");
+  if (expectedUserId && purchase.userId !== expectedUserId) throw new Error("Checkout session does not belong to this account");
+  if (Number(checkout.amount_total) !== purchase.price) throw new Error("Checkout amount does not match the license request");
+  if (purchase.licenseStatus === "active") return purchase;
+
+  const transactionId = typeof checkout.payment_intent === "string"
+    ? checkout.payment_intent
+    : checkout.payment_intent?.id || checkout.id;
+  const paymentVerified = await storage.updateBeatPurchaseContract(purchase.id, true, {
+    transactionId,
+    licenseStatus: "payment_verified",
+    licenseStartDate: new Date(Number(checkout.created || Math.floor(Date.now() / 1000)) * 1000),
+  } as any);
+  const beat = await storage.getBeat(purchase.beatId);
+  if (!paymentVerified || !beat) throw new Error("Unable to activate the beat license");
+
+  await sendBeatLicensePaymentEmails(paymentVerified, beat.title);
+  const active = await storage.updateBeatPurchaseContract(purchase.id, true, { licenseStatus: "active" } as any);
+  if (purchase.licenseType === "exclusive") {
+    await storage.updateBeat(beat.id, { availabilityStatus: "exclusively_sold", availabilityUpdatedAt: new Date() });
+  }
+  return active || paymentVerified;
+}
+
 async function issueMembershipBenefits(subscriptionId: number, planId: number, referenceType: string, referenceId: number | null, notes: string) {
   const definitions = await storage.getMembershipBenefitDefinitions(planId);
   const existingLedger = await storage.getMembershipBenefitLedger(subscriptionId);
@@ -548,6 +831,79 @@ async function hasStripeMembershipEvent(subscriptionId: number, stripeEventId: s
   });
 }
 
+async function findMembershipPaymentByProviderObjects(providerObjectIds: Array<string | null | undefined>) {
+  for (const providerObjectId of providerObjectIds) {
+    if (!providerObjectId) continue;
+    const payment = await storage.getMembershipPaymentAssociationByTransactionId(providerObjectId);
+    if (payment) return payment;
+  }
+  return undefined;
+}
+
+async function reverseMembershipPaymentEffects(input: {
+  subscriptionId: number;
+  paymentAssociationId: number;
+  status: "refunded" | "disputed" | "chargeback";
+  eventType: string;
+  stripeEventId: string;
+  providerObjectId: string;
+  reason: string;
+}) {
+  const ledger = await storage.getMembershipBenefitLedger(input.subscriptionId);
+  const creditedEntries = ledger.filter((entry) =>
+    entry.referenceType?.startsWith("stripe_") &&
+    entry.referenceId === input.paymentAssociationId &&
+    entry.action === "credit" &&
+    entry.quantity > 0
+  );
+
+  for (const credited of creditedEntries) {
+    const entries = ledger
+      .filter((entry) => entry.benefitDefinitionId === credited.benefitDefinitionId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const balanceBefore = entries.at(-1)?.balanceAfter ?? 0;
+    const quantityToReverse = Math.min(balanceBefore, credited.quantity);
+    if (quantityToReverse <= 0) continue;
+
+    await storage.createMembershipBenefitLedger({
+      subscriptionId: input.subscriptionId,
+      benefitDefinitionId: credited.benefitDefinitionId,
+      action: "reversal",
+      quantity: -quantityToReverse,
+      balanceBefore,
+      balanceAfter: balanceBefore - quantityToReverse,
+      referenceType: input.eventType,
+      referenceId: input.paymentAssociationId,
+      notes: input.reason,
+    });
+  }
+
+  const rewards = await storage.getMembershipLoyaltyRewards(input.subscriptionId);
+  for (const reward of rewards.filter((item) => item.sourcePaymentAssociationId === input.paymentAssociationId)) {
+    await storage.updateMembershipLoyaltyReward(reward.id, {
+      status: reward.redeemedAt ? "review" : "reversed",
+    });
+  }
+
+  await storage.updateMembershipPaymentAssociation(input.paymentAssociationId, { status: input.status });
+  await storage.updateMembershipSubscription(input.subscriptionId, {
+    status: input.status === "refunded" ? "past_due" : "suspended",
+    paymentStatus: input.status,
+    updatedAt: new Date(),
+  } as any);
+  await storage.createMembershipEvent({
+    subscriptionId: input.subscriptionId,
+    eventType: input.eventType,
+    details: JSON.stringify({
+      stripeEventId: input.stripeEventId,
+      providerObjectId: input.providerObjectId,
+      paymentAssociationId: input.paymentAssociationId,
+      reason: input.reason,
+      note: "Unused benefits from this payment were reversed. Redeemed rewards, if any, were marked for admin review.",
+    }),
+  });
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Ensure all contracts and membership plans exist when the server starts
   await ensureContractsExist();
@@ -563,6 +919,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     res.status(401).json({ message: "Unauthorized" });
+  };
+
+  const requireAdmin = (req: Request, res: Response, next: any) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Unauthorized" });
+    if (req.user?.role !== "admin") return res.status(403).json({ message: "Access denied" });
+    next();
   };
   
   // API routes
@@ -598,7 +960,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const parsedServiceId = parseInt(serviceId, 10);
       const parsedDuration = parseInt(duration, 10);
 
-      if (!Number.isFinite(parsedServiceId) || !Number.isFinite(parsedDuration)) {
+      if (!Number.isInteger(parsedServiceId) || parsedServiceId <= 0 || !Number.isInteger(parsedDuration) || parsedDuration <= 0 || parsedDuration > 24 * 60) {
         return res.status(400).json({ error: "Service ID and duration are required" });
       }
 
@@ -634,12 +996,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Beats API routes
+
+  function serializePublicBeat(beat: any, includeAdminFields: boolean) {
+    if (includeAdminFields) return beat;
+    const { fullAudioUrl, contractUrl, isrcCode, catalogNumber, producerName, metadata, ...publicBeat } = beat;
+    return publicBeat;
+  }
   
   // Get all beats
   app.get("/api/beats", async (req, res) => {
     try {
       const beats = await storage.getAllBeats();
-      res.json(beats);
+      const isAdmin = req.user?.role === "admin";
+      res.json(beats.filter((beat) => isAdmin || beat.availabilityStatus !== "draft").map((beat) => serializePublicBeat(beat, isAdmin)));
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -649,7 +1018,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/beats/featured", async (req, res) => {
     try {
       const beats = await storage.getFeaturedBeats();
-      res.json(beats);
+      const isAdmin = req.user?.role === "admin";
+      res.json(beats.filter((beat) => isAdmin || beat.availabilityStatus !== "draft").map((beat) => serializePublicBeat(beat, isAdmin)));
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -660,7 +1030,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { genre } = req.params;
       const beats = await storage.getBeatsByGenre(genre);
-      res.json(beats);
+      const isAdmin = req.user?.role === "admin";
+      res.json(beats.filter((beat) => isAdmin || beat.availabilityStatus !== "draft").map((beat) => serializePublicBeat(beat, isAdmin)));
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -690,52 +1061,211 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const beat = await storage.getBeat(parseInt(id));
-      if (!beat) {
+      if (!beat || (beat.availabilityStatus === "draft" && req.user?.role !== "admin")) {
         return res.status(404).json({ error: "Beat not found" });
       }
-      res.json(beat);
+      res.json(serializePublicBeat(beat, req.user?.role === "admin"));
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
   
   // Create beat (admin only)
-  app.post("/api/beats", isAuthenticated, async (req, res) => {
+  app.post("/api/beats", requireAdmin, async (req, res) => {
     try {
-      const beat = await storage.createBeat(req.body);
+      const input = insertBeatSchema.parse(normalizeBeatInput(req.body));
+      const beat = await storage.createBeat(input);
       res.status(201).json(beat);
     } catch (error: any) {
+      if (error instanceof ZodError) return res.status(400).json({ error: fromZodError(error).message });
       res.status(500).json({ error: error.message });
     }
   });
+
+  function normalizeBeatInput(payload: Record<string, unknown>) {
+    const isrc = typeof payload.isrcCode === "string"
+      ? payload.isrcCode.replace(/[^a-z0-9]/gi, "").toUpperCase()
+      : undefined;
+    const normalized = {
+      ...payload,
+      isrcCode: isrc || undefined,
+      catalogNumber: typeof payload.catalogNumber === "string" ? payload.catalogNumber.trim().toUpperCase() || undefined : undefined,
+      producerName: typeof payload.producerName === "string" ? payload.producerName.trim() || undefined : undefined,
+      musicalKey: typeof payload.musicalKey === "string" ? payload.musicalKey.trim() || undefined : undefined,
+      imageUrl: typeof payload.imageUrl === "string" ? payload.imageUrl.trim() || undefined : undefined,
+      contractUrl: typeof payload.contractUrl === "string" ? payload.contractUrl.trim() || undefined : undefined,
+    };
+    return normalized;
+  }
   
   // Update beat (admin only)
-  app.put("/api/beats/:id", isAuthenticated, async (req, res) => {
+  app.put("/api/beats/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const beat = await storage.updateBeat(parseInt(id), req.body);
+      const existing = await storage.getBeat(parseInt(id));
+      if (!existing) return res.status(404).json({ error: "Beat not found" });
+      const input = insertBeatSchema.partial().parse(normalizeBeatInput(req.body));
+      if (input.metadata && typeof input.metadata === "object") {
+        input.metadata = { ...(existing.metadata && typeof existing.metadata === "object" ? existing.metadata as Record<string, unknown> : {}), ...input.metadata };
+      }
+      const beat = await storage.updateBeat(parseInt(id), input);
       if (!beat) {
         return res.status(404).json({ error: "Beat not found" });
       }
       res.json(beat);
     } catch (error: any) {
+      if (error instanceof ZodError) return res.status(400).json({ error: fromZodError(error).message });
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.patch("/api/admin/beats/:id/availability", isAuthenticated, async (req, res) => {
+  app.patch("/api/admin/beats/:id/availability", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") return res.status(403).json({ error: "Access denied" });
     const availabilityStatus = req.body.availabilityStatus;
-    if (!["available_nonexclusive", "pending_exclusive", "exclusively_sold"].includes(availabilityStatus)) {
+    if (!["draft", "available_nonexclusive", "pending_exclusive", "exclusively_sold"].includes(availabilityStatus)) {
       return res.status(400).json({ error: "Invalid beat availability status" });
     }
     const beat = await storage.updateBeat(parseInt(req.params.id, 10), { availabilityStatus, availabilityUpdatedAt: new Date() });
     if (!beat) return res.status(404).json({ error: "Beat not found" });
     res.json(beat);
   });
+
+  app.post("/api/admin/beats/:id/master", requireAdmin, beatMasterUpload.single("file"), async (req, res) => {
+    const uploadedFile = req.file;
+    if (!uploadedFile) return res.status(400).json({ error: "Select a full beat file" });
+    const previewPath = path.join(tmpdir(), `music-life-preview-${randomBytes(12).toString("hex")}.mp3`);
+    let masterObjectKey: string | null = null;
+    let previewObjectKey: string | null = null;
+    try {
+      const beat = await storage.getBeat(Number(req.params.id));
+      if (!beat) throw new Error("Beat not found");
+
+      await createBeatPreview(uploadedFile.path, previewPath);
+      const timestamp = Date.now();
+      masterObjectKey = buildObjectKey("beats", String(beat.id), "deliverables", "basic", `${timestamp}-${uploadedFile.originalname}`);
+      previewObjectKey = buildObjectKey("beats", String(beat.id), "previews", `${timestamp}-45-second-preview.mp3`);
+
+      await putPrivateObject(masterObjectKey, createReadStream(uploadedFile.path), uploadedFile.mimetype || "application/octet-stream");
+      const publicPreview = await putPublicObject(previewObjectKey, createReadStream(previewPath), "audio/mpeg");
+      if (!publicPreview.url) throw new Error("Public media URL is not configured");
+
+      const metadata = beat.metadata && typeof beat.metadata === "object" ? beat.metadata as Record<string, unknown> : {};
+      const existingDeliverables = metadata.deliverables && typeof metadata.deliverables === "object"
+        ? metadata.deliverables as Record<string, unknown>
+        : {};
+      const masterReference = `r2-private://${masterObjectKey}`;
+      const updated = await storage.updateBeat(beat.id, {
+        previewUrl: publicPreview.url,
+        fullAudioUrl: masterReference,
+        metadata: {
+          ...metadata,
+          deliverables: { ...existingDeliverables, basic: masterReference },
+          preview: { durationSeconds: 45, startSeconds: 30, generatedFromMaster: true },
+        },
+      });
+      if (!updated) throw new Error("Beat record could not be updated");
+      res.status(201).json({
+        beatId: beat.id,
+        fileName: uploadedFile.originalname,
+        size: uploadedFile.size,
+        fullAudioUrl: masterReference,
+        previewUrl: publicPreview.url,
+        previewDurationSeconds: 45,
+      });
+    } catch (error: any) {
+      if (masterObjectKey) await deleteObject("private", masterObjectKey).catch(() => undefined);
+      if (previewObjectKey) await deleteObject("public", previewObjectKey).catch(() => undefined);
+      res.status(error?.message === "Beat not found" ? 404 : 500).json({ error: error.message || "Unable to process the beat" });
+    } finally {
+      await Promise.all([
+        rm(uploadedFile.path, { force: true }).catch(() => undefined),
+        rm(previewPath, { force: true }).catch(() => undefined),
+      ]);
+    }
+  });
+
+  app.post("/api/admin/beats/:id/deliverable", requireAdmin, beatDeliverableUpload.single("file"), async (req, res) => {
+    const uploadedFile = req.file;
+    if (!uploadedFile) return res.status(400).json({ error: "Select a deliverable file" });
+    let objectKey: string | null = null;
+    try {
+      const beatId = Number(req.params.id);
+      const beat = await storage.getBeat(beatId);
+      if (!beat) return res.status(404).json({ error: "Beat not found" });
+      const licenseType = String(req.body.licenseType || "basic");
+      if (!["basic", "premium", "exclusive"].includes(licenseType)) return res.status(400).json({ error: "Select a valid license tier" });
+      objectKey = buildObjectKey("beats", String(beat.id), "deliverables", licenseType, `${Date.now()}-${uploadedFile.originalname}`);
+      await putPrivateObject(objectKey, createReadStream(uploadedFile.path), uploadedFile.mimetype || "application/octet-stream");
+      const metadata = beat.metadata && typeof beat.metadata === "object" ? beat.metadata as Record<string, unknown> : {};
+      const existingDeliverables = metadata.deliverables && typeof metadata.deliverables === "object"
+        ? metadata.deliverables as Record<string, unknown>
+        : {};
+      const reference = `r2-private://${objectKey}`;
+      const updated = await storage.updateBeat(beat.id, {
+        ...(licenseType === "basic" ? { fullAudioUrl: reference } : {}),
+        metadata: { ...metadata, deliverables: { ...existingDeliverables, [licenseType]: reference } },
+      });
+      if (!updated) throw new Error("Beat record could not be updated");
+      res.status(201).json({
+        beatId: beat.id,
+        fileName: uploadedFile.originalname,
+        size: uploadedFile.size,
+        licenseType,
+        fullAudioUrl: reference,
+      });
+    } catch (error: any) {
+      if (objectKey) await deleteObject("private", objectKey).catch(() => undefined);
+      res.status(500).json({ error: error.message || "Unable to store beat deliverable" });
+    } finally {
+      await rm(uploadedFile.path, { force: true }).catch(() => undefined);
+    }
+  });
+
+  app.post("/api/admin/beats/:id/preview", requireAdmin, beatPreviewUpload.single("file"), async (req, res) => {
+    const uploadedFile = req.file;
+    if (!uploadedFile) return res.status(400).json({ error: "Select a preview file" });
+    let objectKey: string | null = null;
+    try {
+      const beatId = Number(req.params.id);
+      const beat = await storage.getBeat(beatId);
+      if (!beat) return res.status(404).json({ error: "Beat not found" });
+      objectKey = buildObjectKey("beats", String(beat.id), "previews", `${Date.now()}-${uploadedFile.originalname}`);
+      const stored = await putPublicObject(objectKey, createReadStream(uploadedFile.path), uploadedFile.mimetype || "audio/mpeg");
+      if (!stored.url) throw new Error("Public media URL is not configured");
+      const updated = await storage.updateBeat(beat.id, { previewUrl: stored.url });
+      if (!updated) throw new Error("Beat record could not be updated");
+      res.status(201).json({ beatId: beat.id, fileName: uploadedFile.originalname, size: uploadedFile.size, previewUrl: updated.previewUrl });
+    } catch (error: any) {
+      if (objectKey) await deleteObject("public", objectKey).catch(() => undefined);
+      res.status(500).json({ error: error.message || "Unable to store beat preview" });
+    } finally {
+      await rm(uploadedFile.path, { force: true }).catch(() => undefined);
+    }
+  });
+
+  app.post("/api/admin/beats/:id/cover", requireAdmin, beatCoverUpload.single("file"), async (req, res) => {
+    const uploadedFile = req.file;
+    if (!uploadedFile) return res.status(400).json({ error: "Select cover artwork" });
+    let objectKey: string | null = null;
+    try {
+      const beat = await storage.getBeat(Number(req.params.id));
+      if (!beat) return res.status(404).json({ error: "Beat not found" });
+      objectKey = buildObjectKey("beats", String(beat.id), "covers", `${Date.now()}-${uploadedFile.originalname}`);
+      const stored = await putPublicObject(objectKey, createReadStream(uploadedFile.path), uploadedFile.mimetype || "image/png");
+      if (!stored.url) throw new Error("Public media URL is not configured");
+      const updated = await storage.updateBeat(beat.id, { imageUrl: stored.url });
+      if (!updated) throw new Error("Beat record could not be updated");
+      res.status(201).json({ beatId: beat.id, imageUrl: updated.imageUrl });
+    } catch (error: any) {
+      if (objectKey) await deleteObject("public", objectKey).catch(() => undefined);
+      res.status(500).json({ error: error.message || "Unable to store cover artwork" });
+    } finally {
+      await rm(uploadedFile.path, { force: true }).catch(() => undefined);
+    }
+  });
   
   // Delete beat (admin only)
-  app.delete("/api/beats/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/beats/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const success = await storage.deleteBeat(parseInt(id));
@@ -749,9 +1279,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Beat Purchases API routes
+
+  app.post("/api/beat-license/contract-preview", async (req, res) => {
+    try {
+      const beat = await storage.getBeat(Number(req.body.beatId));
+      if (!beat) return res.status(404).json({ error: "Beat not found" });
+      const licenseType = String(req.body.licenseType || "") as "basic" | "premium" | "exclusive";
+      if (!["basic", "premium", "exclusive"].includes(licenseType)) return res.status(400).json({ error: "Select a valid beat license" });
+      const customerName = String(req.body.customerName || "").trim();
+      const customerEmail = String(req.body.customerEmail || "").trim().toLowerCase();
+      if (customerName.length < 2 || !/^\S+@\S+\.\S+$/.test(customerEmail)) return res.status(400).json({ error: "Enter a valid name and email" });
+      if (beat.availabilityStatus !== "available_nonexclusive") return res.status(409).json({ error: "This beat is not currently available for a new license" });
+
+      const priceCents = beatLicensePrice(beat, licenseType);
+      const assembly = assembleBeatLicenseAgreement({
+        beatTitle: beat.title, catalogNumber: beat.catalogNumber, producerName: beat.producerName,
+        licenseType, priceCents, customerName, customerEmail,
+      });
+      const contract = await storage.createContract({
+        title: assembly.title, description: assembly.content, content: assembly.content,
+        fileUrl: "https://storage.googleapis.com/musiclifestudios/contracts/generated_beat_license.txt",
+        fileType: "generated", category: "beat_license",
+      });
+      const signingToken = issueContractSigningToken({
+        contractId: contract.id, email: customerEmail, customerName,
+        entityType: "beat_license", entityId: beat.id,
+      });
+      res.status(201).json({ contract, signingToken, priceCents, licenseType });
+    } catch (error) {
+      console.error("Error generating beat license agreement:", error);
+      res.status(500).json({ error: "Failed to generate beat license agreement" });
+    }
+  });
   
   // Get all beat purchases (for analytics)
-  app.get("/api/beat-purchases", isAuthenticated, async (req, res) => {
+  app.get("/api/beat-purchases", requireAdmin, async (req, res) => {
     try {
       const purchases = await storage.getAllBeatPurchases();
       res.json(purchases);
@@ -766,15 +1328,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const beat = await storage.getBeat(Number(req.body.beatId));
       if (!beat) return res.status(404).json({ error: "Beat not found" });
 
-      const requestedLicense = String(req.body.licenseType || "basic");
-      const product = requestedLicense === "starter_reward" || requestedLicense === "commercial_lease"
-        ? requestedLicense
-        : requestedLicense === "exclusive" ? "exclusive" : "paid_nonexclusive";
+      const requestedLicense = String(req.body.licenseType || "basic") as "basic" | "premium" | "exclusive";
+      if (!["basic", "premium", "exclusive"].includes(requestedLicense)) return res.status(400).json({ error: "Select a valid beat license" });
+      const product = requestedLicense === "exclusive" ? "exclusive" : "paid_nonexclusive";
       if (beat.availabilityStatus !== "available_nonexclusive") {
-        return res.status(409).json({ error: "This beat is not currently available for a new nonexclusive license." });
+        return res.status(409).json({ error: "This beat is not currently available for a new license." });
       }
-      if (product === "starter_reward" && !beat.starterRewardEligible) return res.status(400).json({ error: "This beat is not eligible for a Starter Reward Beat License." });
-      if (product === "commercial_lease" && !beat.commercialLeaseEligible) return res.status(400).json({ error: "This beat is not eligible for a Commercial Beat Lease." });
+      const selectedContractId = Number(req.body.contractId);
+      const selectedContract = Number.isInteger(selectedContractId) ? await storage.getContract(selectedContractId) : undefined;
+      const expectedPrice = beatLicensePrice(beat, requestedLicense);
+      if (!selectedContract || selectedContract.category !== "beat_license" ||
+          selectedContract.title !== beatLicenseTitle(requestedLicense, beat.title) ||
+          !selectedContract.content.includes(`License price: $${(expectedPrice / 100).toFixed(2)}`)) {
+        return res.status(400).json({ error: "Sign the selected beat-license agreement before continuing." });
+      }
+      const signedContract = (await storage.getContractSignaturesByContract(selectedContract.id)).find((signature) =>
+        signature.customerEmail.toLowerCase() === String(req.body.customerEmail || "").trim().toLowerCase() &&
+        signature.customerName.trim() === String(req.body.customerName || "").trim() &&
+        signature.relatedEntityType === "beat_license" && signature.relatedEntityId === beat.id && signature.agreedToTerms
+      );
+      if (!signedContract) return res.status(400).json({ error: "Sign the selected beat-license agreement before continuing." });
+      if (product !== "exclusive" && !req.body.contentIdAcknowledged) return res.status(400).json({ error: "Acknowledge the nonexclusive license and Content ID restriction." });
 
       const rightsSnapshot = getBeatRightsSnapshot(product);
       const purchase = await storage.createBeatPurchase({
@@ -787,29 +1361,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rightsSnapshot,
         contentIdAcknowledged: Boolean(req.body.contentIdAcknowledged),
         licenseStatus: "pending",
-        price: product === "starter_reward" || product === "commercial_lease" ? 0 : beat.price,
+        price: expectedPrice,
         transactionId: req.body.transactionId || `pending:${Date.now()}`,
         userId: req.isAuthenticated() ? req.user!.id : null,
       } as any);
-      res.status(201).json(purchase);
+      void sendBeatLicenseRequestEmails(purchase, beat.title).catch((error) => {
+        console.error(`Beat license request email failed for purchase ${purchase.id}:`, error);
+      });
+      const origin = (process.env.APP_ORIGIN || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+      const checkout = await stripeService.createBeatLicenseCheckoutSession({
+        purchaseId: purchase.id,
+        beatId: beat.id,
+        beatTitle: beat.title,
+        licenseType: requestedLicense,
+        customerEmail: purchase.customerEmail,
+        priceCents: purchase.price,
+        successUrl: `${origin}/account?tab=bookings&beat_checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${origin}/beats?beat_checkout=cancelled`,
+      });
+      res.status(201).json({ ...purchase, checkoutUrl: checkout.url });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
   
   // Get purchases by email (for customer to view their purchases)
-  app.get("/api/beat-purchases/email/:email", async (req, res) => {
+  app.get("/api/beat-purchases/email/:email", isAuthenticated, async (req, res) => {
     try {
       const { email } = req.params;
+      if (req.user!.role !== "admin" && req.user!.email.toLowerCase() !== email.toLowerCase()) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const purchases = await storage.getBeatPurchasesByEmail(email);
       res.json(purchases);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
+
+  app.get("/api/user/beat-license-requests", isAuthenticated, async (req, res) => {
+    try {
+      const purchases = await storage.getBeatPurchasesByEmail(req.user!.email);
+      const rows = await Promise.all(purchases.map(async (purchase) => {
+        const beat = await storage.getBeat(purchase.beatId);
+        return {
+          ...purchase,
+          beatTitle: beat?.title || `Beat #${purchase.beatId}`,
+          downloadReady: Boolean(beat && beatDeliverableObjectKey(beat, purchase.licenseType)),
+        };
+      }));
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to load beat license requests" });
+    }
+  });
+
+  app.get("/api/user/beat-license-requests/:id/download", isAuthenticated, async (req, res) => {
+    try {
+      const purchase = await storage.getBeatPurchase(Number(req.params.id));
+      if (!purchase) return res.status(404).json({ error: "Beat license not found" });
+      if (purchase.userId !== req.user!.id || purchase.customerEmail.toLowerCase() !== req.user!.email.toLowerCase()) {
+        return res.status(403).json({ error: "This license does not belong to your account" });
+      }
+      if (purchase.licenseStatus !== "active") {
+        return res.status(409).json({ error: "Payment must be verified before downloading" });
+      }
+      const beat = await storage.getBeat(purchase.beatId);
+      const objectKey = beat && beatDeliverableObjectKey(beat, purchase.licenseType);
+      if (!beat || !objectKey) {
+        return res.status(409).json({ error: "Your files are being prepared for secure delivery" });
+      }
+      const extension = objectKey.split(".").at(-1)?.replace(/[^a-zA-Z0-9]/g, "") || "wav";
+      const url = await createPrivateDownloadUrl(objectKey, 10 * 60, `${beat.title}.${extension}`);
+      await storage.incrementBeatPurchaseDownloadCount(purchase.id);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ url, expiresInSeconds: 10 * 60 });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Unable to create secure download" });
+    }
+  });
+
+  app.post("/api/user/beat-license/complete-checkout", isAuthenticated, async (req, res) => {
+    try {
+      const sessionId = String(req.body.sessionId || "").trim();
+      if (!sessionId) return res.status(400).json({ error: "Stripe checkout session ID is required" });
+      const checkout = await stripeService.retrieveCheckoutSession(sessionId);
+      const purchase = await activateBeatLicenseCheckout(checkout, req.user!.id);
+      res.json(purchase);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message || "Unable to verify beat license payment" });
+    }
+  });
   
   // Update beat purchase contract status
-  app.put("/api/beat-purchases/:id/contract", async (req, res) => {
+  app.put("/api/beat-purchases/:id/contract", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const { contractSigned } = req.body;
@@ -824,7 +1469,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Increment beat purchase download count
-  app.post("/api/beat-purchases/:id/download", async (req, res) => {
+  app.post("/api/beat-purchases/:id/download", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const purchase = await storage.incrementBeatPurchaseDownloadCount(parseInt(id));
@@ -865,7 +1510,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.bookTimeSlot(req.body.timeSlotId, createdBooking.id);
         }
 
-        return res.status(201).json({ ...createdBooking, pricing });
+        return res.status(201).json({ ...createdBooking, pricing, uploadToken: issueBookingUploadToken(createdBooking.id, createdBooking.email) });
       }
 
       if (pricing.requiresManualQuote) {
@@ -890,7 +1535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.bookTimeSlot(req.body.timeSlotId, createdBooking.id);
       }
       
-      res.status(201).json(createdBooking);
+      res.status(201).json({ ...createdBooking, uploadToken: issueBookingUploadToken(createdBooking.id, createdBooking.email) });
     } catch (error) {
       if (error instanceof ZodError) {
         return res.status(400).json({ 
@@ -902,8 +1547,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error creating booking" });
     }
   });
+
+  app.post("/api/bookings/:id/uploads", bookingAudioUpload.single("file"), async (req, res) => {
+    const uploadedFile = req.file;
+    if (!uploadedFile) return res.status(400).json({ error: "Select an audio file" });
+    let objectKey: string | null = null;
+    try {
+      const booking = await storage.getBooking(Number(req.params.id));
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      const token = verifyBookingUploadToken(String(req.body.uploadToken || req.get("x-booking-upload-token") || ""));
+      const loggedInOwner = req.isAuthenticated() && (req.user!.role === "admin" || booking.userId === req.user!.id);
+      const tokenOwner = token && token.bookingId === booking.id && token.email === booking.email.toLowerCase();
+      if (!loggedInOwner && !tokenOwner) return res.status(403).json({ error: "Upload authorization is invalid or expired" });
+
+      const kind = String(req.body.kind || "source-audio");
+      if (!['reference-audio', 'source-audio'].includes(kind)) return res.status(400).json({ error: "Select a valid upload type" });
+      const metadata = booking.paymentMetadata && typeof booking.paymentMetadata === "object" ? booking.paymentMetadata as Record<string, unknown> : {};
+      const currentUploads = Array.isArray(metadata.customerUploads) ? metadata.customerUploads as Array<Record<string, unknown>> : [];
+      if (currentUploads.length >= 10) return res.status(400).json({ error: "This booking already has the maximum number of uploaded files" });
+
+      objectKey = buildObjectKey("bookings", String(booking.id), "customer-uploads", kind, `${Date.now()}-${uploadedFile.originalname}`);
+      await putPrivateObject(objectKey, createReadStream(uploadedFile.path), uploadedFile.mimetype || "application/octet-stream");
+      const uploadRecord = {
+        key: objectKey,
+        name: uploadedFile.originalname,
+        size: uploadedFile.size,
+        contentType: uploadedFile.mimetype || "application/octet-stream",
+        kind,
+        uploadedAt: new Date().toISOString(),
+      };
+      await storage.updateBooking(booking.id, { paymentMetadata: { ...metadata, customerUploads: [...currentUploads, uploadRecord] } } as any);
+      res.status(201).json({ name: uploadRecord.name, size: uploadRecord.size, kind: uploadRecord.kind });
+    } catch (error: any) {
+      if (objectKey) await deleteObject("private", objectKey).catch(() => undefined);
+      res.status(500).json({ error: error.message || "Unable to store customer audio" });
+    } finally {
+      await rm(uploadedFile.path, { force: true }).catch(() => undefined);
+    }
+  });
+
+  app.get("/api/bookings/:id/uploads/:index/download", isAuthenticated, async (req, res) => {
+    try {
+      const booking = await storage.getBooking(Number(req.params.id));
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      if (req.user!.role !== "admin" && booking.userId !== req.user!.id) return res.status(404).json({ error: "Booking not found" });
+      const metadata = booking.paymentMetadata && typeof booking.paymentMetadata === "object" ? booking.paymentMetadata as Record<string, unknown> : {};
+      const uploads = Array.isArray(metadata.customerUploads) ? metadata.customerUploads as Array<Record<string, unknown>> : [];
+      const upload = uploads[Number(req.params.index)];
+      if (!upload || typeof upload.key !== "string") return res.status(404).json({ error: "Uploaded file not found" });
+      const downloadUrl = await createPrivateDownloadUrl(upload.key, 10 * 60, typeof upload.name === "string" ? upload.name : "customer-audio");
+      res.json({ url: downloadUrl, expiresInSeconds: 600 });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Unable to prepare the download" });
+    }
+  });
   
   // Get the payment status of a booking, used to return and complete payment or add tip
+  app.get("/api/payment-links/:token", async (req, res) => {
+    try {
+      const claims = verifyPaymentLinkToken(req.params.token);
+      if (!claims) return res.status(404).json({ message: "Payment link is invalid or expired" });
+      const booking = await storage.getBooking(claims.bookingId);
+      if (!booking || booking.email.toLowerCase() !== claims.email) return res.status(404).json({ message: "Payment link is invalid or expired" });
+
+      res.json({
+        booking: {
+          id: booking.id,
+          serviceId: booking.serviceId,
+          date: booking.date,
+          amount: booking.amount,
+          name: booking.name,
+          status: booking.status,
+          paymentStatus: booking.paymentStatus,
+          transactionId: booking.transactionId,
+          tipAmount: booking.tipAmount,
+        },
+        remainingAmount: booking.paymentStatus === "deposit_paid"
+          ? booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)
+          : 0,
+        expiresAt: claims.expiresAt,
+      });
+    } catch {
+      res.status(404).json({ message: "Payment link is invalid or expired" });
+    }
+  });
+
+  app.get("/api/bookings/:id/payment-link", requireAdmin, async (req, res) => {
+    try {
+      const booking = await storage.getBooking(Number(req.params.id));
+      if (!booking) return res.status(404).json({ message: "Booking not found" });
+      if (booking.paymentStatus !== "deposit_paid") return res.status(400).json({ message: "A balance link is available only after a deposit is recorded." });
+
+      const token = issuePaymentLinkToken(booking.id, booking.email);
+      const tokenClaims = verifyPaymentLinkToken(token);
+      const origin = (process.env.APP_ORIGIN || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+      const url = `${origin}/complete-payment?token=${encodeURIComponent(token)}`;
+      const remainingAmount = booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE);
+      const formattedAmount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(remainingAmount / 100);
+      const formattedDate = new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeStyle: "short" }).format(new Date(booking.date));
+      const subject = `Music Life Studios balance for ${formattedDate}`;
+      const body = `Hi ${booking.name},\n\nYour remaining Music Life Studios balance is ${formattedAmount} for your session on ${formattedDate}.\n\nComplete payment securely here:\n${url}\n\nThis link expires in 30 days. Thank you,\nMusic Life Studios`;
+      res.json({ bookingId: booking.id, email: booking.email, remainingAmount, expiresAt: tokenClaims?.expiresAt ?? Date.now(), url, subject, body });
+    } catch (error) {
+      console.error("Error creating booking payment link:", error);
+      res.status(500).json({ message: "Unable to create balance link" });
+    }
+  });
+
   app.get("/api/bookings/:id/payment-status", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -914,7 +1664,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const email = String(req.query.email || "").trim().toLowerCase();
-      if (email && booking.email.toLowerCase() !== email) {
+      if (!email || booking.email.toLowerCase() !== email) {
         return res.status(404).json({ message: "Booking not found" });
       }
       
@@ -934,7 +1684,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Calculate how much is left to pay if it's a deposit
         remainingAmount: booking.paymentStatus === 'deposit_paid' 
           ? booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)
-          : 0
+          : 0,
+        paymentToken: booking.paymentStatus === "deposit_paid" ? issuePaymentLinkToken(booking.id, booking.email) : null,
       });
     } catch (error: any) {
       res.status(500).json({ 
@@ -944,7 +1695,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/bookings", isAuthenticated, async (req, res) => {
+  app.get("/api/bookings", requireAdmin, async (req, res) => {
     try {
       const bookings = await storage.getAllBookings();
       res.json(bookings);
@@ -993,23 +1744,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Get active promotions for members
-  app.get("/api/promotions/active", isAuthenticated, async (req, res) => {
-    try {
-      const promotions = await storage.getActivePromotions();
-      res.json(promotions);
-    } catch (error) {
-      console.error("Error fetching active promotions:", error);
-      res.status(500).json({ error: "Failed to fetch promotions" });
-    }
-  });
-  
   app.get("/api/bookings/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const booking = await storage.getBooking(id);
       
       if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      if (req.user?.role !== "admin" && booking.userId !== req.user?.id) {
         return res.status(404).json({ message: "Booking not found" });
       }
       
@@ -1019,7 +1762,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/bookings/:id/status", isAuthenticated, async (req, res) => {
+  app.patch("/api/bookings/:id/status", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { status } = req.body;
@@ -1078,7 +1821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/messages", isAuthenticated, async (req, res) => {
+  app.get("/api/messages", requireAdmin, async (req, res) => {
     try {
       const messages = await storage.getAllMessages();
       res.json(messages);
@@ -1087,7 +1830,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/messages/:id/read", isAuthenticated, async (req, res) => {
+  app.patch("/api/messages/:id/read", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const updatedMessage = await storage.markMessageAsRead(id);
@@ -1107,11 +1850,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/stripe/create-payment-intent", async (req, res) => {
     try {
       const bookingId = Number(req.body.bookingId);
+      const paymentToken = typeof req.body.paymentToken === "string" ? req.body.paymentToken : "";
+      const tokenClaims = verifyPaymentLinkToken(paymentToken);
+      const email = tokenClaims?.email || String(req.body.email || "").trim().toLowerCase();
       const isDeposit = Boolean(req.body.isDeposit);
       const tipAmount = Number(req.body.tipAmount || 0);
       const booking = await storage.getBooking(bookingId);
 
-      if (!booking) return res.status(404).json({ message: "Booking not found" });
+      if (!booking || !email || booking.email.toLowerCase() !== email || (tokenClaims && tokenClaims.bookingId !== booking.id)) return res.status(404).json({ message: "Booking not found" });
+      const isBalancePayment = booking.paymentStatus === "deposit_paid" && !isDeposit;
+      if (isBalancePayment && !tokenClaims) return res.status(403).json({ message: "A secure balance payment link is required" });
       if (!Number.isFinite(tipAmount) || tipAmount < 0) return res.status(400).json({ message: "Invalid tip amount" });
       if (booking.paymentStatus === "paid") return res.status(400).json({ message: "Booking is already paid" });
 
@@ -1122,18 +1870,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customerEmail: booking.email,
         isDeposit,
         tipAmount,
+        idempotencyKey: `booking:${booking.id}:${isDeposit ? "deposit" : "balance"}:${tipAmount}`,
       });
 
       res.json({ clientSecret: intent.client_secret, paymentIntentId: intent.id, amountCents });
     } catch (error: any) {
       console.error("Error creating Stripe payment intent:", error);
-      res.status(500).json({ message: error.message || "Unable to start Stripe payment" });
+      res.status(500).json({ message: process.env.NODE_ENV === "production" ? "Unable to start Stripe payment" : (error.message || "Unable to start Stripe payment") });
     }
   });
 
   app.post("/api/stripe/complete-payment", async (req, res) => {
     try {
       const paymentIntentId = String(req.body.paymentIntentId || "").trim();
+      const paymentToken = typeof req.body.paymentToken === "string" ? req.body.paymentToken : "";
+      const tokenClaims = verifyPaymentLinkToken(paymentToken);
+      const email = tokenClaims?.email || String(req.body.email || "").trim().toLowerCase();
       if (!paymentIntentId) return res.status(400).json({ message: "Payment intent ID is required" });
 
       const intent = await stripeService.retrievePaymentIntent(paymentIntentId);
@@ -1145,32 +1897,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isDeposit = intent.metadata.isDeposit === "true";
       const tipAmount = Number(intent.metadata.tipAmount || 0);
       const booking = await storage.getBooking(bookingId);
-      if (!booking || intent.metadata.bookingId !== String(booking.id)) {
+      const isBalancePayment = booking?.paymentStatus === "deposit_paid" && !isDeposit;
+      if (!booking || !email || booking.email.toLowerCase() !== email || intent.metadata.bookingId !== String(booking.id) || (isBalancePayment && (!tokenClaims || tokenClaims.bookingId !== booking.id))) {
         return res.status(400).json({ message: "Payment does not match a booking" });
       }
 
-      const expectedAmount = getBookingChargeAmount(booking, isDeposit, tipAmount);
-      if (intent.amount !== expectedAmount) {
-        return res.status(400).json({ message: "Payment amount does not match the booking" });
-      }
-
-      const updatedBooking = await storage.updateBookingTransactionInfo(booking.id, {
-        transactionId: intent.id,
-        paymentStatus: isDeposit ? "deposit_paid" : "paid",
-        paymentMethod: "stripe",
-        paymentMetadata: intent,
-        tipAmount: tipAmount || undefined,
-      });
+      const updatedBooking = await recordBookingPayment(storage, withBookingPaymentLock, intent);
+      queueBookingEmails(booking.id);
 
       res.json({ success: true, paymentIntentId: intent.id, booking: updatedBooking });
     } catch (error: any) {
       console.error("Error completing Stripe payment:", error);
-      res.status(500).json({ message: error.message || "Unable to verify Stripe payment" });
+      res.status(500).json({ message: process.env.NODE_ENV === "production" ? "Unable to verify Stripe payment" : (error.message || "Unable to verify Stripe payment") });
     }
   });
 
   // Admin-only Stripe refund endpoint
-  app.post("/api/stripe/refund", isAuthenticated, async (req, res) => {
+  app.post("/api/stripe/refund", requireAdmin, async (req, res) => {
     try {
       const { transactionId, amount } = req.body;
       
@@ -1181,21 +1924,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const intent = await stripeService.retrievePaymentIntent(transactionId);
+      const requestedAmount = amount === undefined || amount === null || amount === "" ? undefined : Number(amount);
+      if (requestedAmount !== undefined && (!Number.isInteger(requestedAmount) || requestedAmount <= 0 || requestedAmount > intent.amount)) {
+        return res.status(400).json({ message: "Refund amount is invalid" });
+      }
+      const bookings = await storage.getAllBookings();
+      const booking = bookings.find((item) => {
+        const receipts = (item.paymentMetadata as any)?.receipts;
+        return item.transactionId === transactionId || (Array.isArray(receipts) && receipts.some((receipt: any) => receipt.id === transactionId));
+      });
+      if (!booking) return res.status(404).json({ message: "Booking payment record not found" });
       const refund = await stripeService.stripe?.refunds.create({
         payment_intent: intent.id,
-        amount: amount ? Number(amount) : undefined,
-      });
+        amount: requestedAmount,
+        metadata: { bookingId: intent.metadata.bookingId || "" },
+      }, { idempotencyKey: `booking-refund:${intent.id}:${requestedAmount ?? "full"}` });
       if (!refund) throw new Error("Stripe is not configured");
-
-      const bookings = await storage.getAllBookings();
-      const booking = bookings.find((item) => item.transactionId === transactionId);
-      if (booking) await storage.updateBookingTransactionInfo(booking.id, { transactionId, paymentStatus: "refunded" });
-      res.json({ success: true, refund });
-    } catch (error: any) {
-      res.status(500).json({ 
-        message: "Error processing refund",
-        error: error.message 
+      const updatedBooking = await recordBookingRefund(storage, withBookingPaymentLock, {
+        bookingId: booking.id,
+        paymentIntentId: intent.id,
+        refundId: refund.id,
+        amount: refund.amount,
       });
+      res.json({ success: true, refund: { id: refund.id, amount: refund.amount, status: refund.status }, booking: updatedBooking });
+    } catch (error: any) {
+      res.status(500).json({ message: process.env.NODE_ENV === "production" ? "Error processing refund" : (error.message || "Error processing refund") });
     }
   });
 
@@ -1255,6 +2008,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: pricing.quoteReason || "This request requires a custom quote" });
       }
 
+      const customerEmail = typeof req.body.customerEmail === "string" ? req.body.customerEmail.trim().toLowerCase() : "";
+      const customerName = typeof req.body.customerName === "string" ? req.body.customerName.trim() : "";
+      if (!customerEmail || !customerName) {
+        return res.status(400).json({ error: "Customer name and email are required before preparing the agreement." });
+      }
+
       const accountStatus = await getContractAccountStatus(req.user?.id);
       const assembly = assembleBookingAgreement({
         accountStatus,
@@ -1263,8 +2022,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         amountCents: pricing.finalTotal,
         durationMinutes,
         date: typeof req.body.date === "string" ? req.body.date : undefined,
-        customerName: typeof req.body.customerName === "string" ? req.body.customerName : undefined,
-        customerEmail: typeof req.body.customerEmail === "string" ? req.body.customerEmail : undefined,
+        customerName,
+        customerEmail,
         beatLicenseProduct,
         requestedAddOns: typeof req.body.requestedAddOns === "string" ? req.body.requestedAddOns : undefined,
         portfolioReleaseRequested: req.body.portfolioReleaseRequested === true,
@@ -1284,7 +2043,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         category: "booking_agreement",
       });
 
-      res.status(201).json({ contract, modules: assembly.modules, pricing, requiresManualReview: assembly.requiresManualReview });
+      const signingToken = issueContractSigningToken({
+        contractId: contract.id,
+        email: customerEmail,
+        customerName,
+        entityType: "booking",
+      });
+      res.status(201).json({ contract, modules: assembly.modules, pricing, signingToken, requiresManualReview: assembly.requiresManualReview });
     } catch (error) {
       console.error("Error generating booking contract:", error);
       res.status(500).json({ error: "Failed to generate booking agreement" });
@@ -1305,8 +2070,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error fetching contract" });
     }
   });
+
+  app.post("/api/contracts/:id/signing-token", async (req, res) => {
+    try {
+      const contractId = Number(req.params.id);
+      const entityType = typeof req.body.entityType === "string" ? req.body.entityType : "";
+      const entityId = Number(req.body.entityId);
+      const customerName = typeof req.body.customerName === "string" ? req.body.customerName.trim() : "";
+      const customerEmail = typeof req.body.customerEmail === "string" ? req.body.customerEmail.trim().toLowerCase() : "";
+      if (!Number.isInteger(contractId) || contractId <= 0 || entityType !== "beat" || !Number.isInteger(entityId) || entityId <= 0 || !customerName || !customerEmail) {
+        return res.status(400).json({ message: "Valid agreement and customer details are required" });
+      }
+      const [contract, beat] = await Promise.all([storage.getContract(contractId), storage.getBeat(entityId)]);
+      if (!contract || !beat) return res.status(404).json({ message: "Agreement or beat not found" });
+      res.json({ signingToken: issueContractSigningToken({ contractId, email: customerEmail, customerName, entityType, entityId }) });
+    } catch (error) {
+      console.error("Error creating contract signing token:", error);
+      res.status(500).json({ message: "Unable to prepare the agreement" });
+    }
+  });
   
-  app.post("/api/contracts", isAuthenticated, async (req, res) => {
+  app.post("/api/contracts", requireAdmin, async (req, res) => {
     try {
       const { title, description, content, fileUrl, fileType, category } = req.body;
       
@@ -1329,7 +2113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/contracts/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/contracts/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const contract = await storage.getContract(id);
@@ -1345,7 +2129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/contracts/:id/version", isAuthenticated, async (req, res) => {
+  app.patch("/api/contracts/:id/version", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const contract = await storage.getContract(id);
@@ -1361,7 +2145,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/contracts/:id/active", isAuthenticated, async (req, res) => {
+  app.patch("/api/contracts/:id/active", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { active } = req.body;
@@ -1382,7 +2166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.delete("/api/contracts/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/contracts/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const contract = await storage.getContract(id);
@@ -1399,7 +2183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Contract Signatures API
-  app.get("/api/contract-signatures", isAuthenticated, async (req, res) => {
+  app.get("/api/contract-signatures", requireAdmin, async (req, res) => {
     try {
       const { contractId, email } = req.query;
       
@@ -1420,7 +2204,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/contract-signatures/:id", async (req, res) => {
+  app.get("/api/contract-signatures/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const signature = await storage.getContractSignature(id);
@@ -1437,19 +2221,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/contract-signatures", async (req, res) => {
     try {
-      const { 
-        contractId, 
-        customerName, 
-        customerEmail, 
-        signatureData, 
-        ipAddress, 
-        agreedToTerms,
-        relatedEntityType,
-        relatedEntityId 
-      } = req.body;
-      
-      if (!contractId || !customerName || !customerEmail || !signatureData || agreedToTerms === undefined) {
-        return res.status(400).json({ message: "Missing required fields" });
+      const parsed = insertContractSignatureSchema.safeParse({
+        contractId: Number(req.body.contractId),
+        customerName: req.body.customerName,
+        customerEmail: req.body.customerEmail,
+        signatureData: req.body.signatureData,
+        ipAddress: req.ip,
+        agreedToTerms: req.body.agreedToTerms,
+        relatedEntityType: req.body.relatedEntityType,
+        relatedEntityId: req.body.relatedEntityId == null ? undefined : Number(req.body.relatedEntityId),
+      });
+      if (!parsed.success || !parsed.data.agreedToTerms) {
+        return res.status(400).json({ message: parsed.success ? "Agreement must be accepted" : parsed.error.issues[0]?.message || "Invalid signature details" });
+      }
+      const { contractId, customerName, customerEmail, signatureData, ipAddress, agreedToTerms, relatedEntityType, relatedEntityId } = parsed.data;
+      const signingTokenValid = consumeContractSigningToken(req.body.signingToken, {
+        contractId,
+        email: customerEmail,
+        customerName,
+        entityType: relatedEntityType || "",
+        entityId: relatedEntityId,
+      });
+      if (!signingTokenValid) {
+        return res.status(403).json({ message: "This agreement session has expired or is no longer valid. Please reopen the agreement." });
       }
       
       // Check if contract exists
@@ -1473,16 +2267,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         termsSnapshot,
         signedDocumentHash: createHash("sha256").update(termsSnapshot).digest("hex"),
       });
+
+      const signedAgreementKey = buildObjectKey(
+        "contracts",
+        String(contractId),
+        "signatures",
+        `${newSignature.id}-signed-agreement.txt`,
+      );
+      const signedAgreement = [
+        contract.title,
+        "",
+        `Contract version: ${contract.version}`,
+        `Signed by: ${customerName}`,
+        `Signer email: ${customerEmail}`,
+        `Signed at: ${new Date(newSignature.createdAt).toISOString()}`,
+        `Related record: ${relatedEntityType || "none"}${relatedEntityId ? ` #${relatedEntityId}` : ""}`,
+        `Document SHA-256: ${newSignature.signedDocumentHash}`,
+        "",
+        "ELECTRONIC SIGNATURE",
+        signatureData,
+        "",
+        "AGREEMENT TERMS",
+        termsSnapshot,
+      ].join("\n");
+      await putPrivateObject(signedAgreementKey, Buffer.from(signedAgreement, "utf8"), "text/plain; charset=utf-8");
       
       // If this is for a beat purchase, update the purchase to mark contract as signed
       if (relatedEntityType === 'beat' && relatedEntityId) {
         await storage.updateBeatPurchaseContract(relatedEntityId, true);
       }
       
-      res.status(201).json(newSignature);
+      res.status(201).json({ id: newSignature.id, contractId: newSignature.contractId, customerName: newSignature.customerName, customerEmail: newSignature.customerEmail, agreedToTerms: newSignature.agreedToTerms, createdAt: newSignature.createdAt });
     } catch (error) {
       console.error("Error creating contract signature:", error);
       res.status(500).json({ message: "Error creating contract signature" });
+    }
+  });
+
+  app.get("/api/contract-signatures/:id/download", isAuthenticated, async (req, res) => {
+    try {
+      const signature = await storage.getContractSignature(Number(req.params.id));
+      if (!signature) return res.status(404).json({ message: "Signed agreement not found" });
+      const ownsSignature = req.user!.role === "admin" || req.user!.email.toLowerCase() === signature.customerEmail.toLowerCase();
+      if (!ownsSignature) return res.status(404).json({ message: "Signed agreement not found" });
+      const contract = await storage.getContract(signature.contractId);
+      const filename = `${(contract?.title || "music-life-agreement").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase()}-signed.txt`;
+      const objectKey = buildObjectKey("contracts", String(signature.contractId), "signatures", `${signature.id}-signed-agreement.txt`);
+      const url = await createPrivateDownloadUrl(objectKey, 10 * 60, filename);
+      res.json({ url, expiresInSeconds: 600 });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Unable to prepare the signed agreement download" });
     }
   });
   
@@ -1521,91 +2355,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         email as string
       );
       
-      res.json({ 
-        signed: !!signature && signature.agreedToTerms,
-        signature 
-      });
+      res.json({ signed: !!signature && signature.agreedToTerms });
     } catch (error) {
       res.status(500).json({ message: "Error verifying entity contract signature" });
-    }
-  });
-  
-  // Feedback and Ratings API
-  
-  // Get all feedbacks (admin only)
-  app.get("/api/feedbacks", isAuthenticated, async (req, res) => {
-    try {
-      const feedbacks = await storage.getAllFeedbacks();
-      res.json(feedbacks);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Get feedback stats
-  app.get("/api/feedback-stats", async (req, res) => {
-    try {
-      const stats = await storage.getFeedbackStats();
-      res.json(stats);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Get feedbacks by service type
-  app.get("/api/feedbacks/service/:serviceType", async (req, res) => {
-    try {
-      const { serviceType } = req.params;
-      const feedbacks = await storage.getFeedbacksByServiceType(serviceType);
-      res.json(feedbacks);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Submit new feedback
-  app.post("/api/feedbacks", async (req, res) => {
-    try {
-      const feedback = await storage.createFeedback(req.body);
-      res.status(201).json(feedback);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Update feedback status (admin only)
-  app.put("/api/feedbacks/:id/status", isAuthenticated, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { status } = req.body;
-      const feedback = await storage.updateFeedbackStatus(parseInt(id), status);
-      if (!feedback) {
-        return res.status(404).json({ error: "Feedback not found" });
-      }
-      res.json(feedback);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-  
-  // Delete feedback (admin only)
-  app.delete("/api/feedbacks/:id", isAuthenticated, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const success = await storage.deleteFeedback(parseInt(id));
-      if (!success) {
-        return res.status(404).json({ error: "Feedback not found" });
-      }
-      res.status(204).end();
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
     }
   });
   
   // Schedule Management API
   
   // Create weekly schedule (admin only)
-  app.post("/api/schedule/weekly", isAuthenticated, async (req, res) => {
+  app.post("/api/schedule/weekly", requireAdmin, async (req, res) => {
     try {
       if (req.user?.role !== "admin") {
         return res.status(403).json({ error: "Admin access required" });
@@ -1639,7 +2398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Delete time slots in a date range (admin only)
-  app.delete("/api/schedule/range", isAuthenticated, async (req, res) => {
+  app.delete("/api/schedule/range", requireAdmin, async (req, res) => {
     try {
       if (req.user?.role !== "admin") {
         return res.status(403).json({ error: "Admin access required" });
@@ -1664,7 +2423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Feedback Management API
   
   // Get all feedbacks
-  app.get("/api/feedbacks", async (req, res) => {
+  app.get("/api/feedbacks", requireAdmin, async (req, res) => {
     try {
       const feedbacks = await storage.getAllFeedbacks();
       res.json(feedbacks);
@@ -1674,7 +2433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get feedback by ID
-  app.get("/api/feedbacks/:id", async (req, res) => {
+  app.get("/api/feedbacks/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const feedback = await storage.getFeedback(id);
@@ -1694,7 +2453,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { serviceType } = req.params;
       const feedbacks = await storage.getFeedbacksByServiceType(serviceType);
-      res.json(feedbacks);
+      res.json(feedbacks
+        .filter((feedback) => feedback.status === "active")
+        .map(({ id, name, rating, comment, serviceType, createdAt }) => ({ id, name, rating, comment, serviceType, createdAt })));
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -1713,24 +2474,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new feedback
   app.post("/api/feedbacks", async (req, res) => {
     try {
-      const { name, email, rating, comment, serviceType, bookingId, beatPurchaseId } = req.body;
-      
-      // Validate required fields
-      if (!rating || !serviceType) {
-        return res.status(400).json({ message: "Rating and service type are required" });
+      const parsed = insertFeedbackSchema.safeParse({
+        name: req.body.name || undefined,
+        email: req.body.email || undefined,
+        rating: Number(req.body.rating),
+        comment: req.body.comment || undefined,
+        serviceType: req.body.serviceType,
+        status: "active",
+        userId: req.isAuthenticated() ? req.user!.id : null,
+      });
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.issues[0]?.message || "Rating and service type are required" });
       }
       
       const newFeedback = await storage.createFeedback({
-        rating,
-        serviceType,
-        status: 'active',
-        comment: comment || null,
-        bookingId: bookingId || null,
-        beatPurchaseId: beatPurchaseId || null,
-        userId: null, // Can be linked to a user if authenticated
-        name,
-        email
-      });
+        ...parsed.data,
+      } as any);
       
       res.status(201).json(newFeedback);
     } catch (error: any) {
@@ -1739,7 +2498,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update feedback status (active/hidden/flagged) - admin only
-  app.put("/api/feedbacks/:id/status", isAuthenticated, async (req, res) => {
+  app.put("/api/feedbacks/:id/status", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { status } = req.body;
@@ -1761,7 +2520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Delete feedback - admin only
-  app.delete("/api/feedbacks/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/feedbacks/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const feedback = await storage.getFeedback(id);
@@ -1777,26 +2536,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // User loyalty program endpoints
-  app.get("/api/user/loyalty", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      const loyaltyRecords = await storage.getLoyaltyRecords(userId);
-      const user = await storage.getUser(userId);
-      
-      res.json({
-        points: user?.loyaltyPoints || 0,
-        sessionCount: user?.sessionCount || 0,
-        records: loyaltyRecords
-      });
-    } catch (error) {
-      console.error("Error fetching loyalty info:", error);
-      res.status(500).json({ error: "Failed to fetch loyalty information" });
-    }
-  });
-
   // Admin loyalty program management
-  app.post("/api/admin/loyalty/rewards", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/loyalty/rewards", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -1828,11 +2569,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Reward loyalty points when a booking is completed
-  app.post("/api/bookings/:id/complete", isAuthenticated, async (req, res) => {
-    if (req.user!.role !== "admin") {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    
+  app.post("/api/bookings/:id/complete", requireAdmin, async (req, res) => {
     try {
       const bookingId = parseInt(req.params.id);
       const booking = await storage.getBooking(bookingId);
@@ -1971,7 +2708,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin promotions management
-  app.get("/api/admin/promotions", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/promotions", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -1986,12 +2723,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/stripe/webhook", async (req, res) => {
+    let event;
     try {
-      const event = stripeService.constructWebhookEvent(
+      event = stripeService.constructWebhookEvent(
         req.body as Buffer,
         req.header("stripe-signature") ?? undefined,
       );
+    } catch {
+      return res.status(400).json({ error: "Invalid Stripe webhook signature" });
+    }
+    try {
       const payload = event.data.object as any;
+
+      if (event.type === "payment_intent.succeeded" && payload.metadata?.bookingId) {
+        const booking = await recordBookingPayment(storage, withBookingPaymentLock, payload);
+        queueBookingEmails(booking.id);
+      }
+
+      if (event.type === "checkout.session.completed" && payload.mode === "payment" && payload.payment_status === "paid" && payload.metadata?.beatPurchaseId) {
+        await activateBeatLicenseCheckout(payload);
+      }
 
       if (event.type === "checkout.session.completed" && payload.mode === "subscription" && payload.payment_status === "paid") {
         const subscriptionId = Number(payload.metadata?.subscriptionId);
@@ -2003,6 +2754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const providerSubscriptionId = typeof payload.subscription === "string" ? payload.subscription : payload.subscription?.id ?? null;
             const updated = await storage.updateMembershipSubscription(membership.id, {
               status: "active",
+              paymentStatus: "paid",
               paymentProviderSubscriptionId: providerSubscriptionId,
               updatedAt: new Date(),
             } as any);
@@ -2010,6 +2762,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const payment = await storage.createMembershipPaymentAssociation({
               subscriptionId: membership.id,
               paymentProviderId: providerPaymentId,
+              paymentProviderSubscriptionId: providerSubscriptionId,
+              paymentProviderTransactionId: payload.payment_intent ?? payload.invoice ?? null,
+              paymentProviderEventId: event.id,
               amountCents: plan?.priceCents ?? 0,
               status: "succeeded",
             });
@@ -2018,6 +2773,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               await issuePassportRewardCycle(updated, payment.id, new Date(event.created * 1000));
             }
           }
+          await sendMembershipActivationEmailOnce(membership.id);
           await storage.createMembershipEvent({
             subscriptionId: membership.id,
             eventType: "stripe_checkout_verified",
@@ -2039,6 +2795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const periodEnd = payload.period_end ? new Date(payload.period_end * 1000) : addMonths(membership.currentPeriodEnd, 1);
             const updated = await storage.updateMembershipSubscription(membership.id, {
               status: "active",
+              paymentStatus: "paid",
               currentPeriodStart: periodStart,
               currentPeriodEnd: periodEnd,
               nextBillingDate: periodEnd,
@@ -2048,6 +2805,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const payment = await storage.createMembershipPaymentAssociation({
               subscriptionId: membership.id,
               paymentProviderId: providerPaymentId,
+              paymentProviderSubscriptionId: providerSubscriptionId,
+              paymentProviderTransactionId: payload.charge ?? payload.payment_intent ?? null,
+              paymentProviderEventId: event.id,
               amountCents: Math.max(0, Number(payload.amount_paid ?? payload.amount_due ?? 0)),
               status: "succeeded",
             });
@@ -2078,7 +2838,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? (await storage.getAllMembershipSubscriptions()).find((item) => item.paymentProviderSubscriptionId === providerSubscriptionId)
           : undefined;
         if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
-          await storage.updateMembershipSubscription(membership.id, { status: "past_due", updatedAt: new Date() } as any);
+          await storage.updateMembershipSubscription(membership.id, { status: "past_due", paymentStatus: "failed", updatedAt: new Date() } as any);
           await storage.createMembershipEvent({
             subscriptionId: membership.id,
             eventType: "stripe_invoice_payment_failed",
@@ -2087,10 +2847,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      if (event.type === "charge.refunded") {
+        const paymentIntentId = typeof payload.payment_intent === "string" ? payload.payment_intent : payload.payment_intent?.id;
+        if (paymentIntentId && Array.isArray(payload.refunds?.data)) {
+          const bookings = await storage.getAllBookings();
+          const booking = bookings.find((item) => Array.isArray((item.paymentMetadata as any)?.receipts) &&
+            (item.paymentMetadata as any).receipts.some((receipt: any) => receipt.id === paymentIntentId));
+          if (booking) {
+            for (const refund of payload.refunds.data) {
+              if (refund.status === "succeeded") {
+                await recordBookingRefund(storage, withBookingPaymentLock, {
+                  bookingId: booking.id,
+                  paymentIntentId,
+                  refundId: refund.id,
+                  amount: refund.amount,
+                });
+              }
+            }
+          }
+        }
+        const payment = await findMembershipPaymentByProviderObjects([payload.id, payload.payment_intent]);
+        if (payment && !(await hasStripeMembershipEvent(payment.subscriptionId, event.id))) {
+          await reverseMembershipPaymentEffects({
+            subscriptionId: payment.subscriptionId,
+            paymentAssociationId: payment.id,
+            status: "refunded",
+            eventType: "stripe_charge_refunded",
+            stripeEventId: event.id,
+            providerObjectId: payload.id,
+            reason: "Stripe charge was refunded.",
+          });
+        }
+      }
+
+      if (event.type === "charge.dispute.created") {
+        const chargeId = typeof payload.charge === "string" ? payload.charge : payload.charge?.id;
+        const payment = await findMembershipPaymentByProviderObjects([chargeId, payload.payment_intent]);
+        if (payment && !(await hasStripeMembershipEvent(payment.subscriptionId, event.id))) {
+          await reverseMembershipPaymentEffects({
+            subscriptionId: payment.subscriptionId,
+            paymentAssociationId: payment.id,
+            status: "disputed",
+            eventType: "stripe_charge_disputed",
+            stripeEventId: event.id,
+            providerObjectId: payload.id,
+            reason: "Stripe dispute was opened for the membership payment.",
+          });
+        }
+      }
+
       if (event.type === "customer.subscription.deleted") {
         const membership = (await storage.getAllMembershipSubscriptions()).find((item) => item.paymentProviderSubscriptionId === payload.id);
         if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
-          await storage.updateMembershipSubscription(membership.id, { status: "cancelled", updatedAt: new Date() } as any);
+          await storage.updateMembershipSubscription(membership.id, { status: "cancelled", paymentStatus: "cancelled", updatedAt: new Date() } as any);
           await storage.createMembershipEvent({
             subscriptionId: membership.id,
             eventType: "stripe_subscription_cancelled",
@@ -2101,8 +2910,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ received: true });
     } catch (error: any) {
-      console.error("Error processing Stripe webhook:", error);
-      res.status(400).json({ error: error.message || "Invalid Stripe webhook" });
+      console.error(`Stripe webhook processing failed: ${event.id}, ${event.type}`);
+      res.status(500).json({ error: "Webhook processing failed; retry required" });
     }
   });
 
@@ -2164,7 +2973,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         category: "membership_agreement",
       });
 
-      res.status(201).json({ contract, planId, prepaidTermMonths: termMonths });
+      const customerName = [req.user!.firstName, req.user!.lastName].filter(Boolean).join(" ") || req.user!.username;
+      const signingToken = issueContractSigningToken({
+        contractId: contract.id,
+        email: req.user!.email,
+        customerName,
+        entityType: "membership_enrollment",
+        entityId: planId,
+      });
+      res.status(201).json({ contract, planId, prepaidTermMonths: termMonths, signingToken });
     } catch (error) {
       console.error("Error generating membership contract:", error);
       res.status(500).json({ error: "Failed to generate membership agreement" });
@@ -2196,12 +3013,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         !enrollmentContract
         || enrollmentContract.category !== "membership_agreement"
         || enrollmentContract.title !== expectedTitle
-        || !enrollmentContract.content.includes(expectedBillingLanguage)
+        || !enrollmentContract.content.toLowerCase().includes(expectedBillingLanguage)
       ) {
         return res.status(400).json({ error: "Sign the selected Passport membership agreement before enrolling." });
       }
       const signedContract = (await storage.getContractSignaturesByContract(enrollmentContract.id))
-        .find((signature) => signature.customerEmail.toLowerCase() === req.user!.email.toLowerCase() && signature.agreedToTerms);
+        .find((signature) => signature.customerEmail.toLowerCase() === req.user!.email.toLowerCase()
+          && signature.relatedEntityType === "membership_enrollment"
+          && signature.relatedEntityId === plan.id
+          && signature.agreedToTerms);
       if (!signedContract) {
         return res.status(400).json({ error: "Sign the selected Passport membership agreement before enrolling." });
       }
@@ -2222,6 +3042,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         planId: plan.id,
         planVersionId: planVersion?.id ?? null,
         status: "pending_payment",
+        paymentStatus: "pending",
         startDate: now,
         currentPeriodStart,
         currentPeriodEnd,
@@ -2293,18 +3114,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const providerPaymentId = `checkout:${checkout.id}`;
       const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(providerPaymentId);
-      if (existingPayment) return res.json(await getMembershipAccountPayload(req.user!.id));
+      if (existingPayment) {
+        await sendMembershipActivationEmailOnce(membership.id);
+        return res.json(await getMembershipAccountPayload(req.user!.id));
+      }
 
       const plan = await storage.getMembershipPlan(membership.planId);
       const providerSubscriptionId = typeof checkout.subscription === "string" ? checkout.subscription : checkout.subscription?.id ?? null;
       const updated = await storage.updateMembershipSubscription(membership.id, {
         status: "active",
+        paymentStatus: "paid",
         paymentProviderSubscriptionId: providerSubscriptionId,
         updatedAt: new Date(),
       } as any);
       const payment = await storage.createMembershipPaymentAssociation({
         subscriptionId: membership.id,
         paymentProviderId: providerPaymentId,
+        paymentProviderSubscriptionId: providerSubscriptionId,
+        paymentProviderTransactionId: checkout.payment_intent as string | null ?? (typeof checkout.invoice === "string" ? checkout.invoice : checkout.invoice?.id ?? null),
+        paymentProviderEventId: null,
         amountCents: plan?.priceCents ?? 0,
         status: "succeeded",
       });
@@ -2312,6 +3140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await issueMembershipBenefits(updated.id, updated.planId, "stripe_checkout", payment.id, "Initial benefits issued after Stripe checkout verification.");
         await issuePassportRewardCycle(updated, payment.id, new Date());
       }
+      await sendMembershipActivationEmailOnce(membership.id);
       await storage.createMembershipEvent({
         subscriptionId: membership.id,
         eventType: "stripe_checkout_verified",
@@ -2454,6 +3283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         planId: plan.id,
         planVersionId: planVersion?.id ?? null,
         status: "pending_payment",
+        paymentStatus: "pending",
         startDate: now,
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
@@ -2481,7 +3311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/memberships", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/memberships", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -2510,7 +3340,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/memberships/:id/activate", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/memberships/:id/activate", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -2530,6 +3360,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updated = await storage.updateMembershipSubscription(id, {
         status: "active",
+        paymentStatus: "paid",
         updatedAt: new Date(),
       } as any);
 
@@ -2537,6 +3368,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const payment = await storage.createMembershipPaymentAssociation({
           subscriptionId: updated.id,
           paymentProviderId: activationKey,
+          paymentProviderSubscriptionId: updated.paymentProviderSubscriptionId ?? null,
+          paymentProviderTransactionId: null,
+          paymentProviderEventId: null,
           amountCents: (await storage.getMembershipPlan(updated.planId))?.priceCents ?? 0,
           status: "succeeded",
         });
@@ -2556,7 +3390,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/memberships/:id/verify-payment", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/memberships/:id/verify-payment", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -2580,10 +3414,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const payment = await storage.createMembershipPaymentAssociation({
         subscriptionId,
         paymentProviderId: providerPaymentId,
+        paymentProviderSubscriptionId: subscription.paymentProviderSubscriptionId ?? null,
+        paymentProviderTransactionId: String(req.body.providerTransactionId || "").trim() || null,
+        paymentProviderEventId: null,
         amountCents: plan?.priceCents ?? 0,
         status: "succeeded",
       });
-      const updated = await storage.updateMembershipSubscription(subscriptionId, { status: "active", updatedAt: new Date() } as any);
+      const updated = await storage.updateMembershipSubscription(subscriptionId, { status: "active", paymentStatus: "paid", updatedAt: new Date() } as any);
       const rewards = await issuePassportRewardCycle(updated ?? subscription, payment.id, new Date());
       await storage.createMembershipEvent({
         subscriptionId,
@@ -2598,7 +3435,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/memberships/:id/adjust-benefit", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/memberships/:id/adjust-benefit", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -2642,7 +3479,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/promotions", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/promotions", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -2657,7 +3494,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/admin/promotions/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/admin/promotions/:id", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }
@@ -2678,7 +3515,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/promotions/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/admin/promotions/:id", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
     }

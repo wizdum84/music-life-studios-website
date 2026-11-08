@@ -11,7 +11,7 @@ const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | u
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 
 export interface StripePaymentProps {
-  bookingData: { id?: number; amount: number; paymentStatus?: string };
+  bookingData: { id?: number; amount: number; email?: string; paymentToken?: string; paymentStatus?: string };
   onComplete: (transactionId: string) => void;
   isDeposit: boolean;
   tipAmount?: number;
@@ -49,6 +49,8 @@ function PaymentForm({
 
       await apiRequest("POST", "/api/stripe/complete-payment", {
         paymentIntentId: result.paymentIntent.id,
+        email: bookingData.email,
+        paymentToken: bookingData.paymentToken,
       });
       toast({ title: "Payment successful", description: "Your payment has been verified and recorded." });
       onComplete(result.paymentIntent.id);
@@ -87,12 +89,17 @@ export function StripePaymentForm({ bookingData, onComplete, isDeposit, tipAmoun
 
   useEffect(() => {
     let cancelled = false;
+    setClientSecret(null);
+    setAmountCents(0);
+    setErrorMessage("");
     if (!bookingData.id) {
       setErrorMessage("Your booking could not be initialized for payment.");
       return;
     }
     apiRequest("POST", "/api/stripe/create-payment-intent", {
       bookingId: bookingData.id,
+      email: bookingData.email,
+      paymentToken: bookingData.paymentToken,
       isDeposit,
       tipAmount,
     })
@@ -107,7 +114,7 @@ export function StripePaymentForm({ bookingData, onComplete, isDeposit, tipAmoun
         if (!cancelled) setErrorMessage(error.message || "Unable to load Stripe checkout.");
       });
     return () => { cancelled = true; };
-  }, [bookingData.id, isDeposit, tipAmount]);
+  }, [bookingData.id, bookingData.email, isDeposit, tipAmount]);
 
   if (!publishableKey) {
     return <PaymentError message="Stripe checkout is not configured yet. Add VITE_STRIPE_PUBLISHABLE_KEY to the client environment." />;
@@ -118,7 +125,7 @@ export function StripePaymentForm({ bookingData, onComplete, isDeposit, tipAmoun
   }
 
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: "stripe" } }}>
+    <Elements key={clientSecret} stripe={stripePromise} options={{ clientSecret, appearance: { theme: "stripe" } }}>
       <PaymentForm bookingData={bookingData} onComplete={onComplete} isDeposit={isDeposit} tipAmount={tipAmount} amountCents={amountCents} />
     </Elements>
   );

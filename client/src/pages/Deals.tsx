@@ -1,6 +1,6 @@
 import { Helmet } from "react-helmet";
 import { Link } from "wouter";
-import { Check, Clock, Gift, Music, Tag } from "lucide-react";
+import { ArrowUpRight, Check, Clock, Gift, Music, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -155,6 +155,74 @@ export default function Deals() {
               </CardHeader>
             </Card>
           </div>
+
+          <section aria-labelledby="standard-mix-master-title" className="overflow-hidden border-2 border-[#8a5a1c] bg-[#1b1713] shadow-[8px_8px_0_#6d4918]">
+            <div className="grid lg:grid-cols-[0.82fr_1.18fr]">
+              <div className="relative min-h-[300px] overflow-hidden border-b-2 border-[#8a5a1c] bg-black lg:min-h-full lg:border-b-0 lg:border-r-2">
+                <img
+                  src="/assets/passport-builder-speakers.png"
+                  alt="Nearfield studio speakers surrounded by warm gold sound waves"
+                  className="absolute inset-0 h-full w-full object-cover object-center brightness-[0.86] contrast-[1.12]"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-black/20" />
+                <div className="absolute bottom-6 left-6 right-6">
+                  <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ffb84d]">Music Life Studios</p>
+                  <p className="mt-2 text-3xl font-black uppercase leading-none text-white sm:text-4xl">Standard<br />Finish</p>
+                  <p className="mt-3 max-w-[16rem] text-sm text-white/75">For records that need the full polish.</p>
+                </div>
+              </div>
+
+              <div className="p-6 sm:p-8">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff8a00]">Regular Mix &amp; Master</p>
+                    <h2 id="standard-mix-master-title" className="mt-2 text-3xl font-black text-white sm:text-4xl">Make the record land.</h2>
+                    <p className="mt-3 max-w-2xl text-white/70">A full professional mix and master for organized, usable files.</p>
+                  </div>
+                  <div className="shrink-0 sm:text-right">
+                    <p className="text-4xl font-black text-white">$125</p>
+                    <p className="text-sm text-white/60">starting per song</p>
+                  </div>
+                </div>
+
+                <div className="mt-7 grid gap-x-6 gap-y-3 text-sm text-white/85 sm:grid-cols-2">
+                  {[
+                    "Detailed cleanup and vocal comping",
+                    "Standard tuning and reasonable timing correction",
+                    "Volume balancing and panning",
+                    "Effects and automation",
+                    "Professional mixing and mastering",
+                    "WAV and MP3 delivery",
+                    "Two revision rounds",
+                    "Organized, usable customer files",
+                  ].map((item) => (
+                    <div key={item} className="flex gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#ff8a00]" />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-7 border-y border-[#6d4918] py-4">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ffb84d]">Finish more. Save more.</p>
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                    <div><p className="font-bold text-white">1 song</p><p className="text-white/60">$125</p></div>
+                    <div><p className="font-bold text-white">3 songs</p><p className="text-white/60">$345 <span className="text-[#ffb84d]">save $30</span></p></div>
+                    <div><p className="font-bold text-white">5 songs</p><p className="text-white/60">$525 <span className="text-[#ffb84d]">save $100</span></p></div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs leading-relaxed text-white/55">Final scope is confirmed after file review.</p>
+                  <Button asChild className="bg-[#ff8a00] text-black hover:bg-[#ffac3d]">
+                    <Link href="/booking?type=mixing">
+                      Book Mix &amp; Master <ArrowUpRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </section>
 
           <div>
             <h2 className="mb-4 text-3xl font-black">Passport Program</h2>

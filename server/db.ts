@@ -13,3 +13,10 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgresql://localhost:5432/soundcraftstudio_dev",
 });
 export const db = drizzle(pool, { schema });
+
+// Keep advisory-lock connections separate so waiting locks cannot starve queries.
+export const bookingLockPool = new Pool({
+  connectionString: process.env.DATABASE_URL || "postgresql://localhost:5432/soundcraftstudio_dev",
+  max: 3,
+  connectionTimeoutMillis: 30000,
+});

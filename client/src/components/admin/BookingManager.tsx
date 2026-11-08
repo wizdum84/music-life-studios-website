@@ -1,4 +1,5 @@
 import { useState } from "react";
+import QRCode from "qrcode";
 import { useQuery } from "@tanstack/react-query";
 import {
   CaretSortIcon,
@@ -49,7 +50,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, Calendar, Clock, Loader2, Mail, User } from "lucide-react";
+import { AlertCircle, Calendar, Clock, Copy, ExternalLink, Link2, Loader2, Mail, RotateCcw, User } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -76,6 +77,8 @@ const PaymentBadge = ({ status }: { status: string }) => {
     switch (status) {
       case "paid": return "success";
       case "deposit_paid": return "warning";
+      case "partially_refunded": return "warning";
+      case "refunded": return "destructive";
       case "unpaid": return "outline";
       default: return "outline";
     }
@@ -96,6 +99,10 @@ export default function BookingManager() {
   const [statusUpdateOpen, setStatusUpdateOpen] = useState(false);
   const [newStatus, setNewStatus] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isCreatingPaymentLink, setIsCreatingPaymentLink] = useState(false);
+  const [isRefunding, setIsRefunding] = useState(false);
+  const [paymentLinkData, setPaymentLinkData] = useState<{ url: string; subject: string; body: string; remainingAmount: number } | null>(null);
+  const [paymentQrDataUrl, setPaymentQrDataUrl] = useState<string | null>(null);
   
   const { toast } = useToast();
   
@@ -136,6 +143,23 @@ export default function BookingManager() {
     const mins = minutes % 60;
     return hours + (mins > 0 ? `:${mins.toString().padStart(2, '0')}` : '') + ` ${hours === 1 ? 'hour' : 'hours'}`;
   };
+
+  const refundLatestPayment = async () => {
+    if (!selectedBooking?.transactionId || !window.confirm("Refund the latest Stripe payment for this booking? This sends money back through Stripe.")) return;
+    setIsRefunding(true);
+    try {
+      const response = await apiRequest("POST", "/api/stripe/refund", { transactionId: selectedBooking.transactionId });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Refund failed");
+      setSelectedBooking(data.booking);
+      queryClient.invalidateQueries({ queryKey: ['/api/bookings'] });
+      toast({ title: "Refund submitted", description: `${formatCurrency(data.refund.amount)} was refunded through Stripe.` });
+    } catch (error: any) {
+      toast({ title: "Refund failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsRefunding(false);
+    }
+  };
   
   // Update booking status
   const updateBookingStatus = async () => {
@@ -169,7 +193,62 @@ export default function BookingManager() {
   // Handle booking details view
   const viewBookingDetails = (booking: Booking) => {
     setSelectedBooking(booking);
+    setPaymentLinkData(null);
+    setPaymentQrDataUrl(null);
     setDetailsOpen(true);
+  };
+
+  const getPaymentLink = async () => {
+    if (!selectedBooking) return null;
+    if (paymentLinkData) return paymentLinkData;
+    setIsCreatingPaymentLink(true);
+    try {
+      const response = await apiRequest("GET", `/api/bookings/${selectedBooking.id}/payment-link`);
+      const data = await response.json();
+      const next = { url: data.url, subject: data.subject, body: data.body, remainingAmount: data.remainingAmount };
+      setPaymentLinkData(next);
+      setPaymentQrDataUrl(await QRCode.toDataURL(next.url, { width: 220, margin: 1, errorCorrectionLevel: "M" }));
+      return next;
+    } catch (error: any) {
+      toast({ title: "Payment link unavailable", description: error.message || "This booking does not have a balance link yet.", variant: "destructive" });
+      return null;
+    } finally {
+      setIsCreatingPaymentLink(false);
+    }
+  };
+
+  const copyPaymentLink = async () => {
+    const data = await getPaymentLink();
+    if (!data) return;
+    try {
+      await navigator.clipboard.writeText(data.url);
+      toast({ title: "Payment link copied", description: "Paste it into a text message or email." });
+    } catch {
+      toast({ title: "Copy blocked", description: "Select the link below and copy it manually.", variant: "destructive" });
+    }
+  };
+
+  const openEmailDraft = async () => {
+    const data = await getPaymentLink();
+    if (!data || !selectedBooking) return;
+    window.location.href = `mailto:${encodeURIComponent(selectedBooking.email)}?subject=${encodeURIComponent(data.subject)}&body=${encodeURIComponent(data.body)}`;
+  };
+
+  const getCustomerUploads = (booking: Booking) => {
+    const metadata = booking.paymentMetadata && typeof booking.paymentMetadata === "object" ? booking.paymentMetadata as Record<string, unknown> : {};
+    return Array.isArray(metadata.customerUploads)
+      ? metadata.customerUploads as Array<{ name?: string; size?: number; kind?: string }>
+      : [];
+  };
+
+  const downloadCustomerUpload = async (bookingId: number, index: number) => {
+    try {
+      const response = await apiRequest("GET", `/api/bookings/${bookingId}/uploads/${index}/download`);
+      const data = await response.json();
+      window.location.assign(data.url);
+    } catch (error: any) {
+      toast({ title: "Download unavailable", description: error.message || "Unable to prepare this file.", variant: "destructive" });
+    }
   };
   
   // Handle status update dialog
@@ -587,6 +666,29 @@ export default function BookingManager() {
                   </p>
                 </div>
               )}
+
+              {getCustomerUploads(selectedBooking).length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Private Customer Uploads</h4>
+                  <div className="space-y-2">
+                    {getCustomerUploads(selectedBooking).map((upload, index) => (
+                      <div key={`${upload.name || "file"}-${index}`} className="flex items-center justify-between gap-3 rounded-md border p-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{upload.name || `Upload ${index + 1}`}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(upload.kind || "customer audio").replace("-", " ")}
+                            {typeof upload.size === "number" ? ` · ${(upload.size / 1024 / 1024).toFixed(1)} MB` : ""}
+                          </p>
+                        </div>
+                        <Button type="button" size="sm" variant="outline" onClick={() => downloadCustomerUpload(selectedBooking.id, index)}>
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Download
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               <Separator />
               
@@ -596,9 +698,15 @@ export default function BookingManager() {
                 </p>
                 
                 <div className="flex space-x-2">
-                  <Button variant="outline" size="sm">
+                  {selectedBooking.transactionId && ["deposit_paid", "paid", "partially_refunded"].includes(selectedBooking.paymentStatus) && (
+                    <Button variant="destructive" size="sm" onClick={refundLatestPayment} disabled={isRefunding}>
+                      {isRefunding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                      Refund Latest Payment
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={openEmailDraft} disabled={selectedBooking.paymentStatus !== "deposit_paid" || isCreatingPaymentLink}>
                     <Mail className="h-4 w-4 mr-2" />
-                    Email Client
+                    Email Balance Link
                   </Button>
                   <Button size="sm" onClick={() => {
                     setDetailsOpen(false);
@@ -608,6 +716,35 @@ export default function BookingManager() {
                   </Button>
                 </div>
               </div>
+
+              {selectedBooking.paymentStatus === "deposit_paid" && (
+                <div className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <Link2 className="h-4 w-4 mt-0.5 text-primary" />
+                    <div>
+                      <h4 className="text-sm font-medium">Remaining balance link</h4>
+                      <p className="text-xs text-muted-foreground">Generate a secure link for the customer to finish payment before or at the session.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={copyPaymentLink} disabled={isCreatingPaymentLink}>
+                      {isCreatingPaymentLink ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Copy className="h-4 w-4 mr-2" />}
+                      Copy Payment Link
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={openEmailDraft} disabled={isCreatingPaymentLink}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Open Email Draft
+                    </Button>
+                  </div>
+                  {paymentLinkData && <Input readOnly value={paymentLinkData.url} aria-label="Secure payment link" />}
+                  {paymentQrDataUrl && (
+                    <div className="flex items-center gap-3 rounded-md border bg-background p-3">
+                      <img src={paymentQrDataUrl} alt="QR code for remaining balance payment" className="h-28 w-28" />
+                      <p className="text-xs text-muted-foreground">Scan this QR code at the session to open the secure balance payment page.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

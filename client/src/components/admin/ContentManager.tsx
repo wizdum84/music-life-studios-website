@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Track, Beat, Service, TimeSlot } from "@shared/schema";
 import { 
@@ -15,8 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import { 
   Dialog, 
   DialogContent, 
@@ -38,32 +36,27 @@ import { format, addDays, startOfWeek, endOfWeek } from "date-fns";
 
 export default function ContentManager() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("tracks");
+  const [activeTab, setActiveTab] = useState("beats");
   
   return (
     <div className="space-y-6">
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Content Manager</CardTitle>
-          <CardDescription>Manage your portfolio tracks, samples, beats, and contracts</CardDescription>
+          <CardDescription>Manage the beat catalog, studio portfolio, contracts, and schedule</CardDescription>
         </CardHeader>
       </Card>
       
       <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-6 bg-card border mt-2">
-          <TabsTrigger value="tracks">Portfolio Tracks</TabsTrigger>
-          <TabsTrigger value="samples">Sample Library</TabsTrigger>
-          <TabsTrigger value="beats">Beat Marketplace</TabsTrigger>
+          <TabsTrigger value="beats">Beat Catalog</TabsTrigger>
+          <TabsTrigger value="tracks">Studio Portfolio</TabsTrigger>
           <TabsTrigger value="contracts">Contracts</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
         </TabsList>
         
         <TabsContent value="tracks" className="mt-0">
           <TracksManager />
-        </TabsContent>
-        
-        <TabsContent value="samples" className="mt-0">
-          <SamplesManager />
         </TabsContent>
         
         <TabsContent value="beats" className="mt-0">
@@ -204,23 +197,23 @@ function TracksManager() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Portfolio Tracks</CardTitle>
-          <CardDescription>Manage tracks showcasing your studio work</CardDescription>
+          <CardTitle>Studio Portfolio</CardTitle>
+          <CardDescription>Showcase finished client work. This does not add beats for sale.</CardDescription>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary/80">
               <PlusCircle className="h-4 w-4 mr-2" />
-              Add Track
+              Add Portfolio Track
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                {selectedTrack ? "Edit Track" : "Add New Track"}
+                {selectedTrack ? "Edit Portfolio Track" : "Add Portfolio Track"}
               </DialogTitle>
               <DialogDescription>
-                Add a track to showcase your studio work
+                Add finished work to the portfolio. For beats and licenses, use Beat Catalog.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -366,9 +359,14 @@ function BeatsManager() {
   const [selectedBeat, setSelectedBeat] = useState<Beat | null>(null);
   const [isPreviewUploading, setIsPreviewUploading] = useState(false);
   const [isFullAudioUploading, setIsFullAudioUploading] = useState(false);
+  const [isCoverUploading, setIsCoverUploading] = useState(false);
   const [previewUploadProgress, setPreviewUploadProgress] = useState(0);
   const [fullAudioUploadProgress, setFullAudioUploadProgress] = useState(0);
+  const [coverUploadProgress, setCoverUploadProgress] = useState(0);
+  const [deliverableLicenseType, setDeliverableLicenseType] = useState("basic");
+  const [uploadedDeliverables, setUploadedDeliverables] = useState<string[]>([]);
   const [activeGenre, setActiveGenre] = useState<string>("all");
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -384,8 +382,14 @@ function BeatsManager() {
       premium: { price: 6999, description: "Premium license" },
       exclusive: { price: 19999, description: "Exclusive license" }
     },
-    tags: [],
-    contractUrl: ""
+    tags: [] as string[],
+    contractUrl: "",
+    isrcCode: "",
+    catalogNumber: "",
+    producerName: "",
+    musicalKey: "",
+    durationSeconds: 0,
+    metadata: { mood: "", energy: "", notes: "" },
   });
   
   // Fetch all beats
@@ -397,6 +401,9 @@ function BeatsManager() {
   const beats = activeGenre === 'all' 
     ? allBeats 
     : allBeats.filter(beat => beat.genre === activeGenre);
+  const visibleBeats = catalogSearch.trim()
+    ? beats.filter((beat) => `${beat.title} ${beat.genre} ${beat.catalogNumber || ""} ${beat.isrcCode || ""} ${beat.producerName || ""}`.toLowerCase().includes(catalogSearch.trim().toLowerCase()))
+    : beats;
     
   // Genres for selection
   const genres = [
@@ -410,14 +417,16 @@ function BeatsManager() {
   // Add beat mutation
   const addBeatMutation = useMutation({
     mutationFn: async (beat: any) => {
-      return apiRequest("POST", "/api/beats", beat);
+      const response = await apiRequest("POST", "/api/beats", beat);
+      return response.json() as Promise<Beat>;
     },
-    onSuccess: () => {
+    onSuccess: (beat) => {
       queryClient.invalidateQueries({ queryKey: ['/api/beats'] });
-      setShowAddDialog(false);
-      resetForm();
+      setSelectedBeat(beat);
+      setFormData((current) => ({ ...current, previewUrl: beat.previewUrl, fullAudioUrl: beat.fullAudioUrl }));
       toast({
-        title: "Beat added successfully",
+        title: "Beat draft created",
+        description: "Upload its cover, preview, and buyer files, then publish it.",
       });
     },
     onError: (error: any) => {
@@ -428,119 +437,139 @@ function BeatsManager() {
       });
     }
   });
+
+  const updateBeatMutation = useMutation({
+    mutationFn: async ({ id, beat }: { id: number; beat: any }) => apiRequest("PUT", `/api/beats/${id}`, beat),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/beats'] });
+      setShowAddDialog(false);
+      resetForm();
+      toast({ title: "Beat library record updated" });
+    },
+    onError: (error: any) => toast({ title: "Error updating beat", description: error.message, variant: "destructive" }),
+  });
+
+  const deleteBeatMutation = useMutation({
+    mutationFn: async (id: number) => apiRequest("DELETE", `/api/beats/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/beats'] });
+      toast({ title: "Beat removed from the library" });
+    },
+    onError: (error: any) => toast({ title: "Error deleting beat", description: error.message, variant: "destructive" }),
+  });
   
-  // Simulate preview file upload
-  const simulatePreviewUpload = (file: File) => {
+  const uploadMasterAndCreatePreview = (file: File) => {
+    if (!selectedBeat) {
+      toast({
+        title: "Save the beat record first",
+        description: "Create the beat draft before uploading the full beat.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsPreviewUploading(true);
     setPreviewUploadProgress(0);
-    
-    // Detect file type and suggest title if empty
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    if (!formData.title) {
-      const suggestedTitle = file.name.split('.')[0].replace(/-/g, ' ').replace(/_/g, ' ');
-      setFormData(prev => ({
-        ...prev,
-        title: suggestedTitle
-      }));
-    }
-    
-    // Simulate progress
-    const interval = setInterval(() => {
-      setPreviewUploadProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(interval);
-          return 95;
-        }
-        return prev + 5;
-      });
-    }, 200);
-    
-    // Simulate completion after 3 seconds
-    setTimeout(() => {
-      clearInterval(interval);
-      setPreviewUploadProgress(100);
+    const body = new FormData();
+    body.append("file", file);
+    const request = new XMLHttpRequest();
+    request.open("POST", `/api/admin/beats/${selectedBeat.id}/master`);
+    request.withCredentials = true;
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) setPreviewUploadProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onload = () => {
       setIsPreviewUploading(false);
-      
-      // Create a fake URL for demo purposes
-      const fakeUrl = `https://storage.musiclifestudios.com/preview-${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      // Update form data with the URL
-      setFormData(prev => ({
-        ...prev,
-        previewUrl: fakeUrl
-      }));
-      
-      toast({
-        title: "Preview uploaded successfully",
-        description: `${file.name} has been uploaded`,
-      });
-    }, 3000);
+      const result = JSON.parse(request.responseText || "{}");
+      if (request.status < 200 || request.status >= 300) {
+        toast({ title: "Upload failed", description: result.error || "The beat could not be processed", variant: "destructive" });
+        return;
+      }
+      setPreviewUploadProgress(100);
+      setFormData((current) => ({ ...current, previewUrl: result.previewUrl, fullAudioUrl: result.fullAudioUrl }));
+      setUploadedDeliverables((current) => Array.from(new Set([...current, "basic"])));
+      queryClient.invalidateQueries({ queryKey: ['/api/beats'] });
+      toast({ title: "Beat processed", description: "The full beat is private and its 45-second public preview is ready." });
+    };
+    request.onerror = () => {
+      setIsPreviewUploading(false);
+      toast({ title: "Upload failed", description: "The server connection was interrupted", variant: "destructive" });
+    };
+    request.send(body);
   };
   
-  // Simulate full audio file upload (handles MP3, WAV and stem packs)
-  const simulateFullAudioUpload = (file: File) => {
+  const uploadFullAudio = (file: File) => {
+    if (!selectedBeat) {
+      toast({
+        title: "Save the beat record first",
+        description: "Create the beat, then edit it to attach its private master or stem pack.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsFullAudioUploading(true);
     setFullAudioUploadProgress(0);
-    
-    // Check if this is a stem pack (ZIP or RAR)
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    const isStemPack = extension === 'zip' || extension === 'rar';
-    const isWav = extension === 'wav';
-    
-    // Display different toast message based on file type
-    const fileTypeDisplay = isStemPack ? "stem pack" : 
-                            isWav ? "WAV file" : "MP3 file";
-    
-    // Simulate progress
-    const interval = setInterval(() => {
-      setFullAudioUploadProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(interval);
-          return 95;
-        }
-        return prev + 5;
-      });
-    }, 250);
-    
-    // Simulate completion after 4 seconds
-    setTimeout(() => {
-      clearInterval(interval);
-      setFullAudioUploadProgress(100);
+    const body = new FormData();
+    body.append("file", file);
+    const request = new XMLHttpRequest();
+    request.open("POST", `/api/admin/beats/${selectedBeat.id}/deliverable`);
+    request.withCredentials = true;
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) setFullAudioUploadProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onload = () => {
       setIsFullAudioUploading(false);
-      
-      // Create a fake URL for demo purposes
-      const fakeUrl = `https://storage.musiclifestudios.com/full-${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      // If this is a stem pack, we would have individual files for each stem
-      if (isStemPack) {
-        // Simulate stem files that would be in the ZIP/RAR
-        const stemFiles = [
-          { name: "vocals.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-vocals.wav` },
-          { name: "drums.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-drums.wav` },
-          { name: "bass.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-bass.wav` },
-          { name: "melody.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-melody.wav` },
-          { name: "fx.wav", url: `https://storage.musiclifestudios.com/stems-${Date.now()}-fx.wav` }
-        ];
-        
-        toast({
-          title: "Stem pack uploaded successfully",
-          description: `${file.name} with ${stemFiles.length} stems extracted`,
-        });
-      } else {
-        toast({
-          title: `${fileTypeDisplay} uploaded successfully`,
-          description: `${file.name} has been uploaded`,
-        });
+      const result = JSON.parse(request.responseText || "{}");
+      if (request.status < 200 || request.status >= 300) {
+        toast({ title: "Upload failed", description: result.error || "The deliverable could not be stored", variant: "destructive" });
+        return;
       }
-      
-      // Update form data with the URL
-      setFormData(prev => ({
-        ...prev,
-        fullAudioUrl: fakeUrl
-      }));
-    }, 4000);
+      setFullAudioUploadProgress(100);
+      if (deliverableLicenseType === "basic") {
+        setFormData((current) => ({ ...current, fullAudioUrl: result.fullAudioUrl }));
+      }
+      setUploadedDeliverables((current) => Array.from(new Set([...current, deliverableLicenseType])));
+      queryClient.invalidateQueries({ queryKey: ['/api/beats'] });
+      toast({ title: "Private deliverable uploaded", description: `${file.name} is ready for ${deliverableLicenseType} license delivery.` });
+    };
+    request.onerror = () => {
+      setIsFullAudioUploading(false);
+      toast({ title: "Upload failed", description: "The server connection was interrupted", variant: "destructive" });
+    };
+    request.send(body);
   };
-  
+
+  const uploadCover = (file: File) => {
+    if (!selectedBeat) {
+      toast({ title: "Create the draft first", description: "Save the beat details before uploading artwork.", variant: "destructive" });
+      return;
+    }
+    setIsCoverUploading(true);
+    setCoverUploadProgress(0);
+    const body = new FormData();
+    body.append("file", file);
+    const request = new XMLHttpRequest();
+    request.open("POST", `/api/admin/beats/${selectedBeat.id}/cover`);
+    request.withCredentials = true;
+    request.upload.onprogress = (event) => event.lengthComputable && setCoverUploadProgress(Math.round((event.loaded / event.total) * 100));
+    request.onload = () => {
+      setIsCoverUploading(false);
+      const result = JSON.parse(request.responseText || "{}");
+      if (request.status < 200 || request.status >= 300) {
+        toast({ title: "Artwork upload failed", description: result.error || "Unable to store artwork", variant: "destructive" });
+        return;
+      }
+      setCoverUploadProgress(100);
+      setFormData((current) => ({ ...current, imageUrl: result.imageUrl }));
+      queryClient.invalidateQueries({ queryKey: ['/api/beats'] });
+      toast({ title: "Cover artwork uploaded" });
+    };
+    request.onerror = () => {
+      setIsCoverUploading(false);
+      toast({ title: "Artwork upload failed", description: "The server connection was interrupted", variant: "destructive" });
+    };
+    request.send(body);
+  };
+
   const resetForm = () => {
     setFormData({
       title: "",
@@ -557,15 +586,54 @@ function BeatsManager() {
         premium: { price: 6999, description: "Premium license" },
         exclusive: { price: 19999, description: "Exclusive license" }
       },
-      tags: [],
-      contractUrl: ""
+      tags: [] as string[],
+      contractUrl: "",
+      isrcCode: "",
+      catalogNumber: "",
+      producerName: "",
+      musicalKey: "",
+      durationSeconds: 0,
+      metadata: { mood: "", energy: "", notes: "" },
     });
     setSelectedBeat(null);
+    setUploadedDeliverables([]);
+  };
+
+  const openEditBeat = (beat: Beat) => {
+    const metadata = (beat.metadata && typeof beat.metadata === "object" ? beat.metadata : {}) as Record<string, unknown>;
+    setSelectedBeat(beat);
+    const deliverables = metadata.deliverables && typeof metadata.deliverables === "object" ? metadata.deliverables as Record<string, unknown> : {};
+    setUploadedDeliverables(Object.keys(deliverables).filter((key) => typeof deliverables[key] === "string"));
+    setFormData({
+      title: beat.title,
+      description: beat.description,
+      genre: beat.genre,
+      bpm: beat.bpm,
+      price: beat.price,
+      previewUrl: beat.previewUrl,
+      fullAudioUrl: beat.fullAudioUrl,
+      imageUrl: beat.imageUrl || "",
+      featured: Boolean(beat.featured),
+      licensingOptions: beat.licensingOptions as any,
+      tags: beat.tags || [],
+      contractUrl: beat.contractUrl || "",
+      isrcCode: beat.isrcCode || "",
+      catalogNumber: beat.catalogNumber || "",
+      producerName: beat.producerName || "",
+      musicalKey: beat.musicalKey || "",
+      durationSeconds: beat.durationSeconds || 0,
+      metadata: {
+        mood: String(metadata.mood || ""),
+        energy: String(metadata.energy || ""),
+        notes: String(metadata.notes || ""),
+      },
+    });
+    setShowAddDialog(true);
   };
   
   const handleAddOrUpdate = () => {
     // Basic validation
-    if (!formData.title || !formData.description || !formData.genre || !formData.previewUrl || !formData.fullAudioUrl) {
+    if (!formData.title || !formData.description || !formData.genre) {
       toast({
         title: "Missing required fields",
         description: "Please fill in all required fields",
@@ -574,17 +642,19 @@ function BeatsManager() {
       return;
     }
     
+    const payload = {
+      ...formData,
+      durationSeconds: formData.durationSeconds || undefined,
+    };
     if (selectedBeat) {
-      // Update existing beat
-      // Replace with actual update logic
-      toast({
-        title: "Beat updated successfully",
-      });
-      setShowAddDialog(false);
-      resetForm();
+      const readyToPublish = formData.previewUrl.includes(".r2.dev/") && Boolean(formData.imageUrl) && ["basic", "premium", "exclusive"].every((tier) => uploadedDeliverables.includes(tier));
+      if (selectedBeat.availabilityStatus === "draft" && !readyToPublish) {
+        toast({ title: "Draft is not ready", description: "Add cover artwork, a public preview, and Basic, Premium, and Exclusive delivery files before publishing.", variant: "destructive" });
+        return;
+      }
+      updateBeatMutation.mutate({ id: selectedBeat.id, beat: { ...payload, ...(selectedBeat.availabilityStatus === "draft" ? { availabilityStatus: "available_nonexclusive" } : {}) } });
     } else {
-      // Add new beat
-      addBeatMutation.mutate(formData);
+      addBeatMutation.mutate({ ...payload, previewUrl: "delivery-pending://preview", fullAudioUrl: "delivery-pending://basic", availabilityStatus: "draft" });
     }
   };
   
@@ -592,23 +662,23 @@ function BeatsManager() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Beat Marketplace</CardTitle>
-          <CardDescription>Upload MP3s, WAVs and stem packs for sale</CardDescription>
+          <CardTitle>Beat Catalog</CardTitle>
+          <CardDescription>Add beats for sale, generate covers, create 45-second previews, and manage license files</CardDescription>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary/80">
               <PlusCircle className="h-4 w-4 mr-2" />
-              Upload New Beat
+              Add New Beat
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>
-                {selectedBeat ? "Edit Beat" : "Upload New Beat"}
+                {selectedBeat ? `Edit Beat: ${selectedBeat.title}` : "Create New Beat Draft"}
               </DialogTitle>
               <DialogDescription>
-                Upload MP3, WAV or stem packs to sell in your marketplace
+                Save the title first, then upload the full beat and generate its cover in this form.
               </DialogDescription>
             </DialogHeader>
             
@@ -616,15 +686,15 @@ function BeatsManager() {
               {/* File Upload Section */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2 grid gap-2">
-                  <Label>Preview Audio (30-60 second clip)</Label>
+                      <Label>Full Beat and Automatic Preview</Label>
                   <FileUploader
-                    description="Upload a short MP3/WAV preview for customers to hear"
-                    accept="audio/mpeg,audio/wav,.mp3,.wav"
-                    maxSize={20}
-                    onFileSelected={simulatePreviewUpload}
+                    description={selectedBeat ? "Upload the full MP3, WAV, or AIFF once; the site creates the 45-second preview" : "Save this beat record, then upload the full beat"}
+                    accept="audio/mpeg,audio/wav,audio/aiff,.mp3,.wav,.aif,.aiff"
+                    maxSize={1024}
+                    onFileSelected={uploadMasterAndCreatePreview}
                     uploading={isPreviewUploading}
                     uploadProgress={previewUploadProgress}
-                    uploadSuccess={formData.previewUrl !== ""}
+                    uploadSuccess={formData.previewUrl.includes(".r2.dev/")}
                     className="border-2 border-dashed p-6 rounded-lg"
                   />
                   
@@ -636,22 +706,30 @@ function BeatsManager() {
                 </div>
                 
                 <div className="md:col-span-2 grid gap-2 mt-4">
-                  <Label>Full Audio File or Stem Pack</Label>
+                  <Label>Additional Paid-Delivery Packages</Label>
+                  <p className="text-xs text-muted-foreground">The full beat above becomes the Basic delivery file. Add Premium and Exclusive ZIP/WAV packages here when applicable.</p>
+                  <Select value={deliverableLicenseType} onValueChange={setDeliverableLicenseType}>
+                    <SelectTrigger><SelectValue placeholder="Select delivery tier" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="basic">Basic â€” MP3</SelectItem>
+                      <SelectItem value="premium">Premium â€” WAV + MP3 ZIP</SelectItem>
+                      <SelectItem value="exclusive">Exclusive â€” WAV, MP3 + stems ZIP</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <FileUploader
-                    description="Upload the full MP3/WAV or ZIP/RAR stem pack (delivered to buyers)"
-                    accept="audio/mpeg,audio/wav,application/zip,application/x-rar-compressed,.mp3,.wav,.zip,.rar"
-                    maxSize={200}
-                    onFileSelected={simulateFullAudioUpload}
+                    description={selectedBeat ? "Upload the private WAV, MP3, AIFF, or ZIP delivered to paid buyers" : "Save this beat record, then edit it to upload the private deliverable"}
+                    accept="audio/mpeg,audio/wav,audio/aiff,application/zip,.mp3,.wav,.aif,.aiff,.zip"
+                    maxSize={1024}
+                    onFileSelected={uploadFullAudio}
                     uploading={isFullAudioUploading}
                     uploadProgress={fullAudioUploadProgress}
-                    uploadSuccess={formData.fullAudioUrl !== ""}
+                    uploadSuccess={formData.fullAudioUrl.startsWith("r2-private://")}
                     className="border-2 border-dashed p-6 rounded-lg"
                   />
                 </div>
               </div>
-              
+
               {/* Beat Information */}
-              {(formData.previewUrl || formData.fullAudioUrl) && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                     <div className="grid gap-2">
@@ -719,35 +797,68 @@ function BeatsManager() {
                         }}
                       />
                     </div>
-                    
+
+                    <div className="md:col-span-2 border-t pt-4">
+                      <p className="text-sm font-semibold">Catalog details</p>
+                      <p className="text-xs text-muted-foreground">Keep the public card simple while preserving the release record here.</p>
+                    </div>
+
                     <div className="grid gap-2">
-                      <Label htmlFor="imageUrl">Cover Image URL (optional)</Label>
-                      <Input 
-                        id="imageUrl" 
-                        placeholder="Enter image URL" 
-                        value={formData.imageUrl}
-                        onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                      <Label htmlFor="catalogNumber">Catalog number</Label>
+                      <Input id="catalogNumber" placeholder="MLS-001" value={formData.catalogNumber} onChange={(e) => setFormData({...formData, catalogNumber: e.target.value})} />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="isrcCode">ISRC code</Label>
+                      <Input id="isrcCode" placeholder="USABC26123456" value={formData.isrcCode} onChange={(e) => setFormData({...formData, isrcCode: e.target.value})} />
+                      <p className="text-xs text-muted-foreground">Enter the 12-character code with or without hyphens.</p>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="producerName">Producer</Label>
+                      <Input id="producerName" placeholder="Wiz" value={formData.producerName} onChange={(e) => setFormData({...formData, producerName: e.target.value})} />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="musicalKey">Key</Label>
+                      <Input id="musicalKey" placeholder="C minor" value={formData.musicalKey} onChange={(e) => setFormData({...formData, musicalKey: e.target.value})} />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="durationSeconds">Length (seconds)</Label>
+                      <Input id="durationSeconds" type="number" min="1" placeholder="180" value={formData.durationSeconds || ""} onChange={(e) => setFormData({...formData, durationSeconds: parseInt(e.target.value) || 0})} />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="mood">Mood / tags</Label>
+                      <Input id="mood" placeholder="late night, focused, cinematic" value={formData.metadata.mood} onChange={(e) => setFormData({...formData, metadata: {...formData.metadata, mood: e.target.value}})} />
+                    </div>
+
+                    <div className="md:col-span-2 grid gap-2">
+                      <Label htmlFor="catalogNotes">Private catalog notes</Label>
+                      <Textarea id="catalogNotes" placeholder="Sample clearance, split notes, release plans, or delivery notes" value={formData.metadata.notes} onChange={(e) => setFormData({...formData, metadata: {...formData.metadata, notes: e.target.value}})} />
+                    </div>
+                    
+                    <div className="md:col-span-2 grid gap-3 rounded-lg border p-4">
+                      <Label>Cover artwork</Label>
+                      {formData.imageUrl && (
+                        <img src={formData.imageUrl} alt="Beat cover preview" className="h-48 w-48 rounded-md object-cover" />
+                      )}
+                      <p className="text-xs text-muted-foreground">Create the cover in Codex, download it, then upload it here.</p>
+                      <FileUploader
+                        description={selectedBeat ? "Upload JPG, PNG, or WebP artwork" : "Create the draft, then upload artwork"}
+                        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                        maxSize={20}
+                        onFileSelected={uploadCover}
+                        uploading={isCoverUploading}
+                        uploadProgress={coverUploadProgress}
+                        uploadSuccess={formData.imageUrl.includes(".r2.dev/")}
                       />
                     </div>
                     
-                    <div className="flex items-center space-x-2">
-                      <Checkbox 
-                        id="featured" 
-                        checked={formData.featured}
-                        onCheckedChange={(checked) => 
-                          setFormData({...formData, featured: checked === true})
-                        }
-                      />
-                      <label
-                        htmlFor="featured"
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >
-                        Feature this beat on the marketplace
-                      </label>
-                    </div>
                   </div>
                 </>
-              )}
+
             </div>
             <DialogFooter>
               <DialogClose asChild>
@@ -755,9 +866,9 @@ function BeatsManager() {
               </DialogClose>
               <Button 
                 onClick={handleAddOrUpdate}
-                disabled={!formData.title || !formData.description || !formData.genre || !formData.previewUrl || !formData.fullAudioUrl}
+                disabled={!formData.title || !formData.description || !formData.genre}
               >
-                {selectedBeat ? "Update Beat" : "Add Beat"}
+                {selectedBeat?.availabilityStatus === "draft" ? "Publish Beat" : selectedBeat ? "Update Beat" : "Create Draft"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -778,7 +889,8 @@ function BeatsManager() {
           </div>
         ) : (
           <>
-            <div className="mb-6">
+            <div className="mb-6 space-y-3">
+              <Input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Search title, catalog number, ISRC, or producer" />
               <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
                 {genres.map(genre => (
                   <Button
@@ -795,7 +907,7 @@ function BeatsManager() {
               </div>
             </div>
             
-            {beats.length === 0 ? (
+            {visibleBeats.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <p>No beats found in the "{genres.find(g => g.value === activeGenre)?.label}" genre.</p>
                 <Button 
@@ -808,10 +920,10 @@ function BeatsManager() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {beats.map((beat) => (
+                {visibleBeats.map((beat) => (
                   <Card key={beat.id} className="overflow-hidden">
                     <div 
-                      className="h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
+                      className="relative h-32 bg-gradient-to-br from-primary/10 to-primary/30 flex items-center justify-center"
                       style={{
                         backgroundImage: beat.imageUrl ? `url(${beat.imageUrl})` : undefined,
                         backgroundSize: 'cover',
@@ -825,11 +937,6 @@ function BeatsManager() {
                             <span className="text-xs bg-primary px-2 py-0.5 rounded">
                               {beat.genre}
                             </span>
-                            {beat.featured && (
-                              <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded">
-                                Featured
-                              </span>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -837,10 +944,17 @@ function BeatsManager() {
                     
                     <CardContent className="p-4">
                       <div className="flex justify-between mb-2">
-                        <span className="text-sm font-medium">{beat.bpm} BPM</span>
-                        <span className="text-sm font-bold">${beat.price / 100}</span>
+                        <span className="text-sm font-medium">{beat.bpm} BPM{beat.musicalKey ? ` Â· ${beat.musicalKey}` : ""}</span>
+                        <span className="text-sm font-bold">${(beat.price / 100).toFixed(2)}</span>
                       </div>
+                      <h3 className="mb-2 truncate text-base font-bold" title={beat.title}>{beat.title}</h3>
                       <p className="text-sm text-muted-foreground line-clamp-2">{beat.description}</p>
+                      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span>Catalog: {beat.catalogNumber || "Not set"}</span>
+                        <span>ISRC: {beat.isrcCode || "Not set"}</span>
+                        <span>Producer: {beat.producerName || "Not set"}</span>
+                        <span>Length: {beat.durationSeconds ? `${Math.floor(beat.durationSeconds / 60)}:${String(beat.durationSeconds % 60).padStart(2, "0")}` : "Not set"}</span>
+                      </div>
                       <div className="mt-4">
                         <audio 
                           src={beat.previewUrl} 
@@ -851,7 +965,7 @@ function BeatsManager() {
                     </CardContent>
                     
                     <CardFooter className="flex justify-end gap-2 p-4 pt-0">
-                      <Button size="sm" variant="ghost">
+                      <Button size="sm" variant="ghost" onClick={() => openEditBeat(beat)}>
                         <Edit className="h-4 w-4 mr-1" />
                         Edit
                       </Button>
@@ -859,6 +973,8 @@ function BeatsManager() {
                         size="sm" 
                         variant="ghost" 
                         className="text-destructive"
+                        onClick={() => window.confirm(`Remove ${beat.title} from the beat library?`) && deleteBeatMutation.mutate(beat.id)}
+                        disabled={deleteBeatMutation.isPending}
                       >
                         <Trash2 className="h-4 w-4 mr-1" />
                         Delete
@@ -869,420 +985,6 @@ function BeatsManager() {
               </div>
             )}
           </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function SamplesManager() {
-  const { toast } = useToast();
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [selectedSample, setSelectedSample] = useState<Track | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState("");
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [fileType, setFileType] = useState<string>("mp3");
-  const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    type: "sample",
-    audioUrl: "",
-    imageUrl: "",
-    category: "general",
-    sampleType: "mp3" // mp3, wav, stem, or other
-  });
-  
-  // Fetch all tracks that are samples
-  const { data: allSamples = [], isLoading } = useQuery<Track[]>({
-    queryKey: ['/api/tracks'],
-    select: (tracks) => tracks.filter(track => track.type === 'sample')
-  });
-  
-  // Filter samples by category
-  const samples = activeCategory === 'all' 
-    ? allSamples 
-    : allSamples.filter(sample => sample.category === activeCategory);
-  
-  // Add sample mutation
-  const addSampleMutation = useMutation({
-    mutationFn: async (sample: any) => {
-      return apiRequest("POST", "/api/tracks", sample);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/tracks'] });
-      setShowAddDialog(false);
-      resetForm();
-      toast({
-        title: "Sample added successfully",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error adding sample",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-  
-  // Delete sample mutation
-  const deleteSampleMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return apiRequest("DELETE", `/api/tracks/${id}`, {});
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/tracks'] });
-      toast({
-        title: "Sample deleted successfully",
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error deleting sample",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  });
-  
-  // Simulate audio file upload
-  const handleFileUpload = (file: File) => {
-    setIsUploading(true);
-    setUploadProgress(0);
-    setUploadError("");
-    setUploadedFile(file);
-    
-    // Detect file type from extension
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    if (extension) {
-      if (extension === 'wav') {
-        setFileType('wav');
-        setFormData(prev => ({ ...prev, sampleType: 'wav' }));
-      } else if (extension === 'mp3') {
-        setFileType('mp3');
-        setFormData(prev => ({ ...prev, sampleType: 'mp3' }));
-      } else if (extension === 'zip' || extension === 'rar') {
-        setFileType('stem');
-        setFormData(prev => ({ ...prev, sampleType: 'stem' }));
-      } else {
-        setFileType('other');
-        setFormData(prev => ({ ...prev, sampleType: 'other' }));
-      }
-    }
-    
-    // Simulate progress
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev >= 95) {
-          clearInterval(interval);
-          return 95;
-        }
-        return prev + 5;
-      });
-    }, 200);
-    
-    // Simulate completion after 3 seconds
-    setTimeout(() => {
-      clearInterval(interval);
-      setUploadProgress(100);
-      setIsUploading(false);
-      
-      // Create a fake URL for demo purposes
-      const fakeUrl = `https://storage.musiclifestudios.com/samples/${Date.now()}-${file.name.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      // Update form data with the URL and suggest a title from filename
-      setFormData(prev => ({
-        ...prev,
-        audioUrl: fakeUrl,
-        title: prev.title || file.name.split('.')[0].replace(/-/g, ' ').replace(/_/g, ' ')
-      }));
-      
-      toast({
-        title: "Sample uploaded successfully",
-        description: `${file.name} has been uploaded`,
-      });
-    }, 3000);
-  };
-  
-  const resetForm = () => {
-    setFormData({
-      title: "",
-      description: "",
-      type: "sample",
-      audioUrl: "",
-      imageUrl: "",
-      category: "general",
-      sampleType: "mp3"
-    });
-    setSelectedSample(null);
-    setUploadedFile(null);
-    setUploadProgress(0);
-    setIsUploading(false);
-    setUploadError("");
-  };
-  
-  const handleAddOrUpdate = () => {
-    // Basic validation
-    if (!formData.title || !formData.description || !formData.audioUrl) {
-      toast({
-        title: "Missing required fields",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (selectedSample) {
-      // Update existing sample
-      const updatedSample = {
-        ...formData,
-        id: selectedSample.id
-      };
-      
-      // Replace with actual update logic
-      toast({
-        title: "Sample updated successfully",
-      });
-      setShowAddDialog(false);
-      resetForm();
-    } else {
-      // Add new sample
-      addSampleMutation.mutate(formData);
-    }
-  };
-  
-  const fileTypeDisplay = (type: string) => {
-    switch (type) {
-      case 'mp3':
-        return 'MP3 Audio';
-      case 'wav':
-        return 'WAV Audio';
-      case 'stem':
-        return 'Stem Pack';
-      default:
-        return 'Audio File';
-    }
-  };
-  
-  // Category filter buttons
-  const categories = [
-    { value: "all", label: "All Samples" },
-    { value: "drums", label: "Drums" },
-    { value: "vocals", label: "Vocals" },
-    { value: "bass", label: "Bass" },
-    { value: "melody", label: "Melody" },
-    { value: "effect", label: "Effects" },
-    { value: "stem", label: "Stems" }
-  ];
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Sample Library</CardTitle>
-          <CardDescription>Manage your collection of audio samples</CardDescription>
-        </div>
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-primary to-primary/80">
-              <PlusCircle className="h-4 w-4 mr-2" />
-              Upload Sample
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>
-                {selectedSample ? "Edit Sample" : "Upload New Sample"}
-              </DialogTitle>
-              <DialogDescription>
-                Upload MP3s, WAVs, or Stem packs to showcase your work.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <FileUploader
-                    label="Upload Audio File"
-                    description="MP3, WAV, Stem Packs (ZIP), or other audio files"
-                    accept=".mp3,.wav,.zip,.rar,audio/*"
-                    maxSize={100}
-                    onFileSelected={handleFileUpload}
-                    uploading={isUploading}
-                    uploadProgress={uploadProgress}
-                    uploadError={uploadError}
-                    uploadSuccess={formData.audioUrl !== ""}
-                    className="border-2 border-dashed p-6 rounded-lg"
-                  />
-                </div>
-                
-                {formData.audioUrl && (
-                  <>
-                    <div className="grid gap-2">
-                      <Label htmlFor="title">Sample Title</Label>
-                      <Input 
-                        id="title" 
-                        placeholder="Enter sample title" 
-                        value={formData.title}
-                        onChange={(e) => setFormData({...formData, title: e.target.value})}
-                      />
-                    </div>
-                    
-                    <div className="grid gap-2">
-                      <Label htmlFor="category">Category</Label>
-                      <Select
-                        value={formData.category}
-                        onValueChange={(value) => setFormData({...formData, category: value})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="general">General</SelectItem>
-                          <SelectItem value="vocals">Vocals</SelectItem>
-                          <SelectItem value="drums">Drums</SelectItem>
-                          <SelectItem value="bass">Bass</SelectItem>
-                          <SelectItem value="melody">Melody</SelectItem>
-                          <SelectItem value="effect">Effects</SelectItem>
-                          <SelectItem value="stem">Stems</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="md:col-span-2">
-                      <Label htmlFor="description">Description</Label>
-                      <Textarea 
-                        id="description" 
-                        placeholder="Describe this sample" 
-                        value={formData.description}
-                        onChange={(e) => setFormData({...formData, description: e.target.value})}
-                        className="min-h-[100px]"
-                      />
-                    </div>
-                    
-                    <div className="md:col-span-2">
-                      <div className="bg-muted/20 p-3 rounded-md mt-2">
-                        <div className="mb-2 text-sm font-medium flex items-center gap-2">
-                          <Badge>{fileTypeDisplay(fileType)}</Badge>
-                          {uploadedFile && <span>{uploadedFile.name}</span>}
-                        </div>
-                        {formData.audioUrl && (
-                          <audio src={formData.audioUrl} controls className="w-full" />
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => {
-                setShowAddDialog(false);
-                resetForm();
-              }}>
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleAddOrUpdate}
-                disabled={!formData.title || !formData.description || !formData.audioUrl}
-                className="bg-gradient-to-r from-primary to-primary/80 ml-2"
-              >
-                {selectedSample ? "Update Sample" : "Add Sample"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </CardHeader>
-      
-      <CardContent>
-        <div className="mb-6">
-          <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
-            {categories.map(category => (
-              <Button
-                key={category.value}
-                variant={activeCategory === category.value ? "default" : "outline"}
-                size="sm"
-                onClick={() => setActiveCategory(category.value)}
-                className={activeCategory === category.value ? 
-                  "bg-primary text-primary-foreground" : ""}
-              >
-                {category.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-        
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
-          </div>
-        ) : samples.length === 0 && activeCategory === 'all' ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Music className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
-            <p>No samples uploaded yet.</p>
-            <Button className="mt-4" variant="outline" onClick={() => setShowAddDialog(true)}>
-              Upload Your First Sample
-            </Button>
-          </div>
-        ) : samples.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <p>No samples found in the "{categories.find(c => c.value === activeCategory)?.label}" category.</p>
-            <Button 
-              variant="outline"
-              className="mt-4"
-              onClick={() => setActiveCategory('all')}
-            >
-              View All Categories
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {samples.map((sample) => (
-              <Card key={sample.id} className="overflow-hidden">
-                <div className="p-4 border-b">
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="font-semibold">{sample.title}</h3>
-                    <Badge variant="outline">{fileTypeDisplay(sample.sampleType || 'other')}</Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{sample.description}</p>
-                  <div>
-                    <audio 
-                      src={sample.audioUrl} 
-                      controls 
-                      className="w-full h-8" 
-                    />
-                  </div>
-                </div>
-                
-                <div className="bg-muted/10 px-4 py-3 flex justify-between items-center">
-                  <Badge variant="secondary">
-                    {categories.find(c => c.value === sample.category)?.label || 'General'}
-                  </Badge>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="ghost">
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      className="text-destructive"
-                      onClick={() => {
-                        if (confirm("Are you sure you want to delete this sample?")) {
-                          deleteSampleMutation.mutate(sample.id);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
         )}
       </CardContent>
     </Card>

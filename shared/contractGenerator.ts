@@ -1,5 +1,5 @@
 import type { MembershipPlanCatalogItem } from "./membership";
-import { getBeatRightsSnapshot, type BeatLicenseProduct } from "./beatLicensing";
+import { CONTENT_ID_RESTRICTION, NONEXCLUSIVE_DISCLOSURE, getBeatRightsSnapshot, type BeatLicenseProduct } from "./beatLicensing";
 
 export type ContractAccountStatus = "guest" | "music_lifer" | "passport_starter" | "passport_builder" | "passport_release";
 
@@ -310,6 +310,83 @@ export function assembleMembershipAgreement(input: {
     content,
     modules,
     requiresManualReview: false,
+  };
+}
+
+export function assembleBeatLicenseAgreement(input: {
+  beatTitle: string;
+  catalogNumber?: string | null;
+  producerName?: string | null;
+  licenseType: "basic" | "premium" | "exclusive";
+  priceCents: number;
+  customerName: string;
+  customerEmail: string;
+}): ContractAssembly {
+  const product: BeatLicenseProduct = input.licenseType === "exclusive" ? "exclusive" : "paid_nonexclusive";
+  const rights = getBeatRightsSnapshot(product);
+  const licenseLabel = input.licenseType === "basic" ? "Basic Nonexclusive License"
+    : input.licenseType === "premium" ? "Premium Nonexclusive License"
+      : "Exclusive Use License";
+  const delivery = input.licenseType === "basic" ? "MP3 file"
+    : input.licenseType === "premium" ? "WAV and MP3 files"
+      : "available WAV, MP3, and stem files after manual rights review";
+  const usage = input.licenseType === "basic"
+    ? "One original song for personal, demo, portfolio, and promotional use, limited to 1,000 public streams. No commercial sale."
+    : input.licenseType === "premium"
+      ? "One original commercial song, including DSP distribution and promotion, limited to 5,000 public streams."
+      : "One original commercial song with exclusive use after approval, subject to all licenses granted before the exclusive sale.";
+  const ownership = input.licenseType === "exclusive"
+    ? "This is an exclusive-use license, not a copyright assignment or work-for-hire transfer. The producer retains ownership of the underlying beat and composition unless a separate written copyright assignment and publishing agreement expressly says otherwise. Previously issued licenses remain valid."
+    : NONEXCLUSIVE_DISCLOSURE;
+  const contentId = input.licenseType === "exclusive" ? rights.contentIdRestriction : CONTENT_ID_RESTRICTION;
+  const modules: ContractModule[] = [
+    { key: `${input.licenseType}_beat_license`, version: LIBRARY_VERSION, title: licenseLabel },
+    { key: "electronic_signature_consent", version: LIBRARY_VERSION, title: "Electronic Records and Signature Consent" },
+  ];
+  const content = `MUSIC LIFE STUDIOS BEAT LICENSE AGREEMENT
+
+LICENSE ORDER
+
+Beat: ${input.beatTitle}
+Catalog number: ${input.catalogNumber || "Not assigned"}
+Producer: ${input.producerName || "Music Life Studios"}
+Customer: ${input.customerName}
+Customer email: ${input.customerEmail}
+Selected license: ${licenseLabel}
+License price: ${formatMoney(input.priceCents)}
+Payment terms: The full license price is due through the verified checkout. Studio booking deposits and studio cancellation windows do not apply to this beat license. Signing alone does not activate the license or prove payment.
+Fulfillment status: Payment and license availability must be verified before files or active license rights are delivered. No automatic download is promised by this agreement.
+
+GRANT AND USE LIMITS
+
+${usage}
+Deliverables after verified payment and approval: ${delivery}.
+The license covers one resulting song. The beat may not be resold, sublicensed, redistributed by itself, or presented as the customer's original instrumental composition.
+
+OWNERSHIP AND PRIOR LICENSES
+
+${ownership}
+
+CONTENT ID
+
+${contentId}
+
+CREDIT AND PUBLISHING
+
+Basic and Premium releases must credit the producer where platform fields or customary credits are available. An Exclusive Use License does not require a public producer credit, but it does not transfer the producer's copyright, writer share, or publishing interest. Any different splits or ownership transfer require a separate signed writing.
+
+ELECTRONIC SIGNATURE
+
+${ELECTRONIC_SIGNATURE_CONSENT}
+
+MODULE MANIFEST
+${modules.map((module) => `- ${module.title} (${module.key}) version ${module.version}`).join("\n")}`;
+  return {
+    title: `${licenseLabel} - ${input.beatTitle}`,
+    content,
+    modules,
+    requiresManualReview: input.licenseType === "exclusive",
+    reviewReason: input.licenseType === "exclusive" ? "Exclusive availability and prior licenses must be reviewed before fulfillment." : undefined,
   };
 }
 
