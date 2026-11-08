@@ -57,7 +57,9 @@ export default function AdminLogin() {
     if ("mfaRequired" in result) {
       sessionStorage.setItem("adminMfaToken", result.mfaToken);
       setMfaToken(result.mfaToken);
+      return;
     }
+    navigate("/admin");
   }
 
   async function verifyMfa() {
