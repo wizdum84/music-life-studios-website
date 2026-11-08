@@ -242,7 +242,8 @@ export function setupAuth(app: Express) {
   // in development, then close the endpoint once an admin exists.
   app.post("/api/admin/setup", async (req, res) => {
     try {
-      if (process.env.NODE_ENV === "production") {
+      const firstAdminSetupAllowed = process.env.NODE_ENV !== "production" || process.env.ALLOW_FIRST_ADMIN_SETUP === "true";
+      if (!firstAdminSetupAllowed) {
         return res.status(403).json({ error: "First-admin setup is disabled in production." });
       }
 
