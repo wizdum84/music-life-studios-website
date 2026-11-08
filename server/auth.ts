@@ -387,13 +387,19 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/email/resend", async (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
-    const user = await storage.getUser(req.user!.id);
-    if (!user) return res.status(404).json({ error: "Account not found" });
-    if (user.emailVerifiedAt) return res.json({ message: "Email is already verified." });
-    const token = issueSecurityToken({ purpose: "verify-email", uid: user.id, version: credentialVersion(user.password) }, 24 * 60 * 60);
-    await sendEmailVerificationEmail(user, `${appOrigin(req)}/verify-email?token=${encodeURIComponent(token)}`);
-    res.json({ message: "Verification email sent." });
+    try {
+      if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
+      const user = await storage.getUser(req.user!.id);
+      if (!user) return res.status(404).json({ error: "Account not found" });
+      if (user.emailVerifiedAt) return res.json({ message: "Email is already verified." });
+      const token = issueSecurityToken({ purpose: "verify-email", uid: user.id, version: credentialVersion(user.password) }, 24 * 60 * 60);
+      const sent = await sendEmailVerificationEmail(user, `${appOrigin(req)}/verify-email?token=${encodeURIComponent(token)}`);
+      if (!sent) return res.status(503).json({ error: "Verification email is temporarily unavailable." });
+      return res.json({ message: "Verification email sent." });
+    } catch (error) {
+      console.error("Verification email resend failed", error);
+      return res.status(503).json({ error: "Verification email is temporarily unavailable. Please try again later." });
+    }
   });
 
   app.post("/api/admin/mfa/setup", async (req, res) => {
