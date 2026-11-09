@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import { randomUUID } from "node:crypto";
 import { registerRoutes } from "./routes";
 import { startBookingEmailWorker } from "./services/booking-email-worker";
+import { startBookingLifecycleWorker } from "./services/booking-lifecycle";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
@@ -134,6 +135,7 @@ app.use((req, res, next) => {
 
   server.listen(listenOptions, () => {
     startBookingEmailWorker();
+    startBookingLifecycleWorker();
     log(`serving on port ${port}`);
   });
 })();

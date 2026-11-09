@@ -96,6 +96,20 @@ export async function sendClientConfirmationEmail(booking: Booking, transactionI
   return true;
 }
 
+export async function sendBalancePaymentEmail(booking: Booking, paymentUrl: string, remainingAmount: number) {
+  const config = mailConfiguration();
+  if (!config) return false;
+  const summary = bookingSummary(booking);
+  await config.transport.sendMail({
+    from: config.from,
+    replyTo: config.replyTo,
+    to: booking.email,
+    subject: `Music Life Studios remaining balance #${booking.id}`,
+    text: `Hi ${booking.name},\n\nYour session is complete. Your remaining balance is $${(remainingAmount / 100).toFixed(2)}.\n\nSession: ${summary.date} at ${summary.time} CT\nComplete payment securely here:\n${paymentUrl}\n\nThis secure link expires in 30 days.\n\nMusic Life Studios`,
+  });
+  return true;
+}
+
 export async function sendAdminNotificationEmail(booking: Booking, transactionId: string, amountPaid?: number) {
   const config = mailConfiguration();
   if (!config) {

@@ -25,6 +25,8 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import * as stripeService from "./services/stripe";
 import { getBookingChargeAmount, recordBookingPayment, recordBookingRefund } from "./services/booking-payment";
 import { queueBookingEmails } from "./services/booking-email-worker";
+import { reconcileBookingLifecycle } from "./services/booking-lifecycle";
+import { issuePaymentLinkToken, verifyPaymentLinkToken } from "./services/payment-links";
 import { sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail } from "./services/email";
 import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
@@ -138,13 +140,6 @@ function beatDeliverableObjectKey(beat: { fullAudioUrl: string; metadata?: unkno
   return licenseType === "basic" ? privateBeatObjectKey(beat.fullAudioUrl) : null;
 }
 
-type PaymentLinkClaims = {
-  bookingId: number;
-  email: string;
-  expiresAt: number;
-  nonce: string;
-};
-
 type BookingUploadClaims = {
   bookingId: number;
   email: string;
@@ -198,36 +193,6 @@ function verifyBookingUploadToken(token: string | undefined) {
     if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
     const claims = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as BookingUploadClaims;
     return claims.expiresAt > Date.now() ? claims : null;
-  } catch {
-    return null;
-  }
-}
-
-function issuePaymentLinkToken(bookingId: number, email: string) {
-  const claims: PaymentLinkClaims = {
-    bookingId,
-    email: email.trim().toLowerCase(),
-    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-    nonce: cryptoRandomToken(),
-  };
-  const encodedClaims = Buffer.from(JSON.stringify(claims)).toString("base64url");
-  const signature = createHmac("sha256", contractSigningSecret()).update(encodedClaims).digest("base64url");
-  return `${encodedClaims}.${signature}`;
-}
-
-function verifyPaymentLinkToken(token: unknown) {
-  if (typeof token !== "string") return null;
-  const [encodedClaims, suppliedSignature] = token.split(".");
-  if (!encodedClaims || !suppliedSignature) return null;
-
-  try {
-    const expectedSignature = createHmac("sha256", contractSigningSecret()).update(encodedClaims).digest("base64url");
-    const suppliedBuffer = Buffer.from(suppliedSignature);
-    const expectedBuffer = Buffer.from(expectedSignature);
-    if (suppliedBuffer.length !== expectedBuffer.length || !timingSafeEqual(suppliedBuffer, expectedBuffer)) return null;
-    const claims = JSON.parse(Buffer.from(encodedClaims, "base64url").toString("utf8")) as PaymentLinkClaims;
-    if (!Number.isInteger(claims.bookingId) || !claims.email || claims.expiresAt <= Date.now() || !claims.nonce) return null;
-    return claims;
   } catch {
     return null;
   }
@@ -2615,78 +2580,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/bookings/:id/complete", requireAdmin, async (req, res) => {
     try {
       const bookingId = parseInt(req.params.id);
-      const booking = await storage.getBooking(bookingId);
-      
-      if (!booking) {
+      const result = await reconcileBookingLifecycle(bookingId, { markCompletedNow: true });
+      if (result.outcome === "not_found") {
         return res.status(404).json({ error: "Booking not found" });
       }
-      
-      const updatedBooking = await storage.updateBooking(bookingId, {
-        status: "completed",
-        retentionDeadline: addDays(new Date(), booking.retentionDays || 30),
-      } as any);
-      if (!booking.userId) return res.json({ message: "Booking completed", eligibleForLoyalty: false });
-
-      const existingRecords = await storage.getLoyaltyRecords(booking.userId);
-      if (existingRecords.some((record) => record.bookingId === bookingId && record.action === "stamp_earned")) {
-        return res.json({ message: "Booking was already counted for loyalty", booking: updatedBooking, idempotent: true });
-      }
-
-      const occurred = new Date(booking.date) <= new Date();
-      const eligiblePayment = booking.paymentStatus === "paid";
-      const eligible = occurred && eligiblePayment && !booking.loyaltyApplied && booking.amount > 0;
-      if (!eligible) {
-        await storage.createLoyaltyRecord({
-          userId: booking.userId,
-          action: "session_completed",
-          pointsChange: 0,
-          description: `Completed booking #${bookingId}; no Music Lifer stamp awarded under eligibility rules.`,
-          bookingId,
-          status: "review",
-          metadata: { occurred, eligiblePayment, loyaltyApplied: booking.loyaltyApplied, amount: booking.amount },
-        });
-        return res.json({ message: "Booking completed without a loyalty stamp", booking: updatedBooking, eligibleForLoyalty: false });
-      }
-
-      const user = await storage.incrementUserSessionCount(booking.userId);
-      await storage.updateUserLoyaltyPoints(booking.userId, 1);
-      const stampNumber = user?.sessionCount ?? 1;
-      const cycleNumber = Math.floor(stampNumber / 5);
-      await storage.createLoyaltyRecord({
-        userId: booking.userId,
-        action: "stamp_earned",
-        pointsChange: 1,
-        description: `Music Lifer stamp earned for completed paid booking #${bookingId}.`,
-        bookingId,
-        cycleNumber: cycleNumber || undefined,
-        metadata: { source: "server_booking_completion", paymentStatus: booking.paymentStatus },
-      });
-
-      let rewardEarned = false;
-      if (stampNumber % 5 === 0) {
-        rewardEarned = true;
-        const earnedAt = new Date();
-        await storage.createLoyaltyRecord({
-          userId: booking.userId,
-          action: "reward_earned",
-          pointsChange: 0,
-          description: `Music Lifer reward cycle ${cycleNumber} earned: 2 recording hours + 1 Starter Reward Beat License.`,
-          cycleNumber,
-          rewardType: "recording_hours_plus_starter_reward_beat",
-          rewardQuantity: 1,
-          earnedAt,
-          redemptionDeadline: addDays(earnedAt, 90),
-          metadata: { recordingHours: 2, starterRewardBeatLicenses: 1 },
+      if (result.outcome === "completed_stamp_pending") {
+        return res.json({
+          message: "Booking marked complete. Its loyalty stamp will be awarded automatically after the scheduled session ends and full payment is recorded.",
+          booking: result.booking,
+          stampPendingUntil: result.sessionEnd,
         });
       }
-
-      return res.json({
-        message: rewardEarned ? "Booking completed and Music Lifer reward cycle earned!" : "Booking completed and Music Lifer stamp added.",
-        stampNumber,
-        stampsInCurrentCycle: stampNumber % 5,
-        rewardEarned,
-        sessionCount: user?.sessionCount ?? null,
-      });
+      if (result.outcome === "already_counted") {
+        return res.json({ message: "Booking was already counted for loyalty", booking: result.booking, idempotent: true });
+      }
+      if (result.outcome === "stamp_awarded") {
+        return res.json({
+          message: result.rewardEarned ? "Booking completed and Music Lifer reward cycle earned!" : "Booking completed and Music Lifer stamp added.",
+          booking: result.booking,
+          stampNumber: result.stampNumber,
+          stampsInCurrentCycle: result.stampsInCurrentCycle,
+          rewardEarned: result.rewardEarned,
+        });
+      }
+      return res.json({ message: "Booking completed without a loyalty stamp", booking: result.booking, eligibleForLoyalty: false });
     } catch (error) {
       console.error("Error completing booking:", error);
       res.status(500).json({ error: "Failed to complete booking" });
