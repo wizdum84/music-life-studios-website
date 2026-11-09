@@ -110,6 +110,20 @@ export async function sendBalancePaymentEmail(booking: Booking, paymentUrl: stri
   return true;
 }
 
+export async function sendAppointmentReminderEmail(booking: Booking, reminderLabel: "24-hour" | "2-hour") {
+  const config = mailConfiguration();
+  if (!config) return false;
+  const summary = bookingSummary(booking);
+  await config.transport.sendMail({
+    from: config.from,
+    replyTo: config.replyTo,
+    to: booking.email,
+    subject: `${reminderLabel === "24-hour" ? "Tomorrow's" : "Upcoming"} Music Life Studios session #${booking.id}`,
+    text: `Hi ${booking.name},\n\nThis is your ${reminderLabel} reminder for your Music Life Studios session.\n\nDate: ${summary.date}\nTime: ${summary.time} CT\nDuration: ${summary.duration}\n\nIf you need help, reply to this email.\n\nMusic Life Studios`,
+  });
+  return true;
+}
+
 export async function sendAdminNotificationEmail(booking: Booking, transactionId: string, amountPaid?: number) {
   const config = mailConfiguration();
   if (!config) {

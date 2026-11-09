@@ -2502,6 +2502,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin loyalty program management
+  app.get("/api/admin/attention", requireAdmin, async (_req, res) => {
+    try {
+      const now = new Date();
+      const issues: Array<{ id: string; severity: "warning" | "urgent"; type: string; title: string; detail: string; bookingId?: number }> = [];
+      for (const booking of await storage.getAllBookings()) {
+        const metadata = booking.paymentMetadata && typeof booking.paymentMetadata === "object"
+          ? booking.paymentMetadata as Record<string, unknown>
+          : {};
+        if (booking.paymentErrorMessage || booking.paymentStatus === "failed") {
+          issues.push({ id: `payment-${booking.id}`, severity: "urgent", type: "payment", bookingId: booking.id, title: `Payment failed for booking #${booking.id}`, detail: booking.paymentErrorMessage || `${booking.name}'s payment requires attention.` });
+        }
+        if (booking.status === "completed" && booking.paymentStatus === "deposit_paid") {
+          issues.push({ id: `balance-${booking.id}`, severity: "warning", type: "balance", bookingId: booking.id, title: `Balance due for booking #${booking.id}`, detail: `${booking.name} still owes $${((booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)) / 100).toFixed(2)}.${metadata.balancePaymentLinkSentAt ? " The payment link was emailed." : " The payment link email is pending."}` });
+        }
+        const receipts = Array.isArray(metadata.receipts) ? metadata.receipts as Array<Record<string, unknown>> : [];
+        if (receipts.some((receipt) => !receipt.clientSent || !receipt.adminSent)) {
+          issues.push({ id: `email-${booking.id}`, severity: "warning", type: "email", bookingId: booking.id, title: `Payment email pending for booking #${booking.id}`, detail: "One or more payment confirmations have not been delivered yet." });
+        }
+      }
+      for (const membership of await storage.getAllMembershipSubscriptions()) {
+        if (["past_due", "payment_failed"].includes(membership.status) || membership.paymentStatus === "failed") {
+          const user = await storage.getUser(membership.userId);
+          issues.push({ id: `membership-${membership.id}`, severity: "urgent", type: "membership", title: `Membership payment needs attention`, detail: `${user?.email || `Membership #${membership.id}`} is past due.` });
+        }
+      }
+      res.json({ generatedAt: now.toISOString(), issues });
+    } catch (error) {
+      console.error("Error loading admin attention items:", error);
+      res.status(500).json({ error: "Unable to load attention items" });
+    }
+  });
+
   app.get("/api/admin/loyalty", requireAdmin, async (_req, res) => {
     try {
       const customers = (await storage.getAllUsers()).filter((user) => user.role === "customer");
@@ -2698,6 +2730,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (event.type === "payment_intent.succeeded" && payload.metadata?.bookingId) {
         const booking = await recordBookingPayment(storage, withBookingPaymentLock, payload);
         queueBookingEmails(booking.id);
+      }
+
+      if (event.type === "payment_intent.payment_failed" && payload.metadata?.bookingId) {
+        const booking = await storage.getBooking(Number(payload.metadata.bookingId));
+        if (booking) {
+          await storage.updateBookingTransactionInfo(booking.id, {
+            transactionId: payload.id,
+            paymentStatus: booking.paymentStatus,
+            paymentMethod: booking.paymentMethod || "stripe",
+            paymentErrorMessage: payload.last_payment_error?.message || "Stripe payment failed",
+            paymentMetadata: booking.paymentMetadata || {},
+            tipAmount: booking.tipAmount || 0,
+          });
+        }
       }
 
       if (event.type === "checkout.session.completed" && payload.mode === "payment" && payload.payment_status === "paid" && payload.metadata?.beatPurchaseId) {

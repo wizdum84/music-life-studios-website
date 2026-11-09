@@ -26,6 +26,15 @@ import {
   Settings
 } from "lucide-react";
 
+type AttentionIssue = {
+  id: string;
+  severity: "warning" | "urgent";
+  type: string;
+  title: string;
+  detail: string;
+  bookingId?: number;
+};
+
 export default function AdminDashboard() {
   const { toast } = useToast();
   
@@ -36,6 +45,11 @@ export default function AdminDashboard() {
   
   const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[]>({
     queryKey: ['/api/messages'],
+  });
+
+  const { data: attention, isLoading: isLoadingAttention } = useQuery<{ issues: AttentionIssue[] }>({
+    queryKey: ['/api/admin/attention'],
+    refetchInterval: 60_000,
   });
   
   // Mark message as read
@@ -80,7 +94,7 @@ export default function AdminDashboard() {
     }).format(new Date(dateString));
   };
   
-  const isLoading = isLoadingBookings || isLoadingMessages;
+  const isLoading = isLoadingBookings || isLoadingMessages || isLoadingAttention;
   
   if (isLoading) {
     return (
@@ -92,6 +106,37 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
+      <Card className={attention?.issues.length ? "border-amber-500" : ""}>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <XCircle className={attention?.issues.length ? "h-5 w-5 text-amber-600" : "h-5 w-5 text-muted-foreground"} />
+                Needs Attention
+              </CardTitle>
+              <CardDescription>Only items that could not finish automatically appear here.</CardDescription>
+            </div>
+            <Badge variant={attention?.issues.length ? "destructive" : "secondary"}>{attention?.issues.length || 0}</Badge>
+          </div>
+        </CardHeader>
+        {attention?.issues.length ? (
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            {attention.issues.map((issue) => (
+              <div key={issue.id} className="rounded-md border p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-medium">{issue.title}</p>
+                  <Badge variant={issue.severity === "urgent" ? "destructive" : "outline"}>{issue.type}</Badge>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{issue.detail}</p>
+                {issue.bookingId && <p className="mt-2 text-xs font-medium">Review booking #{issue.bookingId} in the Bookings tab.</p>}
+              </div>
+            ))}
+          </CardContent>
+        ) : (
+          <CardContent><p className="text-sm text-muted-foreground">Everything is running normally.</p></CardContent>
+        )}
+      </Card>
+
       {/* Stats Overview */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
