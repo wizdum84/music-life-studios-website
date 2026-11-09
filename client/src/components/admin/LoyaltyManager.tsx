@@ -41,7 +41,31 @@ export default function LoyaltyManager() {
         ) : customers.length === 0 ? (
           <p className="py-10 text-center text-muted-foreground">No customer accounts yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="space-y-3 md:hidden">
+            {customers.map((customer) => (
+              <div key={customer.id} className="rounded-md border p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{customer.name}</p>
+                    <p className="break-all text-sm text-muted-foreground">{customer.email}</p>
+                  </div>
+                  <Badge variant={customer.availableRewards > 0 ? "default" : "secondary"}>
+                    {customer.availableRewards} available
+                  </Badge>
+                </div>
+                <div className="mt-4 flex justify-between text-sm">
+                  <span>{customer.stampCount} total stamps</span>
+                  <span>{customer.stampsUntilReward} until reward</span>
+                </div>
+                <Progress className="mt-2" value={(customer.stampsInCurrentCycle / 5) * 100} />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {customer.stampsInCurrentCycle} of 5 in this cycle · {customer.earnedRewards} rewards earned
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -82,6 +106,7 @@ export default function LoyaltyManager() {
               </TableBody>
             </Table>
           </div>
+          </>
         )}
       </CardContent>
     </Card>

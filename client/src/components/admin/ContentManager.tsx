@@ -195,7 +195,7 @@ function TracksManager() {
   
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle>Studio Portfolio</CardTitle>
           <CardDescription>Showcase finished client work. This does not add beats for sale.</CardDescription>
@@ -660,7 +660,7 @@ function BeatsManager() {
   
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle>Beat Catalog</CardTitle>
           <CardDescription>Add beats for sale, generate covers, create 45-second previews, and manage license files</CardDescription>

@@ -69,11 +69,11 @@ export default function Admin() {
         <title>Admin Dashboard | Music Life Studios</title>
       </Helmet>
       
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-3 py-5 sm:px-4 sm:py-8">
         <header className="mb-8">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
             <div>
-              <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
+              <h1 className="text-2xl font-bold mb-2 sm:text-3xl">Admin Dashboard</h1>
               <p className="text-muted-foreground">
                 Manage your bookings, messages, and content
               </p>
@@ -124,7 +124,7 @@ export default function Admin() {
         
         <Tabs defaultValue="dashboard" className="space-y-6">
           <div className="overflow-x-auto pb-2">
-            <TabsList className="w-full justify-start">
+            <TabsList className="h-auto min-w-max justify-start">
               <TabsTrigger value="dashboard" className="px-4">Dashboard</TabsTrigger>
               <TabsTrigger value="bookings" className="px-4">Bookings</TabsTrigger>
               <TabsTrigger value="content" className="px-4">Content Manager</TabsTrigger>

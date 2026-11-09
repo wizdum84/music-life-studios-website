@@ -194,7 +194,7 @@ export function ContractRequirement({
 
   if (loading) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-4 text-center sm:p-6">
         <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
         <p className="text-muted-foreground">Loading contract...</p>
       </div>
@@ -203,7 +203,7 @@ export function ContractRequirement({
 
   if (error) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-4 text-center sm:p-6">
         <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
         <h3 className="text-lg font-semibold mb-2">Error Loading Contract</h3>
         <p className="text-muted-foreground mb-4">{error}</p>
@@ -216,7 +216,7 @@ export function ContractRequirement({
 
   if (contractSigned) {
     return (
-      <div className="p-6 text-center bg-primary/5 rounded-lg border border-primary/20">
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-center sm:p-6">
         <Check className="w-12 h-12 text-primary mx-auto mb-4" />
         <h3 className="text-lg font-semibold mb-2">Contract Signed</h3>
         <p className="text-muted-foreground">
@@ -228,7 +228,7 @@ export function ContractRequirement({
 
   if (!contract) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-4 text-center sm:p-6">
         <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
         <h3 className="text-lg font-semibold mb-2">Contract Not Found</h3>
         <p className="text-muted-foreground mb-4">
@@ -260,7 +260,7 @@ export function ContractRequirement({
 
   return (
     <div className="space-y-6">
-      <div className="bg-muted/30 p-6 rounded-lg border">
+      <div className="rounded-lg border bg-muted/30 p-4 sm:p-6">
         <div className="flex items-center mb-4">
           <FileText className="w-6 h-6 text-primary mr-2" />
           <h3 className="text-lg font-semibold">{contract.title}</h3>
@@ -307,7 +307,7 @@ export function ContractRequirement({
           </div>
         </div>
         
-        <div className="mb-6 min-h-[28rem] max-h-[min(68vh,46rem)] overflow-y-auto p-5 md:p-7 bg-background border rounded-md">
+        <div className="mb-6 min-h-[18rem] max-h-[min(62dvh,46rem)] overflow-y-auto rounded-md border bg-background p-3 sm:min-h-[24rem] sm:p-5 md:p-7">
           <h4 className="font-medium mb-4">Full agreement</h4>
           <div className="text-[15px] md:text-base font-sans leading-7 mb-4">
             {contractText.split("\n").map((line, index) => {

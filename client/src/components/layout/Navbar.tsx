@@ -39,11 +39,11 @@ export default function Navbar() {
   
   return (
     <header className={`sticky top-0 z-50 bg-white ${scrolled ? 'shadow-md' : ''} transition-shadow duration-300`}>
-      <nav className="container mx-auto px-4 py-4 flex justify-between items-center">
+      <nav className="container mx-auto px-3 py-3 sm:px-4 sm:py-4 flex justify-between items-center">
         <div className="flex items-center">
           <Link href="/" className="flex items-center">
-            <span className="text-[#ff8a00] font-bold text-2xl">Music Life</span>
-            <span className="text-foreground font-medium ml-1 text-lg">Studios</span>
+            <span className="text-[#ff8a00] font-bold text-xl sm:text-2xl">Music Life</span>
+            <span className="text-foreground font-medium ml-1 text-base sm:text-lg">Studios</span>
             <span className="hidden lg:inline text-muted-foreground text-xs font-medium ml-3">by Wiz</span>
           </Link>
         </div>
@@ -94,8 +94,10 @@ export default function Navbar() {
         
         {/* Mobile menu button */}
         <button 
-          className="md:hidden text-foreground focus:outline-none"
+          className="md:hidden flex h-11 w-11 items-center justify-center text-foreground focus:outline-none"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+          aria-expanded={isMobileMenuOpen}
         >
           {isMobileMenuOpen ? (
             <X className="h-6 w-6" />
@@ -107,8 +109,8 @@ export default function Navbar() {
       
       {/* Mobile Navigation */}
       {isMobileMenuOpen && (
-        <div className="md:hidden bg-white border-t border-muted">
-          <div className="container mx-auto px-4 py-3 flex flex-col space-y-3">
+        <div className="md:hidden max-h-[calc(100dvh-4.25rem)] overflow-y-auto bg-white border-t border-muted">
+          <div className="container mx-auto px-4 py-3 flex flex-col space-y-1">
             {isHomePage ? (
               <>
                 <a href="#services" className="font-medium py-2 hover:text-primary transition-colors" onClick={handleLinkClick}>Services</a>

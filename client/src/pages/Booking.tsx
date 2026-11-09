@@ -83,16 +83,16 @@ export default function Booking() {
         <meta name="description" content="Book Wiz for recording, remote mixing and mastering, or custom production through Music Life Studios." />
       </Helmet>
       
-      <section className="py-20 bg-gradient-to-br from-primary/95 to-secondary/95 text-white">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
+      <section className="bg-gradient-to-br from-primary/95 to-secondary/95 py-8 text-white sm:py-12 md:py-20">
+        <div className="container mx-auto px-3 sm:px-4">
+          <div className="mb-8 text-center md:mb-16">
             <h2 className="font-bold text-3xl md:text-4xl mb-4">Book a Session</h2>
             <p className="text-lg text-white/80 max-w-2xl mx-auto">
               Book Wiz for recording, remote mixing/mastering, or custom production work with a few simple steps.
             </p>
           </div>
           
-          <div id="booking-form-container" className="max-w-6xl mx-auto bg-white rounded-lg shadow-lg p-6 md:p-10 text-foreground">
+          <div id="booking-form-container" className="mx-auto max-w-6xl rounded-lg bg-white p-3 text-foreground shadow-lg sm:p-6 md:p-10">
             {isLoading ? (
               <div className="flex justify-center items-center py-20">
                 <Loader2 className="w-10 h-10 text-primary animate-spin" />

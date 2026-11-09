@@ -416,18 +416,18 @@ export default function BookingManager() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center py-4 gap-2">
+          <div className="flex flex-col py-4 gap-2 sm:flex-row sm:items-center">
             <Input
               placeholder="Filter by client name..."
               value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
               onChange={(event) =>
                 table.getColumn("name")?.setFilterValue(event.target.value)
               }
-              className="max-w-sm"
+              className="w-full sm:max-w-sm"
             />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="ml-auto">
+                <Button variant="outline" className="w-full sm:ml-auto sm:w-auto">
                   Status <ChevronDownIcon className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -496,7 +496,7 @@ export default function BookingManager() {
             </DropdownMenu>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline">
+                <Button variant="outline" className="w-full sm:w-auto">
                   Columns <ChevronDownIcon className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -612,7 +612,7 @@ export default function BookingManager() {
           
           {selectedBooking && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <div className="flex items-center mb-2">
                     <User className="h-4 w-4 mr-2 text-muted-foreground" />
@@ -634,7 +634,7 @@ export default function BookingManager() {
               
               <Separator />
               
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
                   <h4 className="text-sm font-medium mb-1">Status</h4>
                   <StatusBadge status={selectedBooking.status} />
@@ -692,12 +692,12 @@ export default function BookingManager() {
               
               <Separator />
               
-              <div className="flex justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
                 <p className="text-xs text-muted-foreground">
                   Created: {formatDate(selectedBooking.createdAt)}, {formatTime(selectedBooking.createdAt)}
                 </p>
                 
-                <div className="flex space-x-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:space-x-2">
                   {selectedBooking.transactionId && ["deposit_paid", "paid", "partially_refunded"].includes(selectedBooking.paymentStatus) && (
                     <Button variant="destructive" size="sm" onClick={refundLatestPayment} disabled={isRefunding}>
                       {isRefunding ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}

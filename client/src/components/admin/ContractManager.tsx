@@ -208,7 +208,7 @@ export default function ContractManager() {
   
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <CardTitle>Contract Manager</CardTitle>
           <CardDescription>Upload and manage legal agreements and contracts</CardDescription>

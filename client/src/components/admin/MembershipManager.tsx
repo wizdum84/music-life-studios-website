@@ -114,6 +114,36 @@ export default function MembershipManager() {
           <CardDescription>Review enrollment, status, paid-through dates, and ledger activity.</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="space-y-3 md:hidden">
+            {memberships.length === 0 ? (
+              <p className="py-8 text-center text-muted-foreground">No membership enrollments yet.</p>
+            ) : memberships.map((item) => (
+              <div key={item.subscription.id} className="space-y-3 rounded-md border p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{item.user?.firstName || item.user?.username || "Unknown"}</p>
+                    <p className="break-all text-xs text-muted-foreground">{item.user?.email}</p>
+                  </div>
+                  <Badge variant={item.subscription.status === "active" ? "default" : "secondary"}>
+                    {item.subscription.status.replace("_", " ")}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><p className="text-muted-foreground">Plan</p><p>{item.plan?.name || "Unknown"}</p></div>
+                  <div><p className="text-muted-foreground">Next billing</p><p>{formatDate(item.subscription.nextBillingDate)}</p></div>
+                  <div><p className="text-muted-foreground">Paid through</p><p>{formatDate(item.subscription.paidThroughDate)}</p></div>
+                  <div><p className="text-muted-foreground">Ledger entries</p><p>{item.ledger.length}</p></div>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {item.subscription.status === "pending_payment" && (
+                    <Button size="sm" onClick={() => activateMutation.mutate(item.subscription.id)} disabled={activateMutation.isPending}>Activate</Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => setSelectedSubscriptionId(item.subscription.id.toString())}>Adjust</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -167,6 +197,7 @@ export default function MembershipManager() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 

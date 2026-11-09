@@ -618,20 +618,20 @@ export default function Beats() {
   });
   
   return (
-    <div className="beat-page min-h-screen bg-[#11100f] pb-32 pt-10 text-[#f6efe3]">
-      <div className="container mx-auto max-w-7xl px-4">
-        <header className="mb-12 border-b border-[#6b481b] pb-10">
+    <div className="beat-page min-h-screen bg-[#11100f] pb-24 pt-6 text-[#f6efe3] sm:pb-32 sm:pt-10">
+      <div className="container mx-auto max-w-7xl px-3 sm:px-4">
+        <header className="mb-8 border-b border-[#6b481b] pb-8 sm:mb-12 sm:pb-10">
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <div className="max-w-3xl">
               <div className="mb-5 flex items-center gap-3 text-xs uppercase tracking-[0.22em] text-primary">
                 <span className="h-px w-10 bg-primary" />
                 <span>The Music Life beat shelf</span>
               </div>
-              <h1 className="max-w-2xl text-5xl font-black leading-[0.95] tracking-tight md:text-7xl">Find the pocket.</h1>
+              <h1 className="max-w-2xl text-4xl font-black leading-[0.95] tracking-tight sm:text-5xl md:text-7xl">Find the pocket.</h1>
               <p className="mt-5 max-w-xl text-lg leading-8 text-[#c9bca9]">Original cuts from Wiz. Press play, catch the feeling, then choose the license that fits the record.</p>
             </div>
-            <div className="flex items-end gap-5 border-l border-[#6b481b] pl-5 lg:pb-1">
-              <span className="text-6xl font-black leading-none text-primary">{beats.length}</span>
+            <div className="flex items-end gap-4 border-l border-[#6b481b] pl-4 sm:gap-5 sm:pl-5 lg:pb-1">
+              <span className="text-5xl font-black leading-none text-primary sm:text-6xl">{beats.length}</span>
               <div className="pb-1 text-xs uppercase leading-5 tracking-[0.18em] text-[#c9bca9]">sounds<br />in the catalog</div>
             </div>
           </div>

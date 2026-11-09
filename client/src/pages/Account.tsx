@@ -436,7 +436,7 @@ export default function Account() {
       )}
       
       <Tabs defaultValue="overview" value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-3 md:grid-cols-6 gap-2">
+        <TabsList className="grid h-auto grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
           <TabsTrigger value="overview" className="flex items-center">
             <UserIcon className="mr-2 h-4 w-4" />
             <span className="hidden sm:inline">Overview</span>
