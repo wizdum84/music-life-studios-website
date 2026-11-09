@@ -48,6 +48,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getAdminUser(): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User | undefined>;
   updateUserLoginTime(id: number): Promise<User | undefined>;
@@ -253,6 +254,10 @@ export class DatabaseStorage implements IStorage {
   async getAdminUser(): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.role, "admin")).limit(1);
     return result[0];
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(asc(users.createdAt));
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -1320,6 +1325,7 @@ class MemoryStorage implements IStorage {
   async getUserByUsername(username: string) { return this.usersData.find((user) => user.username === username); }
   async getUserByEmail(email: string) { return this.usersData.find((user) => user.email === email); }
   async getAdminUser() { return this.usersData.find((user) => user.role === "admin"); }
+  async getAllUsers() { return [...this.usersData]; }
   async createUser(user: InsertUser) {
     const newUser = { id: this.nextId("users"), firstName: null, lastName: null, phone: null, sessionCount: 0, loyaltyPoints: 0, createdAt: new Date(), lastLogin: null, ...user, role: user.role ?? "customer" } as User;
     this.usersData.push(newUser);

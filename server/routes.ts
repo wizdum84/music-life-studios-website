@@ -2537,6 +2537,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin loyalty program management
+  app.get("/api/admin/loyalty", requireAdmin, async (_req, res) => {
+    try {
+      const customers = (await storage.getAllUsers()).filter((user) => user.role === "customer");
+      const rows = await Promise.all(customers.map(async (user) => {
+        let earnedRewards = Math.floor((user.sessionCount || 0) / 5);
+        let availableRewards = earnedRewards;
+        let redeemedRewards = 0;
+
+        // Older staging databases may not yet have every loyalty-record column.
+        // The customer counters remain a safe fallback until migrations catch up.
+        try {
+          const records = await storage.getLoyaltyRecords(user.id);
+          const rewards = records.filter((record) => record.action === "reward_earned" && record.status !== "reversed");
+          if (rewards.length > 0) earnedRewards = rewards.length;
+          redeemedRewards = records.filter((record) => record.action === "reward_used" || record.status === "redeemed").length;
+          availableRewards = rewards.filter((record) => ["valid", "issued"].includes(record.status)).length;
+        } catch (error) {
+          console.warn(`Falling back to loyalty counters for user ${user.id}:`, error);
+        }
+
+        const stampCount = user.sessionCount || 0;
+        const stampsInCurrentCycle = stampCount % 5;
+        return {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username,
+          stampCount,
+          stampsInCurrentCycle,
+          stampsUntilReward: stampsInCurrentCycle === 0 && stampCount > 0 ? 5 : 5 - stampsInCurrentCycle,
+          earnedRewards,
+          availableRewards,
+          redeemedRewards,
+        };
+      }));
+
+      res.json(rows);
+    } catch (error) {
+      console.error("Error loading admin loyalty data:", error);
+      res.status(500).json({ error: "Failed to load loyalty data" });
+    }
+  });
+
   app.post("/api/admin/loyalty/rewards", requireAdmin, async (req, res) => {
     if (req.user!.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
