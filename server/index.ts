@@ -7,6 +7,7 @@ import { registerRoutes } from "./routes";
 import { startBookingEmailWorker } from "./services/booking-email-worker";
 import { startBookingLifecycleWorker } from "./services/booking-lifecycle";
 import { startBookingOperationsWorker } from "./services/booking-operations-worker";
+import { startMembershipLifecycleWorker } from "./services/membership-lifecycle-worker";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
@@ -138,6 +139,7 @@ app.use((req, res, next) => {
     startBookingEmailWorker();
     startBookingLifecycleWorker();
     startBookingOperationsWorker();
+    startMembershipLifecycleWorker();
     log(`serving on port ${port}`);
   });
 })();

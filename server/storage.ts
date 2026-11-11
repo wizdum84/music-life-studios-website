@@ -59,6 +59,7 @@ export interface IStorage {
   // Loyalty Program
   getLoyaltyRecords(userId: number): Promise<LoyaltyRecord[]>;
   createLoyaltyRecord(record: InsertLoyaltyRecord): Promise<LoyaltyRecord>;
+  updateLoyaltyRecord(id: number, record: Partial<InsertLoyaltyRecord>): Promise<LoyaltyRecord | undefined>;
   
   // Promotions
   getAllPromotions(): Promise<Promotion[]>;
@@ -864,6 +865,11 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async updateLoyaltyRecord(id: number, record: Partial<InsertLoyaltyRecord>): Promise<LoyaltyRecord | undefined> {
+    const result = await db.update(loyaltyRecords).set(record).where(eq(loyaltyRecords.id, id)).returning();
+    return result[0];
+  }
+
   // Promotions
   async getAllPromotions(): Promise<Promotion[]> {
     return db.select().from(promotions).orderBy(desc(promotions.createdAt));
@@ -1349,6 +1355,7 @@ class MemoryStorage implements IStorage {
     this.loyaltyRecordsData.push(newRecord);
     return newRecord;
   }
+  async updateLoyaltyRecord(id: number, record: Partial<InsertLoyaltyRecord>) { return this.updateById(this.loyaltyRecordsData, id, record); }
 
   async getAllPromotions() { return this.promotionsData; }
   async getActivePromotions() { return this.promotionsData.filter((promotion) => promotion.active); }

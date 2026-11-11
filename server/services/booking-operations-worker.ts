@@ -1,5 +1,6 @@
 import { storage, withBookingPaymentLock } from "../storage";
-import { isEmailConfigured, sendAppointmentReminderEmail } from "./email";
+import { isEmailConfigured, sendAppointmentReminderEmail, sendFeedbackRequestEmail } from "./email";
+import { issueFeedbackToken } from "./feedback-links";
 
 const ABANDONED_BOOKING_MINUTES = 45;
 
@@ -54,13 +55,35 @@ async function sendDueReminder(bookingId: number, now: Date) {
   });
 }
 
+async function sendFeedbackRequest(bookingId: number, now: Date) {
+  return withBookingPaymentLock(bookingId, async () => {
+    const booking = await storage.getBooking(bookingId);
+    if (!booking || booking.status !== "completed" || booking.paymentStatus !== "paid" || !isEmailConfigured()) return false;
+    const metadata = metadataFor(booking.paymentMetadata);
+    if (metadata.feedbackRequestSentAt || (await storage.getFeedbacksByBooking(booking.id)).length > 0) return false;
+    const origin = (process.env.APP_ORIGIN || "").replace(/\/$/, "");
+    if (!origin) return false;
+    try {
+      const token = issueFeedbackToken(booking.id, booking.email);
+      const sent = await sendFeedbackRequestEmail(booking, `${origin}/feedback?token=${encodeURIComponent(token)}`);
+      if (!sent) return false;
+      await storage.updateBooking(booking.id, { paymentMetadata: { ...metadata, feedbackRequestSentAt: now.toISOString() } } as any);
+      return true;
+    } catch (error) {
+      console.error(`Feedback request pending retry for booking ${booking.id}:`, error);
+      return false;
+    }
+  });
+}
+
 let scanRunning = false;
 
 export async function scanBookingOperations(now = new Date()) {
-  if (scanRunning) return { cancelled: 0, reminders: 0 };
+  if (scanRunning) return { cancelled: 0, reminders: 0, feedbackRequests: 0 };
   scanRunning = true;
   let cancelled = 0;
   let reminders = 0;
+  let feedbackRequests = 0;
   try {
     const bookings = await storage.getAllBookings();
     for (const booking of bookings) {
@@ -68,9 +91,11 @@ export async function scanBookingOperations(now = new Date()) {
         if (await cancelAbandonedBooking(booking.id, now)) cancelled += 1;
       } else if (booking.status === "confirmed" && ["deposit_paid", "paid"].includes(booking.paymentStatus)) {
         if (await sendDueReminder(booking.id, now)) reminders += 1;
+      } else if (booking.status === "completed" && booking.paymentStatus === "paid") {
+        if (await sendFeedbackRequest(booking.id, now)) feedbackRequests += 1;
       }
     }
-    return { cancelled, reminders };
+    return { cancelled, reminders, feedbackRequests };
   } finally {
     scanRunning = false;
   }

@@ -27,6 +27,7 @@ const Account = lazy(() => import("@/pages/Account"));
 const AccountRecovery = lazy(() => import("@/pages/AccountRecovery").then((module) => ({ default: module.ForgotPassword })));
 const ResetPassword = lazy(() => import("@/pages/AccountRecovery").then((module) => ({ default: module.ResetPassword })));
 const VerifyEmail = lazy(() => import("@/pages/AccountRecovery").then((module) => ({ default: module.VerifyEmail })));
+const Feedback = lazy(() => import("@/pages/Feedback"));
 
 function Router() {
   return (
@@ -51,6 +52,7 @@ function Router() {
         <Route path="/forgot-password" component={AccountRecovery} />
         <Route path="/reset-password" component={ResetPassword} />
         <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/feedback" component={Feedback} />
         <ProtectedRoute path="/account" component={() => <Account />} adminOnly={false} />
         <Route path="/admin/login" component={AdminLogin} />
         <Route path="/admin/setup" component={AdminSetup} />

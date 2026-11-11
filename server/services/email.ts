@@ -124,6 +124,56 @@ export async function sendAppointmentReminderEmail(booking: Booking, reminderLab
   return true;
 }
 
+export async function sendFeedbackRequestEmail(booking: Booking, feedbackUrl: string) {
+  const config = mailConfiguration();
+  if (!config) return false;
+  await config.transport.sendMail({
+    from: config.from,
+    replyTo: config.replyTo,
+    to: booking.email,
+    subject: `How was your Music Life Studios session?`,
+    text: `Hi ${booking.name},\n\nThank you for working with Music Life Studios. Please rate your experience using this secure link:\n${feedbackUrl}\n\nThe link expires in 30 days.\n\nMusic Life Studios`,
+  });
+  return true;
+}
+
+export async function sendMembershipLifecycleEmail(
+  user: Pick<User, "email" | "firstName" | "username">,
+  plan: MembershipPlan,
+  kind: "renewal" | "payment_failed" | "cancelled",
+  effectiveDate?: Date,
+) {
+  const config = mailConfiguration();
+  if (!config) return false;
+  const name = user.firstName || user.username;
+  const formattedDate = effectiveDate?.toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "long", day: "numeric", year: "numeric" });
+  const content = kind === "renewal"
+    ? { subject: `${plan.name} renews soon`, body: `Hi ${name},\n\nYour ${plan.name} membership is scheduled to renew${formattedDate ? ` on ${formattedDate}` : " soon"}. You can review your membership from your Music Life Studios account.\n\nMusic Life Studios` }
+    : kind === "payment_failed"
+      ? { subject: `${plan.name} payment needs attention`, body: `Hi ${name},\n\nWe could not verify the latest payment for your ${plan.name} membership. Please contact Music Life Studios so we can help keep your benefits active.\n\nMusic Life Studios` }
+      : { subject: `${plan.name} membership cancelled`, body: `Hi ${name},\n\nYour ${plan.name} membership has been cancelled${formattedDate ? ` effective ${formattedDate}` : ""}. Reply if you have questions.\n\nMusic Life Studios` };
+  await config.transport.sendMail({ from: config.from, replyTo: config.replyTo, to: user.email, subject: content.subject, text: content.body });
+  return true;
+}
+
+export async function sendRewardExpirationEmail(
+  user: Pick<User, "email" | "firstName" | "username">,
+  rewardName: string,
+  deadline: Date,
+) {
+  const config = mailConfiguration();
+  if (!config) return false;
+  const formattedDate = deadline.toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "long", day: "numeric", year: "numeric" });
+  await config.transport.sendMail({
+    from: config.from,
+    replyTo: config.replyTo,
+    to: user.email,
+    subject: `Your Music Life Studios reward expires soon`,
+    text: `Hi ${user.firstName || user.username},\n\nYour ${rewardName} expires on ${formattedDate}. Contact Music Life Studios before the deadline to redeem it.\n\nMusic Life Studios`,
+  });
+  return true;
+}
+
 export async function sendAdminNotificationEmail(booking: Booking, transactionId: string, amountPaid?: number) {
   const config = mailConfiguration();
   if (!config) {

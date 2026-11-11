@@ -18,6 +18,7 @@ import { scrollToTop } from "@/lib/utils";
 export default function Admin() {
   const [location, navigate] = useLocation();
   const { user, isLoading, logoutMutation } = useAuth();
+  const initialTab = new URLSearchParams(window.location.search).get("tab") || "dashboard";
   
   // Scroll to top on component mount
   useEffect(() => {
@@ -122,7 +123,7 @@ export default function Admin() {
           </div>
         </header>
         
-        <Tabs defaultValue="dashboard" className="space-y-6">
+        <Tabs defaultValue={initialTab} className="space-y-6">
           <div className="overflow-x-auto pb-2">
             <TabsList className="h-auto min-w-max justify-start">
               <TabsTrigger value="dashboard" className="px-4">Dashboard</TabsTrigger>

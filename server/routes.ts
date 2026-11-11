@@ -27,6 +27,7 @@ import { getBookingChargeAmount, recordBookingPayment, recordBookingRefund } fro
 import { queueBookingEmails } from "./services/booking-email-worker";
 import { reconcileBookingLifecycle } from "./services/booking-lifecycle";
 import { issuePaymentLinkToken, verifyPaymentLinkToken } from "./services/payment-links";
+import { verifyFeedbackToken } from "./services/feedback-links";
 import { sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail } from "./services/email";
 import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
@@ -2386,6 +2387,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Feedback Management API
+
+  app.get("/api/feedback-request/:token", async (req, res) => {
+    const claims = verifyFeedbackToken(req.params.token);
+    if (!claims) return res.status(404).json({ message: "Feedback link is invalid or expired" });
+    const booking = await storage.getBooking(claims.bookingId);
+    if (!booking || booking.email.toLowerCase() !== claims.email || booking.status !== "completed") return res.status(404).json({ message: "Feedback link is invalid or expired" });
+    const existing = await storage.getFeedbacksByBooking(booking.id);
+    res.json({ bookingId: booking.id, name: booking.name, date: booking.date, submitted: existing.length > 0 });
+  });
+
+  app.post("/api/feedback-request/:token", async (req, res) => {
+    const claims = verifyFeedbackToken(req.params.token);
+    if (!claims) return res.status(404).json({ message: "Feedback link is invalid or expired" });
+    const booking = await storage.getBooking(claims.bookingId);
+    if (!booking || booking.email.toLowerCase() !== claims.email || booking.status !== "completed") return res.status(404).json({ message: "Feedback link is invalid or expired" });
+    if ((await storage.getFeedbacksByBooking(booking.id)).length > 0) return res.status(409).json({ message: "Feedback was already submitted for this session" });
+    const rating = Number(req.body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ message: "Choose a rating from 1 to 5" });
+    const feedback = await storage.createFeedback({
+      userId: booking.userId,
+      bookingId: booking.id,
+      name: booking.name,
+      email: booking.email,
+      rating,
+      comment: String(req.body.comment || "").trim() || null,
+      serviceType: "session",
+      status: "active",
+    } as any);
+    res.status(201).json({ success: true, feedbackId: feedback.id });
+  });
   
   // Get all feedbacks
   app.get("/api/feedbacks", requireAdmin, async (req, res) => {

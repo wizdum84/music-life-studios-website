@@ -128,7 +128,11 @@ export default function AdminDashboard() {
                   <Badge variant={issue.severity === "urgent" ? "destructive" : "outline"}>{issue.type}</Badge>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{issue.detail}</p>
-                {issue.bookingId && <p className="mt-2 text-xs font-medium">Review booking #{issue.bookingId} in the Bookings tab.</p>}
+                {issue.bookingId && (
+                  <Button asChild size="sm" variant="outline" className="mt-3 w-full sm:w-auto">
+                    <a href="/admin?tab=bookings">Review booking #{issue.bookingId}</a>
+                  </Button>
+                )}
               </div>
             ))}
           </CardContent>
