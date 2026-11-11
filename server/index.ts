@@ -4,14 +4,18 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { randomUUID } from "node:crypto";
 import { registerRoutes } from "./routes";
+import { pool } from "./db";
+import { operationalLog } from "./observability";
+import { validateProductionConfiguration } from "./runtime-config";
 import { startBookingEmailWorker } from "./services/booking-email-worker";
 import { startBookingLifecycleWorker } from "./services/booking-lifecycle";
 import { startBookingOperationsWorker } from "./services/booking-operations-worker";
 import { startMembershipLifecycleWorker } from "./services/membership-lifecycle-worker";
-import { setupVite, serveStatic, log } from "./vite";
+import { setupVite, serveStatic } from "./vite";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
+if (isProduction) validateProductionConfiguration();
 const publicMediaOrigin = (() => {
   try {
     const url = new URL(process.env.PUBLIC_MEDIA_BASE_URL || "");
@@ -20,10 +24,6 @@ const publicMediaOrigin = (() => {
     return null;
   }
 })();
-
-if (isProduction && !/^https:\/\/[^\s/]+(?:\/.*)?$/.test(process.env.APP_ORIGIN || "")) {
-  throw new Error("APP_ORIGIN must be set to the HTTPS production origin before starting the server.");
-}
 
 app.disable("x-powered-by");
 app.set("trust proxy", isProduction ? 1 : false);
@@ -70,7 +70,19 @@ app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "1
 app.use(express.json({ limit: "512kb" }));
 app.use(express.urlencoded({ extended: false, limit: "32kb" }));
 app.get("/api/health", (_req, res) => {
-  res.status(200).json({ status: "ok" });
+  res.status(200).json({ status: "ok", service: "music-life-studios" });
+});
+app.get("/api/ready", async (_req, res) => {
+  try {
+    await Promise.race([
+      pool.query("select 1 as ready"),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Database readiness check timed out")), 5_000)),
+    ]);
+    res.status(200).json({ status: "ready", database: "connected" });
+  } catch (error) {
+    operationalLog("error", "readiness_check_failed", { error });
+    res.status(503).json({ status: "not_ready", database: "unavailable" });
+  }
 });
 app.use("/api", apiLimiter);
 app.use([
@@ -99,7 +111,13 @@ app.use((req, res, next) => {
   const path = req.path;
   res.on("finish", () => {
     if (path.startsWith("/api")) {
-      log(`${req.method} ${path} ${res.statusCode} in ${Date.now() - start}ms [${res.locals.requestId}]`);
+      operationalLog(res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info", "http_request", {
+        requestId: res.locals.requestId,
+        method: req.method,
+        path,
+        statusCode: res.statusCode,
+        durationMs: Date.now() - start,
+      });
     }
   });
   next();
@@ -111,6 +129,7 @@ app.use((req, res, next) => {
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = isProduction && status >= 500 ? "Internal Server Error" : (err.message || "Internal Server Error");
+    operationalLog("error", "request_error", { requestId: res.locals.requestId, statusCode: status, error: err });
     if (!res.headersSent) res.status(status).json({ message });
   });
 
@@ -140,6 +159,25 @@ app.use((req, res, next) => {
     startBookingLifecycleWorker();
     startBookingOperationsWorker();
     startMembershipLifecycleWorker();
-    log(`serving on port ${port}`);
+    operationalLog("info", "server_started", { port, environment: process.env.NODE_ENV || "development" });
   });
+
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    operationalLog("info", "server_shutdown_started", { signal });
+    server.close(async (error) => {
+      if (error) operationalLog("error", "server_shutdown_failed", { error });
+      try {
+        await pool.end();
+      } catch (poolError) {
+        operationalLog("error", "database_pool_shutdown_failed", { error: poolError });
+      }
+      process.exit(error ? 1 : 0);
+    });
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 })();
