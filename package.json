@@ -11,9 +11,9 @@
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "db:push": "drizzle-kit push",
-    "db:add-checkout-columns": "tsx scripts/add-checkout-schema-columns.ts"
-    ,"db:add-account-security": "tsx scripts/add-account-security-columns.ts"
-    ,"media:migrate-r2": "tsx scripts/migrate-beat-media-to-r2.ts"
+    "db:add-checkout-columns": "tsx scripts/add-checkout-schema-columns.ts",
+    "db:add-account-security": "tsx scripts/add-account-security-columns.ts",
+    "media:migrate-r2": "tsx scripts/migrate-beat-media-to-r2.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1163.0",
@@ -50,7 +50,6 @@
     "@radix-ui/react-toggle-group": "^1.1.0",
     "@radix-ui/react-tooltip": "^1.1.3",
     "@replit/vite-plugin-shadcn-theme-json": "^0.0.4",
-    "@sendgrid/mail": "^8.1.5",
     "@stripe/react-stripe-js": "^3.6.0",
     "@stripe/stripe-js": "^7.0.0",
     "@tanstack/react-query": "^5.60.5",

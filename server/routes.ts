@@ -706,12 +706,15 @@ async function activateBeatLicenseCheckout(checkout: any, expectedUserId?: numbe
   const beat = await storage.getBeat(purchase.beatId);
   if (!paymentVerified || !beat) throw new Error("Unable to activate the beat license");
 
-  await sendBeatLicensePaymentEmails(paymentVerified, beat.title);
   const active = await storage.updateBeatPurchaseContract(purchase.id, true, { licenseStatus: "active" } as any);
+  if (!active) throw new Error("Unable to activate the beat license");
   if (purchase.licenseType === "exclusive") {
     await storage.updateBeat(beat.id, { availabilityStatus: "exclusively_sold", availabilityUpdatedAt: new Date() });
   }
-  return active || paymentVerified;
+  void sendBeatLicensePaymentEmails(active, beat.title).catch((error) => {
+    console.error(`Beat license payment email failed for purchase ${purchase.id}:`, error);
+  });
+  return active;
 }
 
 async function issueMembershipBenefits(subscriptionId: number, planId: number, referenceType: string, referenceId: number | null, notes: string) {

@@ -25,11 +25,14 @@ for await (const checkout of stripe.checkout.sessions.list({ limit: 100 })) {
     licenseStartDate: new Date(checkout.created * 1000),
   } as any);
   if (!verified) continue;
-  await sendBeatLicensePaymentEmails(verified, beat.title);
-  await storage.updateBeatPurchaseContract(purchase.id, true, { licenseStatus: "active" } as any);
+  const active = await storage.updateBeatPurchaseContract(purchase.id, true, { licenseStatus: "active" } as any);
+  if (!active) continue;
   if (purchase.licenseType === "exclusive") {
     await storage.updateBeat(beat.id, { availabilityStatus: "exclusively_sold", availabilityUpdatedAt: new Date() });
   }
+  await sendBeatLicensePaymentEmails(active, beat.title).catch((error) => {
+    console.error(`Beat license payment email failed for purchase ${purchase.id}:`, error);
+  });
   activated += 1;
 }
 
