@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Beat } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,7 @@ const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
   const [contractSigned, setContractSigned] = useState(false);
   const [contentIdAcknowledged, setContentIdAcknowledged] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const purchaseDialogRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { audioSrc, playing, play, pause } = useAudio();
   const isBeatPlaying = audioSrc === beat.previewUrl && playing;
@@ -157,6 +158,15 @@ const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
   const handlePurchaseClick = () => {
     setPurchaseDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!purchaseDialogOpen) return;
+    const frame = requestAnimationFrame(() => {
+      purchaseDialogRef.current?.scrollTo({ top: 0, behavior: "instant" });
+      purchaseDialogRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [contractStep, purchaseDialogOpen]);
 
   const handleContinueToContract = async () => {
     if (!customerName || !customerEmail) {
@@ -372,7 +382,9 @@ const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
       {/* Purchase Dialog */}
       <Dialog open={purchaseDialogOpen} onOpenChange={setPurchaseDialogOpen}>
         <DialogContent
-          className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain sm:max-h-[calc(100dvh-2rem)] sm:max-w-[640px]"
+          ref={purchaseDialogRef}
+          className="top-[50dvh] max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain sm:top-1/2 sm:max-h-[calc(100dvh-2rem)] sm:max-w-[640px]"
+          onOpenAutoFocus={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
         >
           <DialogHeader>
