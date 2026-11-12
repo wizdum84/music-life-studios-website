@@ -1,16 +1,76 @@
 import nodemailer from "nodemailer";
 import type { BeatPurchase, Booking, MembershipPlan, MembershipSubscription, User } from "@shared/schema";
 
+type MailMessage = {
+  from: string;
+  replyTo?: string;
+  to: string;
+  subject: string;
+  text: string;
+};
+
+type MailTransport = {
+  sendMail(message: MailMessage): Promise<unknown>;
+  verify(): Promise<unknown>;
+};
+
+function zeptoAuthorization(token: string) {
+  const trimmed = token.trim();
+  return /^Zoho-enczapikey\s/i.test(trimmed) ? trimmed : `Zoho-enczapikey ${trimmed}`;
+}
+
+function createZeptoApiTransport(token: string, senderAddress: string, senderName: string): MailTransport {
+  return {
+    async sendMail(message) {
+      const response = await fetch("https://api.zeptomail.com/v1.1/email", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: zeptoAuthorization(token),
+        },
+        body: JSON.stringify({
+          from: { address: senderAddress, name: senderName },
+          to: [{ email_address: { address: message.to } }],
+          ...(message.replyTo ? { reply_to: [{ address: message.replyTo }] } : {}),
+          subject: message.subject,
+          textbody: message.text,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        const details = (await response.text()).slice(0, 500);
+        throw new Error(`ZeptoMail API returned ${response.status}${details ? `: ${details}` : ""}`);
+      }
+
+      return response.json();
+    },
+    async verify() {
+      if (!token.trim() || !senderAddress.trim()) {
+        throw new Error("ZeptoMail API email is not configured");
+      }
+    },
+  };
+}
+
 function mailConfiguration() {
   const host = process.env.ZOHO_SMTP_HOST;
   const user = process.env.ZOHO_SMTP_USER;
   const pass = process.env.ZOHO_SMTP_PASSWORD;
-  if (!host || !user || !pass) return null;
-
-  const port = Number(process.env.ZOHO_SMTP_PORT || 465);
   const senderAddress = process.env.EMAIL_FROM_ADDRESS || user;
-  return {
-    transport: nodemailer.createTransport({
+  const senderName = process.env.EMAIL_FROM_NAME || "Music Life Studios";
+  const zeptoToken = process.env.ZEPTOMAIL_API_TOKEN
+    || (host?.toLowerCase().includes("zeptomail") ? pass : undefined);
+  if (!senderAddress) return null;
+
+  let transport: MailTransport;
+  if (zeptoToken) {
+    transport = createZeptoApiTransport(zeptoToken, senderAddress, senderName);
+  } else {
+    if (!host || !user || !pass) return null;
+    const port = Number(process.env.ZOHO_SMTP_PORT || 465);
+    const smtp = nodemailer.createTransport({
       host,
       port,
       secure: port === 465,
@@ -19,8 +79,16 @@ function mailConfiguration() {
       greetingTimeout: 10000,
       socketTimeout: 15000,
       auth: { user, pass },
-    }),
-    from: `"${process.env.EMAIL_FROM_NAME || "Music Life Studios"}" <${senderAddress}>`,
+    });
+    transport = {
+      sendMail: (message) => smtp.sendMail(message),
+      verify: () => smtp.verify(),
+    };
+  }
+
+  return {
+    transport,
+    from: `"${senderName}" <${senderAddress}>`,
     replyTo: process.env.EMAIL_REPLY_TO || senderAddress,
     admin: process.env.ADMIN_NOTIFICATION_EMAIL || senderAddress,
   };
@@ -37,12 +105,12 @@ function bookingSummary(booking: Booking) {
 }
 
 export function isEmailConfigured() {
-  return Boolean(process.env.ZOHO_SMTP_HOST && process.env.ZOHO_SMTP_USER && process.env.ZOHO_SMTP_PASSWORD);
+  return Boolean(mailConfiguration());
 }
 
 export async function verifyEmailConnection() {
   const config = mailConfiguration();
-  if (!config) throw new Error("SMTP email is not configured");
+  if (!config) throw new Error("Transactional email is not configured");
   await config.transport.verify();
 }
 
