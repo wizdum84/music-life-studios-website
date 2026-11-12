@@ -8,6 +8,7 @@ function mailConfiguration() {
   if (!host || !user || !pass) return null;
 
   const port = Number(process.env.ZOHO_SMTP_PORT || 465);
+  const senderAddress = process.env.EMAIL_FROM_ADDRESS || user;
   return {
     transport: nodemailer.createTransport({
       host,
@@ -19,9 +20,9 @@ function mailConfiguration() {
       socketTimeout: 15000,
       auth: { user, pass },
     }),
-    from: `"${process.env.EMAIL_FROM_NAME || "Music Life Studios"}" <${user}>`,
-    replyTo: process.env.EMAIL_REPLY_TO || user,
-    admin: process.env.ADMIN_NOTIFICATION_EMAIL || user,
+    from: `"${process.env.EMAIL_FROM_NAME || "Music Life Studios"}" <${senderAddress}>`,
+    replyTo: process.env.EMAIL_REPLY_TO || senderAddress,
+    admin: process.env.ADMIN_NOTIFICATION_EMAIL || senderAddress,
   };
 }
 
@@ -41,7 +42,7 @@ export function isEmailConfigured() {
 
 export async function verifyEmailConnection() {
   const config = mailConfiguration();
-  if (!config) throw new Error("Zoho SMTP is not configured");
+  if (!config) throw new Error("SMTP email is not configured");
   await config.transport.verify();
 }
 
