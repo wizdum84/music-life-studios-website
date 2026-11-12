@@ -37,6 +37,7 @@ type AttentionIssue = {
 
 export default function AdminDashboard() {
   const { toast } = useToast();
+  const [dismissingIssueId, setDismissingIssueId] = useState<string | null>(null);
   
   // Fetch bookings and messages
   const { data: bookings = [], isLoading: isLoadingBookings } = useQuery<Booking[]>({
@@ -66,6 +67,20 @@ export default function AdminDashboard() {
         description: "Failed to mark message as read",
         variant: "destructive",
       });
+    }
+  };
+
+  const dismissAttentionIssue = async (issue: AttentionIssue) => {
+    if (!issue.bookingId) return;
+    setDismissingIssueId(issue.id);
+    try {
+      await apiRequest("DELETE", "/api/admin/attention", { issueId: issue.id, bookingId: issue.bookingId });
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/attention"] });
+      toast({ title: "Alert dismissed", description: "The booking and its history were not deleted." });
+    } catch (error: any) {
+      toast({ title: "Unable to dismiss alert", description: error.message, variant: "destructive" });
+    } finally {
+      setDismissingIssueId(null);
     }
   };
   
@@ -129,9 +144,15 @@ export default function AdminDashboard() {
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{issue.detail}</p>
                 {issue.bookingId && (
-                  <Button asChild size="sm" variant="outline" className="mt-3 w-full sm:w-auto">
-                    <a href="/admin?tab=bookings">Review booking #{issue.bookingId}</a>
-                  </Button>
+                  <div className="mt-3 grid gap-2 sm:flex">
+                    <Button asChild size="sm" variant="outline" className="w-full sm:w-auto">
+                      <a href="/admin?tab=bookings">Review booking #{issue.bookingId}</a>
+                    </Button>
+                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => dismissAttentionIssue(issue)} disabled={dismissingIssueId === issue.id}>
+                      {dismissingIssueId === issue.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Dismiss Alert
+                    </Button>
+                  </div>
                 )}
               </div>
             ))}

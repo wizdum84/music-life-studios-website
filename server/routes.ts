@@ -2556,14 +2556,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const metadata = booking.paymentMetadata && typeof booking.paymentMetadata === "object"
           ? booking.paymentMetadata as Record<string, unknown>
           : {};
+        const dismissed = Array.isArray(metadata.dismissedAttentionIssues)
+          ? metadata.dismissedAttentionIssues.filter((value): value is string => typeof value === "string")
+          : [];
+        const addIssue = (issue: typeof issues[number]) => {
+          if (!dismissed.includes(issue.id)) issues.push(issue);
+        };
         if (booking.paymentErrorMessage || booking.paymentStatus === "failed") {
-          issues.push({ id: `payment-${booking.id}`, severity: "urgent", type: "payment", bookingId: booking.id, title: `Payment failed for booking #${booking.id}`, detail: booking.paymentErrorMessage || `${booking.name}'s payment requires attention.` });
+          addIssue({ id: `payment-${booking.id}`, severity: "urgent", type: "payment", bookingId: booking.id, title: `Payment failed for booking #${booking.id}`, detail: booking.paymentErrorMessage || `${booking.name}'s payment requires attention.` });
         }
         if (booking.status === "completed" && booking.paymentStatus === "deposit_paid") {
-          issues.push({ id: `balance-${booking.id}`, severity: "warning", type: "balance", bookingId: booking.id, title: `Balance due for booking #${booking.id}`, detail: `${booking.name} still owes $${((booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)) / 100).toFixed(2)}.${metadata.balancePaymentLinkSentAt ? " The payment link was emailed." : " The payment link email is pending."}` });
+          addIssue({ id: `balance-${booking.id}`, severity: "warning", type: "balance", bookingId: booking.id, title: `Balance due for booking #${booking.id}`, detail: `${booking.name} still owes $${((booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)) / 100).toFixed(2)}.${metadata.balancePaymentLinkSentAt ? " The payment link was emailed." : " The payment link email is pending."}` });
         }
         if (hasPendingBookingEmails(booking)) {
-          issues.push({ id: `email-${booking.id}`, severity: "warning", type: "email", bookingId: booking.id, title: `Payment email pending for booking #${booking.id}`, detail: "One or more payment confirmations have not been delivered yet." });
+          addIssue({ id: `email-${booking.id}`, severity: "warning", type: "email", bookingId: booking.id, title: `Payment email pending for booking #${booking.id}`, detail: "One or more payment confirmations have not been delivered yet." });
         }
       }
       for (const membership of await storage.getAllMembershipSubscriptions()) {
@@ -2576,6 +2582,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error loading admin attention items:", error);
       res.status(500).json({ error: "Unable to load attention items" });
+    }
+  });
+
+  app.delete("/api/admin/attention", requireAdmin, async (req, res) => {
+    try {
+      const bookingId = Number(req.body.bookingId);
+      const issueId = String(req.body.issueId || "");
+      if (!Number.isInteger(bookingId) || !new RegExp(`^(payment|balance|email)-${bookingId}$`).test(issueId)) {
+        return res.status(400).json({ message: "Invalid attention item" });
+      }
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) return res.status(404).json({ message: "Booking not found" });
+      const metadata = booking.paymentMetadata && typeof booking.paymentMetadata === "object"
+        ? booking.paymentMetadata as Record<string, unknown>
+        : {};
+      const dismissed = Array.isArray(metadata.dismissedAttentionIssues)
+        ? metadata.dismissedAttentionIssues.filter((value): value is string => typeof value === "string")
+        : [];
+      if (!dismissed.includes(issueId)) dismissed.push(issueId);
+      await storage.updateBooking(booking.id, { paymentMetadata: { ...metadata, dismissedAttentionIssues: dismissed } } as any);
+      res.json({ dismissed: true });
+    } catch (error) {
+      console.error("Error dismissing admin attention item:", error);
+      res.status(500).json({ message: "Unable to dismiss attention item" });
     }
   });
 
