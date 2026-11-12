@@ -28,4 +28,9 @@ describe("account security tokens and MFA", () => {
     expect(encrypted).not.toContain(secret);
     expect(security.decryptMfaSecret(encrypted)).toBe(secret);
   });
+
+  it("normalizes email addresses for case-insensitive sign-in", async () => {
+    const { accountSecurityInternals: security } = await import("../server/auth");
+    expect(security.normalizeEmail("  Wizdum84@Hotmail.COM ")).toBe("wizdum84@hotmail.com");
+  });
 });

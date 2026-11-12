@@ -83,9 +83,9 @@ export default function AccountLogin() {
                   name="username"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Username</FormLabel>
+                      <FormLabel>Username or email</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter your username" {...field} />
+                        <Input autoCapitalize="none" autoCorrect="off" placeholder="Enter your username or email" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

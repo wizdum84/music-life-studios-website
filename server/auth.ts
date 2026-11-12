@@ -98,6 +98,10 @@ function decryptMfaSecret(value: string) {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
 export const accountSecurityInternals = {
   issueSecurityToken,
   readSecurityToken,
@@ -106,6 +110,7 @@ export const accountSecurityInternals = {
   verifyTotp,
   encryptMfaSecret,
   decryptMfaSecret,
+  normalizeEmail,
 };
 
 export function setupAuth(app: Express) {
@@ -140,13 +145,10 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        // Try to find user by username first
-        let user = await storage.getUserByUsername(username);
-        
-        // If not found, try by email (username field might contain an email)
-        if (!user && username.includes('@')) {
-          user = await storage.getUserByEmail(username);
-        }
+        const identifier = username.trim();
+        const user = identifier.includes("@")
+          ? await storage.getUserByEmail(normalizeEmail(identifier))
+          : await storage.getUserByUsername(identifier);
         
         if (!user || !(await comparePasswords(password, user.password))) {
           return done(null, false);
@@ -180,7 +182,7 @@ export function setupAuth(app: Express) {
     try {
       const parsed = insertUserSchema.safeParse({
         username: req.body.username,
-        email: req.body.email,
+        email: typeof req.body.email === "string" ? normalizeEmail(req.body.email) : req.body.email,
         password: req.body.password,
         firstName: req.body.firstName || undefined,
         lastName: req.body.lastName || undefined,
@@ -255,7 +257,7 @@ export function setupAuth(app: Express) {
 
       const parsed = insertUserSchema.safeParse({
         username: req.body.username,
-        email: req.body.email,
+        email: typeof req.body.email === "string" ? normalizeEmail(req.body.email) : req.body.email,
         password: req.body.password,
         role: "admin",
         firstName: req.body.firstName || undefined,

@@ -248,7 +248,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    const result = await db.select().from(users).where(sql`lower(${users.email}) = ${email.trim().toLowerCase()}`).limit(1);
     return result[0];
   }
 
@@ -1329,7 +1329,7 @@ class MemoryStorage implements IStorage {
 
   async getUser(id: number) { return this.usersData.find((user) => user.id === id); }
   async getUserByUsername(username: string) { return this.usersData.find((user) => user.username === username); }
-  async getUserByEmail(email: string) { return this.usersData.find((user) => user.email === email); }
+  async getUserByEmail(email: string) { return this.usersData.find((user) => user.email.toLowerCase() === email.trim().toLowerCase()); }
   async getAdminUser() { return this.usersData.find((user) => user.role === "admin"); }
   async getAllUsers() { return [...this.usersData]; }
   async createUser(user: InsertUser) {
