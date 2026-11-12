@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Eye, EyeOff } from "lucide-react";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,7 +19,7 @@ const formSchema = z.object({
 
 export default function AccountLogin() {
   const [_, navigate] = useLocation();
-  const { loginMutation } = useAuth();
+  const { user, isLoading: isAuthLoading, loginMutation } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -31,6 +31,12 @@ export default function AccountLogin() {
       password: "",
     },
   });
+
+  useEffect(() => {
+    if (!isAuthLoading && user) {
+      navigate(user.role === "admin" ? "/admin" : "/account", { replace: true });
+    }
+  }, [isAuthLoading, navigate, user]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setIsLoading(true);
@@ -45,7 +51,7 @@ export default function AccountLogin() {
         title: "Login successful",
         description: "Welcome back to Music Life Studios!",
       });
-      navigate(loggedInUser.role === "admin" ? "/admin" : "/account");
+      window.location.replace(loggedInUser.role === "admin" ? "/admin" : "/account");
     } catch (error: any) {
       // Error handling is already done in the mutation
     } finally {
