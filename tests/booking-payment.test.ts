@@ -68,6 +68,38 @@ describe("booking payment notifications", () => {
     expect(send.client).toHaveBeenNthCalledWith(2, expect.objectContaining({ paymentStatus: "paid" }), "pi_balance", 5500);
   });
 
+  it("keeps a completed booking completed after its balance payment", async () => {
+    const f = fixture();
+    await recordBookingPayment(f.store, f.lock, f.intent());
+    await f.store.updateBookingTransactionInfo(1, { status: "completed" });
+    const balance = f.intent("pi_balance", false, 5000);
+    balance.amount = 5000;
+    balance.amount_received = 5000;
+    await recordBookingPayment(f.store, f.lock, balance);
+    expect(f.current().status).toBe("completed");
+    expect(f.current().paymentStatus).toBe("paid");
+  });
+
+  it("clears an old deposit-email warning after the final payment email is delivered", async () => {
+    const f = fixture();
+    await recordBookingPayment(f.store, f.lock, f.intent());
+    await deliverBookingEmails(f.store, f.lock, 1, {
+      client: async () => false,
+      admin: async () => true,
+    });
+    const balance = f.intent("pi_balance", false, 5000);
+    balance.amount = 5000;
+    balance.amount_received = 5000;
+    await recordBookingPayment(f.store, f.lock, balance);
+    await deliverBookingEmails(f.store, f.lock, 1, {
+      client: async (_booking, id) => id === "pi_balance",
+      admin: async () => true,
+    });
+    expect((f.current().paymentMetadata as any).receipts[0].clientSent).toBe(false);
+    expect((f.current().paymentMetadata as any).receipts[1].clientSent).toBe(true);
+    expect(hasPendingBookingEmails(f.current())).toBe(false);
+  });
+
   it("accepts a full payment and does not reverse a later refund on replay", async () => {
     const f = fixture();
     const intent = f.intent("pi_full", false, 10001);

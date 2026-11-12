@@ -23,7 +23,7 @@ import { getBeatRightsSnapshot, NONEXCLUSIVE_DISCLOSURE, CONTENT_ID_RESTRICTION,
 import { assembleBeatLicenseAgreement, assembleBookingAgreement, assembleMembershipAgreement, type ContractAccountStatus } from "@shared/contractGenerator";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import * as stripeService from "./services/stripe";
-import { getBookingChargeAmount, recordBookingPayment, recordBookingRefund } from "./services/booking-payment";
+import { getBookingChargeAmount, hasPendingBookingEmails, recordBookingPayment, recordBookingRefund } from "./services/booking-payment";
 import { queueBookingEmails } from "./services/booking-email-worker";
 import { reconcileBookingLifecycle } from "./services/booking-lifecycle";
 import { issuePaymentLinkToken, verifyPaymentLinkToken } from "./services/payment-links";
@@ -2562,8 +2562,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (booking.status === "completed" && booking.paymentStatus === "deposit_paid") {
           issues.push({ id: `balance-${booking.id}`, severity: "warning", type: "balance", bookingId: booking.id, title: `Balance due for booking #${booking.id}`, detail: `${booking.name} still owes $${((booking.amount - Math.round(booking.amount * BOOKING_DEPOSIT_RATE)) / 100).toFixed(2)}.${metadata.balancePaymentLinkSentAt ? " The payment link was emailed." : " The payment link email is pending."}` });
         }
-        const receipts = Array.isArray(metadata.receipts) ? metadata.receipts as Array<Record<string, unknown>> : [];
-        if (receipts.some((receipt) => !receipt.clientSent || !receipt.adminSent)) {
+        if (hasPendingBookingEmails(booking)) {
           issues.push({ id: `email-${booking.id}`, severity: "warning", type: "email", bookingId: booking.id, title: `Payment email pending for booking #${booking.id}`, detail: "One or more payment confirmations have not been delivered yet." });
         }
       }

@@ -37,7 +37,7 @@ export async function recordBookingPayment(store: PaymentStore, lock: BookingLoc
     receipts.push({ id: intent.id, amount: intent.amount, isDeposit, paymentStatus, clientSent: false, adminSent: false });
     const updated = await store.updateBookingTransactionInfo(booking.id, {
       transactionId: intent.id, paymentStatus, paymentMethod: "stripe",
-      status: "confirmed",
+      status: booking.status === "completed" ? "completed" : "confirmed",
       tipAmount: isDeposit ? 0 : tipAmount,
       paymentMetadata: { ...metadata, receipts },
     });
@@ -84,7 +84,12 @@ export async function recordBookingRefund(store: PaymentStore, lock: BookingLock
 }
 
 export function hasPendingBookingEmails(booking: Booking) {
-  return ((booking.paymentMetadata as PaymentMetadata | null)?.receipts || []).some((receipt) => !receipt.clientSent || !receipt.adminSent);
+  const receipts = (booking.paymentMetadata as PaymentMetadata | null)?.receipts || [];
+  if (booking.paymentStatus === "paid") {
+    const finalReceipt = [...receipts].reverse().find((receipt) => receipt.paymentStatus === "paid");
+    return finalReceipt ? !finalReceipt.clientSent || !finalReceipt.adminSent : receipts.some((receipt) => !receipt.clientSent || !receipt.adminSent);
+  }
+  return receipts.some((receipt) => !receipt.clientSent || !receipt.adminSent);
 }
 
 export async function deliverBookingEmails(store: PaymentStore, lock: BookingLock, bookingId: number, send: {
