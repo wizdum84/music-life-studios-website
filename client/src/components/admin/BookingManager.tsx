@@ -60,7 +60,7 @@ const StatusBadge = ({ status }: { status: string }) => {
     switch (status) {
       case "confirmed": return "success";
       case "pending": return "warning";
-      case "completed": return "default";
+      case "completed": return "success";
       case "cancelled": return "destructive";
       default: return "outline";
     }

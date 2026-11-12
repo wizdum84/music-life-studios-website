@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { getBookingPaidAmount } from "@shared/bookingPayments";
+import { categorizeBookings } from "@shared/bookingCategories";
 import { 
   Tabs, 
   TabsContent, 
@@ -150,6 +151,7 @@ export default function Account() {
     enabled: !!user,
   });
   const [downloadingBeatId, setDownloadingBeatId] = useState<number | null>(null);
+  const [openingFeedbackId, setOpeningFeedbackId] = useState<number | null>(null);
 
   const downloadBeatFiles = async (purchaseId: number) => {
     setDownloadingBeatId(purchaseId);
@@ -162,6 +164,19 @@ export default function Account() {
       toast({ title: "Download unavailable", description: error.message, variant: "destructive" });
     } finally {
       setDownloadingBeatId(null);
+    }
+  };
+
+  const openFeedback = async (bookingId: number) => {
+    setOpeningFeedbackId(bookingId);
+    try {
+      const response = await apiRequest("POST", `/api/user/bookings/${bookingId}/feedback-link`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Unable to open feedback form");
+      window.location.assign(data.url);
+    } catch (error: any) {
+      toast({ title: "Feedback unavailable", description: error.message, variant: "destructive" });
+      setOpeningFeedbackId(null);
     }
   };
 
@@ -368,14 +383,7 @@ export default function Account() {
   const sessionsUntilNextFree = 5 - progressToNextFree;
 
   // Get upcoming and past bookings
-  const currentDate = new Date();
-  const upcomingBookings = bookings
-    .filter(booking => new Date(booking.date) >= currentDate)
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  
-  const pastBookings = bookings
-    .filter(booking => new Date(booking.date) < currentDate)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const { upcoming: upcomingBookings, past: pastBookings, completed: completedBookings } = categorizeBookings(bookings);
 
   // Helper function to get service name
   const getServiceName = (serviceId: number) => {
@@ -974,6 +982,7 @@ export default function Account() {
                             <TableHead>Duration</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Amount</TableHead>
+                            <TableHead className="text-right">Review</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -990,6 +999,14 @@ export default function Account() {
                               <TableCell>{booking.duration / 60} hours</TableCell>
                               <TableCell>{getStatusBadge(booking)}</TableCell>
                               <TableCell className="text-right">{formatCurrency(booking.amount)}</TableCell>
+                              <TableCell className="text-right">
+                                {booking.status === "completed" && (
+                                  <Button size="sm" variant="outline" onClick={() => openFeedback(booking.id)} disabled={openingFeedbackId === booking.id}>
+                                    {openingFeedbackId === booking.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Star className="mr-2 h-4 w-4" />}
+                                    Leave a Review
+                                  </Button>
+                                )}
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1169,7 +1186,7 @@ export default function Account() {
               <CardDescription>View your past sessions and activity</CardDescription>
             </CardHeader>
             <CardContent>
-              {pastBookings.length > 0 ? (
+              {completedBookings.length > 0 ? (
                 <div className="space-y-6">
                   <div className="rounded-md border">
                     <Table>
@@ -1180,10 +1197,11 @@ export default function Account() {
                           <TableHead>Details</TableHead>
                           <TableHead>Duration</TableHead>
                           <TableHead className="text-right">Amount</TableHead>
+                          <TableHead className="text-right">Review</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {pastBookings.map((booking) => (
+                        {completedBookings.map((booking) => (
                           <TableRow key={booking.id}>
                             <TableCell>
                               {format(new Date(booking.date), "MMM d, yyyy")}
@@ -1205,6 +1223,12 @@ export default function Account() {
                                 <div className="text-xs text-primary font-medium">Loyalty Applied</div>
                               )}
                             </TableCell>
+                            <TableCell className="text-right">
+                              <Button size="sm" variant="outline" onClick={() => openFeedback(booking.id)} disabled={openingFeedbackId === booking.id}>
+                                {openingFeedbackId === booking.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Star className="mr-2 h-4 w-4" />}
+                                Leave a Review
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -1216,24 +1240,24 @@ export default function Account() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div>
                         <p className="text-xs text-muted-foreground">Total Sessions</p>
-                        <p className="text-lg font-bold">{pastBookings.length}</p>
+                        <p className="text-lg font-bold">{completedBookings.length}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Total Hours</p>
                         <p className="text-lg font-bold">
-                          {pastBookings.reduce((total, booking) => total + booking.duration, 0) / 60}
+                          {completedBookings.reduce((total, booking) => total + booking.duration, 0) / 60}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Total Spent</p>
                         <p className="text-lg font-bold">
-                          {formatCurrency(pastBookings.reduce((sum, booking) => sum + getBookingPaidAmount(booking), 0))}
+                          {formatCurrency(completedBookings.reduce((sum, booking) => sum + getBookingPaidAmount(booking), 0))}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Loyalty Rewards</p>
                         <p className="text-lg font-bold">
-                          {pastBookings.filter(b => b.loyaltyApplied).length}
+                          {completedBookings.filter(b => b.loyaltyApplied).length}
                         </p>
                       </div>
                     </div>

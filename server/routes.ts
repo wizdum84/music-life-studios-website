@@ -27,7 +27,7 @@ import { getBookingChargeAmount, recordBookingPayment, recordBookingRefund } fro
 import { queueBookingEmails } from "./services/booking-email-worker";
 import { reconcileBookingLifecycle } from "./services/booking-lifecycle";
 import { issuePaymentLinkToken, verifyPaymentLinkToken } from "./services/payment-links";
-import { verifyFeedbackToken } from "./services/feedback-links";
+import { issueFeedbackToken, verifyFeedbackToken } from "./services/feedback-links";
 import { sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail } from "./services/email";
 import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
@@ -1679,6 +1679,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user bookings:", error);
       res.status(500).json({ error: "Failed to fetch user bookings" });
+    }
+  });
+
+  app.post("/api/user/bookings/:id/feedback-link", isAuthenticated, async (req, res) => {
+    try {
+      const bookingId = Number(req.params.id);
+      if (!Number.isInteger(bookingId)) return res.status(400).json({ message: "Invalid booking" });
+      const booking = await storage.getBooking(bookingId);
+      if (!booking || booking.userId !== req.user!.id) return res.status(404).json({ message: "Booking not found" });
+      if (booking.status !== "completed") return res.status(409).json({ message: "Feedback is available after the session is completed" });
+      const token = issueFeedbackToken(booking.id, booking.email);
+      res.json({ url: `/feedback?token=${encodeURIComponent(token)}` });
+    } catch (error) {
+      console.error("Error creating customer feedback link:", error);
+      res.status(500).json({ message: "Unable to open feedback form" });
     }
   });
   
