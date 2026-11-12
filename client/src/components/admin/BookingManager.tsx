@@ -19,6 +19,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { Booking } from "@shared/schema";
+import { getBookingPaidAmount } from "@shared/bookingPayments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -110,6 +111,12 @@ export default function BookingManager() {
   const { data: bookings, isLoading } = useQuery<Booking[]>({
     queryKey: ['/api/bookings'],
   });
+  const paidTowardSelectedBooking = selectedBooking
+    ? Math.min(selectedBooking.amount, getBookingPaidAmount(selectedBooking))
+    : 0;
+  const selectedBookingBalanceDue = selectedBooking && ["unpaid", "deposit_paid", "failed"].includes(selectedBooking.paymentStatus)
+    ? Math.max(0, selectedBooking.amount - paidTowardSelectedBooking)
+    : 0;
   
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -327,7 +334,7 @@ export default function BookingManager() {
             variant="ghost"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
-            Amount
+            Booking Total
             <CaretSortIcon className="ml-2 h-4 w-4" />
           </Button>
         );
@@ -653,9 +660,19 @@ export default function BookingManager() {
                 </div>
               </div>
               
-              <div>
-                <h4 className="text-sm font-medium mb-1">Amount</h4>
-                <p className="text-xl font-semibold">{formatCurrency(selectedBooking.amount)}</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-md border p-3">
+                  <h4 className="text-xs font-medium text-muted-foreground">Booking Total</h4>
+                  <p className="mt-1 text-xl font-semibold">{formatCurrency(selectedBooking.amount)}</p>
+                </div>
+                <div className="rounded-md border border-green-500/30 bg-green-500/5 p-3">
+                  <h4 className="text-xs font-medium text-muted-foreground">Paid</h4>
+                  <p className="mt-1 text-xl font-semibold text-green-700">{formatCurrency(paidTowardSelectedBooking)}</p>
+                </div>
+                <div className={`rounded-md border p-3 ${selectedBookingBalanceDue > 0 ? "border-amber-500/40 bg-amber-500/10" : "border-green-500/30 bg-green-500/5"}`}>
+                  <h4 className="text-xs font-medium text-muted-foreground">Balance Due</h4>
+                  <p className={`mt-1 text-xl font-semibold ${selectedBookingBalanceDue > 0 ? "text-amber-700" : "text-green-700"}`}>{formatCurrency(selectedBookingBalanceDue)}</p>
+                </div>
               </div>
               
               {selectedBooking.details && (
