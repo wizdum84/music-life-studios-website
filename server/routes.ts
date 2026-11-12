@@ -28,7 +28,7 @@ import { queueBookingEmails } from "./services/booking-email-worker";
 import { reconcileBookingLifecycle } from "./services/booking-lifecycle";
 import { issuePaymentLinkToken, verifyPaymentLinkToken } from "./services/payment-links";
 import { issueFeedbackToken, verifyFeedbackToken } from "./services/feedback-links";
-import { sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail } from "./services/email";
+import { sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail, verifyEmailConnection } from "./services/email";
 import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
 
@@ -892,6 +892,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (req.user?.role !== "admin") return res.status(403).json({ message: "Access denied" });
     next();
   };
+
+  app.post("/api/admin/email/verify", requireAdmin, async (_req, res) => {
+    try {
+      await verifyEmailConnection();
+      res.json({ ok: true, message: "Transactional email connection verified" });
+    } catch (error) {
+      console.error("Transactional email connection verification failed:", error);
+      res.status(503).json({ ok: false, message: "Transactional email connection could not be verified" });
+    }
+  });
   
   // API routes
   
