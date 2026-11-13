@@ -298,7 +298,7 @@ export async function sendBeatLicenseRequestEmails(purchase: BeatPurchase, beatT
   return true;
 }
 
-export async function sendBeatLicensePaymentEmails(purchase: BeatPurchase, beatTitle: string) {
+export async function sendBeatLicensePaymentEmails(purchase: BeatPurchase, beatTitle: string, deliveryReady: boolean) {
   const config = mailConfiguration();
   if (!config) return false;
   const price = `$${(purchase.price / 100).toFixed(2)}`;
@@ -306,14 +306,29 @@ export async function sendBeatLicensePaymentEmails(purchase: BeatPurchase, beatT
     config.transport.sendMail({
       from: config.from, replyTo: config.replyTo, to: purchase.customerEmail,
       subject: `Beat license payment received: ${beatTitle}`,
-      text: `Hi ${purchase.customerName},\n\nYour ${price} payment for the ${purchase.licenseType} license for “${beatTitle}” was verified. Your license is active. Music Life Studios will send the applicable audio files and fulfillment instructions separately.\n\nMusic Life Studios`,
+      text: deliveryReady
+        ? `Hi ${purchase.customerName},\n\nYour ${price} payment for the ${purchase.licenseType} license for “${beatTitle}” was verified. Your license is active and your files are ready to download from your Music Life Studios account.\n\nMusic Life Studios`
+        : `Hi ${purchase.customerName},\n\nYour ${price} payment for the ${purchase.licenseType} license for “${beatTitle}” was verified. Your files are being prepared, and the license will show as active when the package is uploaded. We will email you as soon as it is ready to download from your Music Life Studios account.\n\nMusic Life Studios`,
     }),
     config.transport.sendMail({
       from: config.from, replyTo: purchase.customerEmail, to: config.admin,
-      subject: `Beat license paid: ${beatTitle}`,
-      text: `Customer: ${purchase.customerName}\nEmail: ${purchase.customerEmail}\nBeat: ${beatTitle}\nLicense: ${purchase.licenseType}\nPaid: ${price}\nTransaction: ${purchase.transactionId}`,
+      subject: deliveryReady ? `Beat license paid: ${beatTitle}` : `ACTION REQUIRED: Prepare ${purchase.licenseType} files for ${beatTitle}`,
+      text: `Customer: ${purchase.customerName}\nEmail: ${purchase.customerEmail}\nBeat: ${beatTitle}\nLicense: ${purchase.licenseType}\nPaid: ${price}\nTransaction: ${purchase.transactionId}\nDelivery: ${deliveryReady ? "ready for customer download" : "package must be bounced and uploaded in the admin Beat Catalog"}`,
     }),
   ]);
+  return true;
+}
+
+export async function sendBeatLicenseDeliveryReadyEmail(purchase: BeatPurchase, beatTitle: string) {
+  const config = mailConfiguration();
+  if (!config) return false;
+  await config.transport.sendMail({
+    from: config.from,
+    replyTo: config.replyTo,
+    to: purchase.customerEmail,
+    subject: `Your beat files are ready: ${beatTitle}`,
+    text: `Hi ${purchase.customerName},\n\nYour ${purchase.licenseType} audio package for “${beatTitle}” is now ready. Sign in to your Music Life Studios account and open Beat License Requests to download it securely.\n\nMusic Life Studios`,
+  });
   return true;
 }
 

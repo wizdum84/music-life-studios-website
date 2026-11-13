@@ -28,7 +28,7 @@ import { queueBookingEmails } from "./services/booking-email-worker";
 import { reconcileBookingLifecycle } from "./services/booking-lifecycle";
 import { issuePaymentLinkToken, verifyPaymentLinkToken } from "./services/payment-links";
 import { issueFeedbackToken, verifyFeedbackToken } from "./services/feedback-links";
-import { sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail, verifyEmailConnection } from "./services/email";
+import { sendBeatLicenseDeliveryReadyEmail, sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail, verifyEmailConnection } from "./services/email";
 import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
 
@@ -712,7 +712,7 @@ async function activateBeatLicenseCheckout(checkout: any, expectedUserId?: numbe
   if (!purchase) throw new Error("Beat license request not found");
   if (expectedUserId && purchase.userId !== expectedUserId) throw new Error("Checkout session does not belong to this account");
   if (Number(checkout.amount_total) !== purchase.price) throw new Error("Checkout amount does not match the license request");
-  if (purchase.licenseStatus === "active") return purchase;
+  if (["active", "fulfillment_pending"].includes(purchase.licenseStatus)) return purchase;
 
   const transactionId = typeof checkout.payment_intent === "string"
     ? checkout.payment_intent
@@ -725,15 +725,30 @@ async function activateBeatLicenseCheckout(checkout: any, expectedUserId?: numbe
   const beat = await storage.getBeat(purchase.beatId);
   if (!paymentVerified || !beat) throw new Error("Unable to activate the beat license");
 
-  const active = await storage.updateBeatPurchaseContract(purchase.id, true, { licenseStatus: "active" } as any);
+  const deliveryReady = Boolean(beatDeliverableObjectKey(beat, purchase.licenseType));
+  const active = await storage.updateBeatPurchaseContract(purchase.id, true, {
+    licenseStatus: deliveryReady ? "active" : "fulfillment_pending",
+  } as any);
   if (!active) throw new Error("Unable to activate the beat license");
   if (purchase.licenseType === "exclusive") {
     await storage.updateBeat(beat.id, { availabilityStatus: "exclusively_sold", availabilityUpdatedAt: new Date() });
   }
-  void sendBeatLicensePaymentEmails(active, beat.title).catch((error) => {
+  void sendBeatLicensePaymentEmails(active, beat.title, deliveryReady).catch((error) => {
     console.error(`Beat license payment email failed for purchase ${purchase.id}:`, error);
   });
   return active;
+}
+
+async function activateWaitingBeatDeliveries(beat: { id: number; title: string }, licenseType: string) {
+  const waitingPurchases = (await storage.getAllBeatPurchases()).filter((purchase) =>
+    purchase.beatId === beat.id && purchase.licenseType === licenseType && purchase.licenseStatus === "fulfillment_pending",
+  );
+  for (const purchase of waitingPurchases) {
+    const activated = await storage.updateBeatPurchaseContract(purchase.id, true, { licenseStatus: "active" } as any);
+    if (activated) void sendBeatLicenseDeliveryReadyEmail(activated, beat.title).catch((error) => {
+      console.error(`Beat delivery-ready email failed for purchase ${purchase.id}:`, error);
+    });
+  }
 }
 
 async function issueMembershipBenefits(subscriptionId: number, planId: number, referenceType: string, referenceId: number | null, notes: string) {
@@ -1167,6 +1182,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingDeliverables = metadata.deliverables && typeof metadata.deliverables === "object"
         ? metadata.deliverables as Record<string, unknown>
         : {};
+      const wasMissing = !beatDeliverableObjectKey(beat, "basic");
       const masterReference = `r2-private://${masterObjectKey}`;
       const updated = await storage.updateBeat(beat.id, {
         previewUrl: publicPreview.url,
@@ -1178,6 +1194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
       if (!updated) throw new Error("Beat record could not be updated");
+      if (wasMissing) await activateWaitingBeatDeliveries(beat, "basic");
       res.status(201).json({
         beatId: beat.id,
         fileName: uploadedFile.originalname,
@@ -1215,12 +1232,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingDeliverables = metadata.deliverables && typeof metadata.deliverables === "object"
         ? metadata.deliverables as Record<string, unknown>
         : {};
+      const wasMissing = !beatDeliverableObjectKey(beat, licenseType);
       const reference = `r2-private://${objectKey}`;
       const updated = await storage.updateBeat(beat.id, {
         ...(licenseType === "basic" ? { fullAudioUrl: reference } : {}),
         metadata: { ...metadata, deliverables: { ...existingDeliverables, [licenseType]: reference } },
       });
       if (!updated) throw new Error("Beat record could not be updated");
+      if (wasMissing) await activateWaitingBeatDeliveries(beat, licenseType);
       res.status(201).json({
         beatId: beat.id,
         fileName: uploadedFile.originalname,
@@ -1305,14 +1324,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerEmail = String(req.body.customerEmail || "").trim().toLowerCase();
       if (customerName.length < 2 || !/^\S+@\S+\.\S+$/.test(customerEmail)) return res.status(400).json({ error: "Enter a valid name and email" });
       if (beat.availabilityStatus !== "available_nonexclusive") return res.status(409).json({ error: "This beat is not currently available for a new license" });
-      if (!beatDeliverableObjectKey(beat, licenseType)) {
-        return res.status(409).json({ error: `The ${licenseType} delivery package for this beat is not available yet.` });
-      }
 
       const priceCents = beatLicensePrice(beat, licenseType);
       const assembly = assembleBeatLicenseAgreement({
         beatTitle: beat.title, catalogNumber: beat.catalogNumber, producerName: beat.producerName,
         licenseType, priceCents, customerName, customerEmail,
+        deliveryPreparationRequired: !beatDeliverableObjectKey(beat, licenseType),
       });
       const contract = await storage.createContract({
         title: assembly.title, description: assembly.content, content: assembly.content,
@@ -1351,9 +1368,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const requestedLicense = String(req.body.licenseType || "basic") as "basic" | "premium" | "exclusive";
       if (!["basic", "premium", "exclusive"].includes(requestedLicense)) return res.status(400).json({ error: "Select a valid beat license" });
-      if (!beatDeliverableObjectKey(beat, requestedLicense)) {
-        return res.status(409).json({ error: `The ${requestedLicense} delivery package for this beat is not available yet.` });
-      }
       const product = requestedLicense === "exclusive" ? "exclusive" : "paid_nonexclusive";
       if (beat.availabilityStatus !== "available_nonexclusive") {
         return res.status(409).json({ error: "This beat is not currently available for a new license." });

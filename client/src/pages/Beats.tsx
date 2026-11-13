@@ -120,12 +120,13 @@ const BeatCard = ({ beat, index }: { beat: CatalogBeat; index: number }) => {
   const [licenseContractId, setLicenseContractId] = useState<number | null>(null);
   const [contractSigned, setContractSigned] = useState(false);
   const [contentIdAcknowledged, setContentIdAcknowledged] = useState(false);
+  const [deliveryPreparationAcknowledged, setDeliveryPreparationAcknowledged] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const purchaseDialogRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { audioSrc, playing, play, pause } = useAudio();
   const isBeatPlaying = audioSrc === beat.previewUrl && playing;
-  const selectedTierAvailable = beat.deliveryAvailability?.[selectedLicense as "basic" | "premium" | "exclusive"] === true;
+  const selectedTierReady = beat.deliveryAvailability?.[selectedLicense as "basic" | "premium" | "exclusive"] === true;
   const handleCoverPlay = () => {
     if (isBeatPlaying) pause();
     else void play(beat.previewUrl || undefined, beat.title);
@@ -186,6 +187,14 @@ const BeatCard = ({ beat, index }: { beat: CatalogBeat; index: number }) => {
         title: "Missing information",
         description: "Please provide your name and email to continue.",
         variant: "destructive"
+      });
+      return;
+    }
+    if (!selectedTierReady && !deliveryPreparationAcknowledged) {
+      toast({
+        title: "Preparation acknowledgement required",
+        description: "Please confirm that this package will be prepared after payment.",
+        variant: "destructive",
       });
       return;
     }
@@ -323,16 +332,20 @@ const BeatCard = ({ beat, index }: { beat: CatalogBeat; index: number }) => {
               setContractSigned(false);
               setLicenseContractId(null);
               setContractSigningToken(null);
+              setDeliveryPreparationAcknowledged(false);
             }} className="border-t border-[#6b481b] pt-4">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-xs uppercase tracking-[0.18em] text-[#c9bca9]">Choose your rights</p>
                 <p className="text-xs text-[#8d806f]">One beat. Three paths.</p>
               </div>
               <TabsList className="mb-2 grid w-full grid-cols-3 rounded-none border-y border-[#6b481b] bg-transparent p-0">
-                <TabsTrigger value="basic" disabled={!beat.deliveryAvailability?.basic} className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Basic</TabsTrigger>
-                <TabsTrigger value="premium" disabled={!beat.deliveryAvailability?.premium} className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Premium</TabsTrigger>
-                <TabsTrigger value="exclusive" disabled={!beat.deliveryAvailability?.exclusive} className="rounded-none py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Exclusive</TabsTrigger>
+                <TabsTrigger value="basic" className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Basic</TabsTrigger>
+                <TabsTrigger value="premium" className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Premium</TabsTrigger>
+                <TabsTrigger value="exclusive" className="rounded-none py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Exclusive</TabsTrigger>
               </TabsList>
+              <p className={`mb-3 border px-3 py-2 text-xs ${selectedTierReady ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200" : "border-amber-500/30 bg-amber-500/10 text-amber-100"}`}>
+                {selectedTierReady ? "Ready for secure download after verified payment." : "Made to order: the studio will prepare this package after payment and email you when it is ready."}
+              </p>
               
               <TabsContent value="basic" className="mt-2 space-y-2 text-sm text-[#d9cdbd]">
                 <div className="flex justify-between items-center">
@@ -383,12 +396,12 @@ const BeatCard = ({ beat, index }: { beat: CatalogBeat; index: number }) => {
         </CardContent>
         
         <CardFooter className="mt-auto p-4 pt-0">
-          <Button className="w-full rounded-none border border-primary bg-primary px-5 text-primary-foreground shadow-[4px_4px_0_#6d4918] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-primary/90 hover:shadow-[2px_2px_0_#6d4918]" onClick={handlePurchaseClick} disabled={!beatCheckoutEnabled || beat.availabilityStatus !== "available_nonexclusive" || !selectedTierAvailable}>
+          <Button className="w-full rounded-none border border-primary bg-primary px-5 text-primary-foreground shadow-[4px_4px_0_#6d4918] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-primary/90 hover:shadow-[2px_2px_0_#6d4918]" onClick={handlePurchaseClick} disabled={!beatCheckoutEnabled || beat.availabilityStatus !== "available_nonexclusive"}>
             <ShoppingCart className="h-4 w-4 mr-2" />
             {beatCheckoutEnabled
-              ? selectedTierAvailable
+              ? selectedTierReady
                 ? `Purchase ${selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License`
-                : "Delivery Package Not Available"
+                : `Purchase ${selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} — Prepared After Payment`
               : "Licensing Checkout Coming Soon"}
           </Button>
         </CardFooter>
@@ -461,6 +474,12 @@ const BeatCard = ({ beat, index }: { beat: CatalogBeat; index: number }) => {
                   <span>This is nonexclusive. Other artists may license the same beat, and I understand the Content ID restriction.</span>
                 </label>
               )}
+              {!selectedTierReady && (
+                <label className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+                  <input type="checkbox" checked={deliveryPreparationAcknowledged} onChange={(event) => setDeliveryPreparationAcknowledged(event.target.checked)} className="mt-0.5" />
+                  <span>I understand this audio package is not an instant download. The studio will prepare it after payment and email me when it is ready.</span>
+                </label>
+              )}
               
               <DialogFooter className="pt-4">
                 <Button 
@@ -471,7 +490,7 @@ const BeatCard = ({ beat, index }: { beat: CatalogBeat; index: number }) => {
                 </Button>
                 <Button 
                   onClick={handleContinueToContract}
-                  disabled={selectedLicense !== "exclusive" && !contentIdAcknowledged}
+                  disabled={(selectedLicense !== "exclusive" && !contentIdAcknowledged) || (!selectedTierReady && !deliveryPreparationAcknowledged)}
                 >
                   Continue to License Agreement
                 </Button>

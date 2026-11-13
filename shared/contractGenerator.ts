@@ -321,6 +321,7 @@ export function assembleBeatLicenseAgreement(input: {
   priceCents: number;
   customerName: string;
   customerEmail: string;
+  deliveryPreparationRequired?: boolean;
 }): ContractAssembly {
   const product: BeatLicenseProduct = input.licenseType === "exclusive" ? "exclusive" : "paid_nonexclusive";
   const rights = getBeatRightsSnapshot(product);
@@ -355,7 +356,9 @@ Customer email: ${input.customerEmail}
 Selected license: ${licenseLabel}
 License price: ${formatMoney(input.priceCents)}
 Payment terms: The full license price is due through the verified checkout. Studio booking deposits and studio cancellation windows do not apply to this beat license. Signing alone does not activate the license or prove payment.
-Fulfillment status: Payment and license availability must be verified before files or active license rights are delivered. No automatic download is promised by this agreement.
+Fulfillment status: ${input.deliveryPreparationRequired
+  ? "This package is made-to-order and is not available for immediate download. After verified payment, the studio will prepare and upload the selected files, notify the customer by email, and activate the secure account download."
+  : "Payment and license availability must be verified before files or active license rights are delivered. The selected package is currently prepared for secure account download after verified payment."}
 
 GRANT AND USE LIMITS
 

@@ -25,6 +25,17 @@ describe("generated checkout agreements", () => {
     expect(agreement.content).toContain("Previously issued licenses remain valid");
   });
 
+  it("discloses when a paid beat package must be prepared before activation", () => {
+    const agreement = assembleBeatLicenseAgreement({
+      beatTitle: "Test Beat", licenseType: "premium", priceCents: 6999,
+      customerName: "Test Artist", customerEmail: "artist@example.com",
+      deliveryPreparationRequired: true,
+    });
+    expect(agreement.content).toContain("made-to-order");
+    expect(agreement.content).toContain("notify the customer by email");
+    expect(agreement.content).toContain("activate the secure account download");
+  });
+
   it("generates membership billing language accepted case-insensitively by enrollment validation", () => {
     const plan = MEMBERSHIP_PLAN_CATALOG[0];
     const monthly = assembleMembershipAgreement({ plan, termMonths: 1 });

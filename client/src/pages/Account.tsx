@@ -1056,7 +1056,7 @@ export default function Account() {
                             {downloadingBeatId === request.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                             Download
                           </Button>
-                        ) : request.licenseStatus === "active" ? (
+                        ) : request.licenseStatus === "active" || request.licenseStatus === "fulfillment_pending" ? (
                           <span className="text-xs text-muted-foreground">Delivery being prepared</span>
                         ) : (
                           <span className="text-xs text-muted-foreground">After payment</span>
