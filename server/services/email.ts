@@ -298,10 +298,10 @@ export async function sendBeatLicenseRequestEmails(purchase: BeatPurchase, beatT
   return true;
 }
 
-export async function sendBeatLicensePaymentEmails(purchase: BeatPurchase, beatTitle: string, deliveryReady: boolean) {
+export async function sendBeatLicensePaymentEmails(purchase: BeatPurchase, beatTitle: string, deliveryReady: boolean, amountPaidCents = purchase.price) {
   const config = mailConfiguration();
   if (!config) return false;
-  const price = `$${(purchase.price / 100).toFixed(2)}`;
+  const price = `$${(amountPaidCents / 100).toFixed(2)}`;
   await Promise.all([
     config.transport.sendMail({
       from: config.from, replyTo: config.replyTo, to: purchase.customerEmail,

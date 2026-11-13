@@ -30,9 +30,14 @@ export async function recordBookingPayment(store: PaymentStore, lock: BookingLoc
     if (booking.transactionId === intent.id) return booking;
     const isDeposit = intent.metadata.isDeposit === "true";
     const tipAmount = Number(intent.metadata.tipAmount || 0);
+    const catalogAmount = getBookingChargeAmount(booking, isDeposit, tipAmount);
+    const liveTestOverride = intent.metadata.liveTestPriceOverride === "true";
+    const validAmount = liveTestOverride
+      ? Number(intent.metadata.catalogPriceCents) === catalogAmount && intent.amount >= 50 && intent.amount < catalogAmount
+      : intent.amount === catalogAmount;
     if (!["true", "false"].includes(intent.metadata.isDeposit) || !Number.isSafeInteger(tipAmount) || tipAmount < 0 ||
         !["unpaid", "deposit_paid"].includes(booking.paymentStatus) || (isDeposit && booking.paymentStatus === "deposit_paid") ||
-        intent.amount !== getBookingChargeAmount(booking, isDeposit, tipAmount)) throw new Error("Payment does not match booking amount or state");
+        !validAmount) throw new Error("Payment does not match booking amount or state");
     const paymentStatus = isDeposit ? "deposit_paid" : "paid";
     receipts.push({ id: intent.id, amount: intent.amount, isDeposit, paymentStatus, clientSent: false, adminSent: false });
     const updated = await store.updateBookingTransactionInfo(booking.id, {

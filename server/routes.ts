@@ -711,7 +711,11 @@ async function activateBeatLicenseCheckout(checkout: any, expectedUserId?: numbe
   const purchase = await storage.getBeatPurchase(purchaseId);
   if (!purchase) throw new Error("Beat license request not found");
   if (expectedUserId && purchase.userId !== expectedUserId) throw new Error("Checkout session does not belong to this account");
-  if (Number(checkout.amount_total) !== purchase.price) throw new Error("Checkout amount does not match the license request");
+  const liveTestOverride = checkout.metadata?.liveTestPriceOverride === "true";
+  const validCheckoutAmount = liveTestOverride
+    ? Number(checkout.metadata?.catalogPriceCents) === purchase.price && Number(checkout.amount_total) >= 50 && Number(checkout.amount_total) < purchase.price
+    : Number(checkout.amount_total) === purchase.price;
+  if (!validCheckoutAmount) throw new Error("Checkout amount does not match the license request");
   if (["active", "fulfillment_pending"].includes(purchase.licenseStatus)) return purchase;
 
   const transactionId = typeof checkout.payment_intent === "string"
@@ -733,7 +737,7 @@ async function activateBeatLicenseCheckout(checkout: any, expectedUserId?: numbe
   if (purchase.licenseType === "exclusive") {
     await storage.updateBeat(beat.id, { availabilityStatus: "exclusively_sold", availabilityUpdatedAt: new Date() });
   }
-  void sendBeatLicensePaymentEmails(active, beat.title, deliveryReady).catch((error) => {
+  void sendBeatLicensePaymentEmails(active, beat.title, deliveryReady, Number(checkout.amount_total)).catch((error) => {
     console.error(`Beat license payment email failed for purchase ${purchase.id}:`, error);
   });
   return active;

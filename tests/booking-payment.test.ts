@@ -109,6 +109,24 @@ describe("booking payment notifications", () => {
     expect(f.current().paymentStatus).toBe("refunded");
   });
 
+  it("accepts an explicitly marked 50-cent live test payment for the catalog amount", async () => {
+    const f = fixture();
+    const intent = f.intent("pi_live_test", true, 50);
+    intent.metadata.liveTestPriceOverride = "true";
+    intent.metadata.catalogPriceCents = "5001";
+    await recordBookingPayment(f.store, f.lock, intent);
+    expect(f.current().paymentStatus).toBe("deposit_paid");
+    expect((f.current().paymentMetadata as any).receipts[0].amount).toBe(50);
+  });
+
+  it("rejects a live test payment whose catalog amount was altered", async () => {
+    const f = fixture();
+    const intent = f.intent("pi_bad_live_test", true, 50);
+    intent.metadata.liveTestPriceOverride = "true";
+    intent.metadata.catalogPriceCents = "2999";
+    await expect(recordBookingPayment(f.store, f.lock, intent)).rejects.toThrow("does not match");
+  });
+
   it("records a refund once when the API and webhook report the same refund", async () => {
     const f = fixture();
     await recordBookingPayment(f.store, f.lock, f.intent());

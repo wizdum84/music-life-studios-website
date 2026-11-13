@@ -8,6 +8,24 @@ export const stripe = secretKey
 
 const checkoutIntegrationIdentifier = "music_life_studios_kqmtzvpa";
 
+function liveTestCharge(customerEmail: string, catalogPriceCents: number) {
+  const configuredPrice = Number(process.env.LIVE_TEST_PRICE_CENTS || 0);
+  const allowedEmails = String(process.env.LIVE_TEST_CUSTOMER_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  const eligible = Number.isSafeInteger(configuredPrice) && configuredPrice >= 50 &&
+    allowedEmails.includes(customerEmail.trim().toLowerCase());
+  const metadata: Record<string, string> = eligible ? {
+    liveTestPriceOverride: "true",
+    catalogPriceCents: String(catalogPriceCents),
+  } : {};
+  return {
+    amountCents: eligible ? configuredPrice : catalogPriceCents,
+    metadata,
+  };
+}
+
 export function assertStripeConfigured() {
   if (!stripe) {
     throw new Error("Stripe is not configured. Set STRIPE_SECRET_KEY on the server.");
@@ -24,14 +42,16 @@ export async function createPaymentIntent(input: {
   idempotencyKey?: string;
 }) {
   const client = assertStripeConfigured();
+  const charge = liveTestCharge(input.customerEmail, input.amountCents);
   return client.paymentIntents.create({
-    amount: input.amountCents,
+    amount: charge.amountCents,
     currency: "usd",
     receipt_email: input.customerEmail,
     metadata: {
       bookingId: String(input.bookingId),
       isDeposit: String(input.isDeposit),
       tipAmount: String(input.tipAmount),
+      ...charge.metadata,
     },
     automatic_payment_methods: { enabled: true },
   }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
@@ -52,6 +72,7 @@ export async function createMembershipCheckoutSession(input: {
   cancelUrl: string;
 }) {
   const client = assertStripeConfigured();
+  const charge = liveTestCharge(input.customerEmail, input.priceCents);
   return client.checkout.sessions.create({
     integration_identifier: checkoutIntegrationIdentifier,
     mode: "subscription",
@@ -60,7 +81,7 @@ export async function createMembershipCheckoutSession(input: {
       quantity: 1,
       price_data: {
         currency: "usd",
-        unit_amount: input.priceCents,
+        unit_amount: charge.amountCents,
         recurring: { interval: "month" },
         product_data: { name: `Music Life Passport - ${input.planName}` },
       },
@@ -69,12 +90,14 @@ export async function createMembershipCheckoutSession(input: {
       userId: String(input.userId),
       subscriptionId: String(input.subscriptionId),
       planId: String(input.planId),
+      ...charge.metadata,
     },
     subscription_data: {
       metadata: {
         userId: String(input.userId),
         subscriptionId: String(input.subscriptionId),
         planId: String(input.planId),
+        ...charge.metadata,
       },
     },
     success_url: input.successUrl,
@@ -97,6 +120,7 @@ export async function createBeatLicenseCheckoutSession(input: {
   cancelUrl: string;
 }) {
   const client = assertStripeConfigured();
+  const charge = liveTestCharge(input.customerEmail, input.priceCents);
   return client.checkout.sessions.create({
     integration_identifier: checkoutIntegrationIdentifier,
     mode: "payment",
@@ -105,7 +129,7 @@ export async function createBeatLicenseCheckoutSession(input: {
       quantity: 1,
       price_data: {
         currency: "usd",
-        unit_amount: input.priceCents,
+        unit_amount: charge.amountCents,
         product_data: { name: `${input.beatTitle} - ${input.licenseType} beat license` },
       },
     }],
@@ -113,6 +137,7 @@ export async function createBeatLicenseCheckoutSession(input: {
       beatPurchaseId: String(input.purchaseId),
       beatId: String(input.beatId),
       licenseType: input.licenseType,
+      ...charge.metadata,
     },
     payment_intent_data: {
       receipt_email: input.customerEmail,
@@ -120,6 +145,7 @@ export async function createBeatLicenseCheckoutSession(input: {
         beatPurchaseId: String(input.purchaseId),
         beatId: String(input.beatId),
         licenseType: input.licenseType,
+        ...charge.metadata,
       },
     },
     success_url: input.successUrl,
