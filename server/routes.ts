@@ -1359,6 +1359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Create beat purchase
   app.post("/api/beat-purchases", async (req, res) => {
+    let createdPurchase: Awaited<ReturnType<typeof storage.createBeatPurchase>> | undefined;
     try {
       if (!beatCheckoutEnabled) {
         return res.status(503).json({ error: "Online beat checkout is not available during the booking-first launch." });
@@ -1403,9 +1404,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         transactionId: req.body.transactionId || `pending:${Date.now()}`,
         userId: req.isAuthenticated() ? req.user!.id : null,
       } as any);
-      void sendBeatLicenseRequestEmails(purchase, beat.title).catch((error) => {
-        console.error(`Beat license request email failed for purchase ${purchase.id}:`, error);
-      });
+      createdPurchase = purchase;
       const origin = (process.env.APP_ORIGIN || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
       const checkout = await stripeService.createBeatLicenseCheckoutSession({
         purchaseId: purchase.id,
@@ -1417,8 +1416,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         successUrl: `${origin}/account?tab=bookings&beat_checkout=success&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${origin}/beats?beat_checkout=cancelled`,
       });
+      void sendBeatLicenseRequestEmails(purchase, beat.title).catch((error) => {
+        console.error(`Beat license request email failed for purchase ${purchase.id}:`, error);
+      });
       res.status(201).json({ ...purchase, checkoutUrl: checkout.url });
     } catch (error: any) {
+      if (createdPurchase) {
+        await storage.updateBeatPurchaseContract(createdPurchase.id, true, { licenseStatus: "checkout_failed" } as any).catch(() => undefined);
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -3015,6 +3020,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   refundId: refund.id,
                   amount: refund.amount,
                 });
+              }
+            }
+          }
+        }
+        if (paymentIntentId && (payload.refunded === true || Number(payload.amount_refunded || 0) >= Number(payload.amount || 0))) {
+          const purchase = (await storage.getAllBeatPurchases()).find((item) => item.transactionId === paymentIntentId);
+          if (purchase && purchase.licenseStatus !== "refunded") {
+            await storage.updateBeatPurchaseContract(purchase.id, true, { licenseStatus: "refunded" } as any);
+            if (purchase.licenseType === "exclusive") {
+              const otherExclusive = (await storage.getBeatPurchasesByBeat(purchase.beatId)).some((item) =>
+                item.id !== purchase.id && item.licenseType === "exclusive" && ["active", "fulfillment_pending"].includes(item.licenseStatus),
+              );
+              if (!otherExclusive) {
+                await storage.updateBeat(purchase.beatId, { availabilityStatus: "available_nonexclusive", availabilityUpdatedAt: new Date() });
               }
             }
           }
