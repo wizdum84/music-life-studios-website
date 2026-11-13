@@ -713,9 +713,15 @@ async function activateBeatLicenseCheckout(checkout: any, expectedUserId?: numbe
   if (expectedUserId && purchase.userId !== expectedUserId) throw new Error("Checkout session does not belong to this account");
   if (purchase.licenseStatus === "refunded") throw new Error("This beat license payment was refunded and cannot be reactivated");
   const liveTestOverride = checkout.metadata?.liveTestPriceOverride === "true";
-  const validCheckoutAmount = liveTestOverride
-    ? Number(checkout.metadata?.catalogPriceCents) === purchase.price && Number(checkout.amount_total) >= 50 && Number(checkout.amount_total) < purchase.price
-    : Number(checkout.amount_total) === purchase.price;
+  const catalogPriceCents = Number(checkout.metadata?.catalogPriceCents || purchase.price);
+  const recoveryDiscountPercent = Number(checkout.metadata?.recoveryDiscountPercent || 0);
+  const expectedCheckoutPrice = recoveryDiscountPercent
+    ? Math.max(50, Math.round(purchase.price * (100 - recoveryDiscountPercent) / 100))
+    : purchase.price;
+  const validCheckoutAmount = catalogPriceCents === purchase.price && Number(checkout.metadata?.checkoutPriceCents || expectedCheckoutPrice) === expectedCheckoutPrice &&
+    (liveTestOverride
+      ? Number(checkout.amount_total) >= 50 && Number(checkout.amount_total) <= expectedCheckoutPrice
+      : Number(checkout.amount_total) === expectedCheckoutPrice);
   if (!validCheckoutAmount) throw new Error("Checkout amount does not match the license request");
   if (["active", "fulfillment_pending"].includes(purchase.licenseStatus)) return purchase;
 
@@ -1421,6 +1427,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         successUrl: `${origin}/account?tab=bookings&beat_checkout=success&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${origin}/beats?beat_checkout=cancelled`,
       });
+      await storage.updateBeatPurchaseContract(purchase.id, true, { transactionId: `checkout:${checkout.id}` } as any);
       void sendBeatLicenseRequestEmails(purchase, beat.title).catch((error) => {
         console.error(`Beat license request email failed for purchase ${purchase.id}:`, error);
       });
@@ -1450,7 +1457,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/user/beat-license-requests", isAuthenticated, async (req, res) => {
     try {
       const purchases = await storage.getBeatPurchasesByEmail(req.user!.email);
-      const rows = await Promise.all(purchases.map(async (purchase) => {
+      const customerVisible = purchases.filter((purchase) => !["pending", "checkout_failed", "recovery_pending", "recovery_sent", "abandoned"].includes(purchase.licenseStatus));
+      const rows = await Promise.all(customerVisible.map(async (purchase) => {
         const beat = await storage.getBeat(purchase.beatId);
         return {
           ...purchase,

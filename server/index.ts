@@ -11,6 +11,7 @@ import { startBookingEmailWorker } from "./services/booking-email-worker";
 import { startBookingLifecycleWorker } from "./services/booking-lifecycle";
 import { startBookingOperationsWorker } from "./services/booking-operations-worker";
 import { startMembershipLifecycleWorker } from "./services/membership-lifecycle-worker";
+import { startBeatCheckoutRecoveryWorker } from "./services/beat-checkout-recovery-worker";
 import { setupVite, serveStatic } from "./vite";
 
 const app = express();
@@ -159,6 +160,7 @@ app.use((req, res, next) => {
     startBookingLifecycleWorker();
     startBookingOperationsWorker();
     startMembershipLifecycleWorker();
+    startBeatCheckoutRecoveryWorker();
     operationalLog("info", "server_started", { port, environment: process.env.NODE_ENV || "development" });
   });
 

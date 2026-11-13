@@ -116,11 +116,25 @@ export async function createBeatLicenseCheckoutSession(input: {
   licenseType: string;
   customerEmail: string;
   priceCents: number;
+  recoveryDiscountPercent?: number;
   successUrl: string;
   cancelUrl: string;
 }) {
   const client = assertStripeConfigured();
-  const charge = liveTestCharge(input.customerEmail, input.priceCents);
+  const recoveryDiscountPercent = Math.max(0, Math.min(100, Math.round(input.recoveryDiscountPercent || 0)));
+  const checkoutPriceCents = recoveryDiscountPercent
+    ? Math.max(50, Math.round(input.priceCents * (100 - recoveryDiscountPercent) / 100))
+    : input.priceCents;
+  const charge = liveTestCharge(input.customerEmail, checkoutPriceCents);
+  const purchaseMetadata = {
+    ...charge.metadata,
+    beatPurchaseId: String(input.purchaseId),
+    beatId: String(input.beatId),
+    licenseType: input.licenseType,
+    catalogPriceCents: String(input.priceCents),
+    checkoutPriceCents: String(checkoutPriceCents),
+    ...(recoveryDiscountPercent ? { recoveryDiscountPercent: String(recoveryDiscountPercent) } : {}),
+  };
   return client.checkout.sessions.create({
     integration_identifier: checkoutIntegrationIdentifier,
     mode: "payment",
@@ -133,24 +147,18 @@ export async function createBeatLicenseCheckoutSession(input: {
         product_data: { name: `${input.beatTitle} - ${input.licenseType} beat license` },
       },
     }],
-    metadata: {
-      beatPurchaseId: String(input.purchaseId),
-      beatId: String(input.beatId),
-      licenseType: input.licenseType,
-      ...charge.metadata,
-    },
+    metadata: purchaseMetadata,
     payment_intent_data: {
       receipt_email: input.customerEmail,
-      metadata: {
-        beatPurchaseId: String(input.purchaseId),
-        beatId: String(input.beatId),
-        licenseType: input.licenseType,
-        ...charge.metadata,
-      },
+      metadata: purchaseMetadata,
     },
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
-  }, { idempotencyKey: `beat-license:${input.purchaseId}` });
+  }, { idempotencyKey: `beat-license:${input.purchaseId}:${recoveryDiscountPercent ? "recovery" : "initial"}` });
+}
+
+export async function expireCheckoutSession(sessionId: string) {
+  return assertStripeConfigured().checkout.sessions.expire(sessionId);
 }
 
 export function constructWebhookEvent(payload: Buffer, signature: string | undefined) {

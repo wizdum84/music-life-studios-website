@@ -332,6 +332,19 @@ export async function sendBeatLicenseDeliveryReadyEmail(purchase: BeatPurchase, 
   return true;
 }
 
+export async function sendBeatLicenseRecoveryEmail(purchase: BeatPurchase, beatTitle: string, checkoutUrl: string, discountPercent = 5) {
+  const config = mailConfiguration();
+  if (!config) return false;
+  await config.transport.sendMail({
+    from: config.from,
+    replyTo: config.replyTo,
+    to: purchase.customerEmail,
+    subject: `Still interested in ${beatTitle}? Save ${discountPercent}%`,
+    text: `Hi ${purchase.customerName},\n\nYou started checkout for the ${purchase.licenseType} license for “${beatTitle}” but did not complete payment. If you still want it, use this one-time recovery checkout for ${discountPercent}% off:\n\n${checkoutUrl}\n\nThis reminder is sent only once and the checkout link expires automatically.\n\nMusic Life Studios`,
+  });
+  return true;
+}
+
 export default {
   sendClientConfirmationEmail,
   sendAdminNotificationEmail

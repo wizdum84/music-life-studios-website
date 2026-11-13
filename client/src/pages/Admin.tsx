@@ -9,6 +9,7 @@ import ScheduleManager from "@/components/admin/ScheduleManager";
 import MembershipManager from "@/components/admin/MembershipManager";
 import LoyaltyManager from "@/components/admin/LoyaltyManager";
 import AdminSecurity from "@/components/admin/AdminSecurity";
+import AbandonedCheckoutManager from "@/components/admin/AbandonedCheckoutManager";
 import { Loader2, BarChart2, ExternalLink, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -131,6 +132,7 @@ export default function Admin() {
               <TabsTrigger value="content" className="px-4">Content Manager</TabsTrigger>
               <TabsTrigger value="memberships" className="px-4">Memberships</TabsTrigger>
               <TabsTrigger value="loyalty" className="px-4">Loyalty</TabsTrigger>
+              <TabsTrigger value="abandoned" className="px-4">Abandoned Checkouts</TabsTrigger>
               <TabsTrigger value="schedule" className="px-4">Schedule Manager</TabsTrigger>
               <TabsTrigger value="security" className="px-4">Security</TabsTrigger>
             </TabsList>
@@ -154,6 +156,10 @@ export default function Admin() {
 
           <TabsContent value="loyalty">
             <LoyaltyManager />
+          </TabsContent>
+
+          <TabsContent value="abandoned">
+            <AbandonedCheckoutManager />
           </TabsContent>
           
           <TabsContent value="schedule">
