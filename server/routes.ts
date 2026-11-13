@@ -80,27 +80,41 @@ const bookingAudioUpload = multer({
   },
 });
 
-function createBeatPreview(inputPath: string, outputPath: string) {
+function runAudioConversion(args: string[], failureLabel: string) {
   if (!ffmpegPath) throw new Error("Audio preview generator is unavailable");
   const binaryPath: string = ffmpegPath;
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(binaryPath, [
-      "-y",
-      "-ss", "30",
-      "-i", inputPath,
-      "-t", "45",
-      "-af", "afade=t=in:st=0:d=0.75,afade=t=out:st=43.5:d=1.5,loudnorm=I=-14:TP=-1.5:LRA=11",
-      "-codec:a", "libmp3lame",
-      "-b:a", "192k",
-      outputPath,
-    ], { windowsHide: true });
+    const child = spawn(binaryPath, args, { windowsHide: true });
     let errorOutput = "";
     child.stderr.on("data", (chunk: Buffer) => { errorOutput += String(chunk); });
     child.on("error", reject);
     child.on("close", (code: number | null) => code === 0
       ? resolve()
-      : reject(new Error(`Audio preview generation failed${errorOutput ? `: ${errorOutput.slice(-500)}` : ""}`)));
+      : reject(new Error(`${failureLabel} failed${errorOutput ? `: ${errorOutput.slice(-500)}` : ""}`)));
   });
+}
+
+function createBeatPreview(inputPath: string, outputPath: string) {
+  return runAudioConversion([
+    "-y",
+    "-ss", "30",
+    "-i", inputPath,
+    "-t", "45",
+    "-af", "afade=t=in:st=0:d=0.75,afade=t=out:st=43.5:d=1.5,loudnorm=I=-14:TP=-1.5:LRA=11",
+    "-codec:a", "libmp3lame",
+    "-b:a", "192k",
+    outputPath,
+  ], "Audio preview generation");
+}
+
+function createBasicBeatDelivery(inputPath: string, outputPath: string) {
+  return runAudioConversion([
+    "-y",
+    "-i", inputPath,
+    "-codec:a", "libmp3lame",
+    "-b:a", "320k",
+    outputPath,
+  ], "Basic MP3 generation");
 }
 
 type ContractSigningClaims = {
@@ -1113,18 +1127,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const uploadedFile = req.file;
     if (!uploadedFile) return res.status(400).json({ error: "Select a full beat file" });
     const previewPath = path.join(tmpdir(), `music-life-preview-${randomBytes(12).toString("hex")}.mp3`);
+    const basicDeliveryPath = path.join(tmpdir(), `music-life-basic-${randomBytes(12).toString("hex")}.mp3`);
     let masterObjectKey: string | null = null;
     let previewObjectKey: string | null = null;
     try {
       const beat = await storage.getBeat(Number(req.params.id));
       if (!beat) throw new Error("Beat not found");
 
-      await createBeatPreview(uploadedFile.path, previewPath);
+      await Promise.all([
+        createBeatPreview(uploadedFile.path, previewPath),
+        createBasicBeatDelivery(uploadedFile.path, basicDeliveryPath),
+      ]);
       const timestamp = Date.now();
-      masterObjectKey = buildObjectKey("beats", String(beat.id), "deliverables", "basic", `${timestamp}-${uploadedFile.originalname}`);
+      const sourceName = path.parse(uploadedFile.originalname).name;
+      masterObjectKey = buildObjectKey("beats", String(beat.id), "deliverables", "basic", `${timestamp}-${sourceName}.mp3`);
       previewObjectKey = buildObjectKey("beats", String(beat.id), "previews", `${timestamp}-45-second-preview.mp3`);
 
-      await putPrivateObject(masterObjectKey, createReadStream(uploadedFile.path), uploadedFile.mimetype || "application/octet-stream");
+      await putPrivateObject(masterObjectKey, createReadStream(basicDeliveryPath), "audio/mpeg");
       const publicPreview = await putPublicObject(previewObjectKey, createReadStream(previewPath), "audio/mpeg");
       if (!publicPreview.url) throw new Error("Public media URL is not configured");
 
@@ -1159,6 +1178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await Promise.all([
         rm(uploadedFile.path, { force: true }).catch(() => undefined),
         rm(previewPath, { force: true }).catch(() => undefined),
+        rm(basicDeliveryPath, { force: true }).catch(() => undefined),
       ]);
     }
   });
