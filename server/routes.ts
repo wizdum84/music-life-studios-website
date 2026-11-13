@@ -711,6 +711,7 @@ async function activateBeatLicenseCheckout(checkout: any, expectedUserId?: numbe
   const purchase = await storage.getBeatPurchase(purchaseId);
   if (!purchase) throw new Error("Beat license request not found");
   if (expectedUserId && purchase.userId !== expectedUserId) throw new Error("Checkout session does not belong to this account");
+  if (purchase.licenseStatus === "refunded") throw new Error("This beat license payment was refunded and cannot be reactivated");
   const liveTestOverride = checkout.metadata?.liveTestPriceOverride === "true";
   const validCheckoutAmount = liveTestOverride
     ? Number(checkout.metadata?.catalogPriceCents) === purchase.price && Number(checkout.amount_total) >= 50 && Number(checkout.amount_total) < purchase.price

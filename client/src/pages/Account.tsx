@@ -272,6 +272,10 @@ export default function Account() {
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
     if (!user || params.get("beat_checkout") !== "success" || !sessionId) return;
+    params.delete("beat_checkout");
+    params.delete("session_id");
+    const remainingQuery = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}${window.location.hash}`);
     apiRequest("POST", "/api/user/beat-license/complete-checkout", { sessionId })
       .then(() => {
         queryClient.invalidateQueries({ queryKey: ["/api/user/beat-license-requests"] });
