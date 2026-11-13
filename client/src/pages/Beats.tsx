@@ -40,6 +40,10 @@ type CommerceConfig = {
   membershipEnrollmentEnabled: boolean;
 };
 
+type CatalogBeat = Beat & {
+  deliveryAvailability?: Partial<Record<"basic" | "premium" | "exclusive", boolean>>;
+};
+
 // Every beat row uses the same audio element as the persistent player dock.
 const BeatPlayer = ({ beat }: { beat: Beat }) => {
   const { audioSrc, playing, currentTime, duration, volume, muted, play, pause, seek, setVolume, toggleMute } = useAudio();
@@ -104,7 +108,7 @@ const BeatCover = ({ beat, index, playing, onPlay }: { beat: Beat; index: number
     );
 };
 // Catalog row for displaying an individual beat and its license paths.
-const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
+const BeatCard = ({ beat, index }: { beat: CatalogBeat; index: number }) => {
   const { data: commerceConfig } = useQuery<CommerceConfig>({ queryKey: ["/api/commerce-config"] });
   const beatCheckoutEnabled = commerceConfig?.beatCheckoutEnabled === true;
   const [selectedLicense, setSelectedLicense] = useState("basic");
@@ -121,6 +125,7 @@ const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
   const { toast } = useToast();
   const { audioSrc, playing, play, pause } = useAudio();
   const isBeatPlaying = audioSrc === beat.previewUrl && playing;
+  const selectedTierAvailable = beat.deliveryAvailability?.[selectedLicense as "basic" | "premium" | "exclusive"] === true;
   const handleCoverPlay = () => {
     if (isBeatPlaying) pause();
     else void play(beat.previewUrl || undefined, beat.title);
@@ -324,9 +329,9 @@ const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
                 <p className="text-xs text-[#8d806f]">One beat. Three paths.</p>
               </div>
               <TabsList className="mb-2 grid w-full grid-cols-3 rounded-none border-y border-[#6b481b] bg-transparent p-0">
-                <TabsTrigger value="basic" className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Basic</TabsTrigger>
-                <TabsTrigger value="premium" className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Premium</TabsTrigger>
-                <TabsTrigger value="exclusive" className="rounded-none py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Exclusive</TabsTrigger>
+                <TabsTrigger value="basic" disabled={!beat.deliveryAvailability?.basic} className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Basic</TabsTrigger>
+                <TabsTrigger value="premium" disabled={!beat.deliveryAvailability?.premium} className="rounded-none border-r border-[#3e3020] py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Premium</TabsTrigger>
+                <TabsTrigger value="exclusive" disabled={!beat.deliveryAvailability?.exclusive} className="rounded-none py-3 text-[#8d806f] transition-colors data-[state=active]:bg-[#f6efe3] data-[state=active]:text-[#11100f] data-[state=active]:shadow-none">Exclusive</TabsTrigger>
               </TabsList>
               
               <TabsContent value="basic" className="mt-2 space-y-2 text-sm text-[#d9cdbd]">
@@ -378,10 +383,12 @@ const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
         </CardContent>
         
         <CardFooter className="mt-auto p-4 pt-0">
-          <Button className="w-full rounded-none border border-primary bg-primary px-5 text-primary-foreground shadow-[4px_4px_0_#6d4918] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-primary/90 hover:shadow-[2px_2px_0_#6d4918]" onClick={handlePurchaseClick} disabled={!beatCheckoutEnabled || beat.availabilityStatus !== "available_nonexclusive"}>
+          <Button className="w-full rounded-none border border-primary bg-primary px-5 text-primary-foreground shadow-[4px_4px_0_#6d4918] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-primary/90 hover:shadow-[2px_2px_0_#6d4918]" onClick={handlePurchaseClick} disabled={!beatCheckoutEnabled || beat.availabilityStatus !== "available_nonexclusive" || !selectedTierAvailable}>
             <ShoppingCart className="h-4 w-4 mr-2" />
             {beatCheckoutEnabled
-              ? `Purchase ${selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License`
+              ? selectedTierAvailable
+                ? `Purchase ${selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License`
+                : "Delivery Package Not Available"
               : "Licensing Checkout Coming Soon"}
           </Button>
         </CardFooter>

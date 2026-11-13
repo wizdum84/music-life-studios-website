@@ -1002,7 +1002,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   function serializePublicBeat(beat: any, includeAdminFields: boolean) {
     if (includeAdminFields) return beat;
     const { fullAudioUrl, contractUrl, isrcCode, catalogNumber, producerName, metadata, ...publicBeat } = beat;
-    return publicBeat;
+    return {
+      ...publicBeat,
+      deliveryAvailability: {
+        basic: Boolean(beatDeliverableObjectKey(beat, "basic")),
+        premium: Boolean(beatDeliverableObjectKey(beat, "premium")),
+        exclusive: Boolean(beatDeliverableObjectKey(beat, "exclusive")),
+      },
+    };
   }
   
   // Get all beats
@@ -1298,6 +1305,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerEmail = String(req.body.customerEmail || "").trim().toLowerCase();
       if (customerName.length < 2 || !/^\S+@\S+\.\S+$/.test(customerEmail)) return res.status(400).json({ error: "Enter a valid name and email" });
       if (beat.availabilityStatus !== "available_nonexclusive") return res.status(409).json({ error: "This beat is not currently available for a new license" });
+      if (!beatDeliverableObjectKey(beat, licenseType)) {
+        return res.status(409).json({ error: `The ${licenseType} delivery package for this beat is not available yet.` });
+      }
 
       const priceCents = beatLicensePrice(beat, licenseType);
       const assembly = assembleBeatLicenseAgreement({
@@ -1341,6 +1351,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const requestedLicense = String(req.body.licenseType || "basic") as "basic" | "premium" | "exclusive";
       if (!["basic", "premium", "exclusive"].includes(requestedLicense)) return res.status(400).json({ error: "Select a valid beat license" });
+      if (!beatDeliverableObjectKey(beat, requestedLicense)) {
+        return res.status(409).json({ error: `The ${requestedLicense} delivery package for this beat is not available yet.` });
+      }
       const product = requestedLicense === "exclusive" ? "exclusive" : "paid_nonexclusive";
       if (beat.availabilityStatus !== "available_nonexclusive") {
         return res.status(409).json({ error: "This beat is not currently available for a new license." });

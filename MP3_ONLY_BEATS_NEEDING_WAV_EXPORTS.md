@@ -1,0 +1,107 @@
+# Beats Needing Original WAV Exports
+
+These 95 catalog beats currently have an MP3 master but no genuine WAV master in the matched source library. Their Basic MP3 delivery is ready. Premium and Exclusive delivery remain unavailable until an original WAV export is supplied. Do not convert these MP3 files back into WAV files.
+
+- 2many
+- 2PACK
+- 64
+- ADAM
+- Ahhhh
+- Anon
+- ANX
+- Anyway
+- At All
+- BACK UP
+- BASELOAD
+- BRASSY
+- BRUNT
+- Caef
+- CEDRICK
+- CERAMIC
+- CHIMES
+- China
+- Cleus
+- Clocain
+- Commision
+- COUNTRY
+- COWABUNGA
+- Cruger
+- Cur
+- CUTLASS
+- Dangle
+- DAY DAY
+- DO YO
+- DOORBELL
+- DREX
+- DUBBER
+- DUNGEON
+- ELE2
+- FEET
+- Fews
+- Fied
+- Fition
+- GBK
+- GET INTO IT
+- Getup
+- GG
+- HEY
+- INBOUND
+- KIO
+- LACE
+- Level
+- LISTED
+- LOCK
+- Lude
+- LUNCHBREAK
+- MANEATER
+- MASE
+- Maybe
+- MET HER
+- MI AMORE
+- MORTI
+- Mystic
+- NEWHEAT
+- Nightmarre
+- NOT OURS
+- READER
+- RECOVERY
+- REDCUP
+- ROKIT
+- Roll
+- SANDRO
+- SAVE US
+- Scoundrel
+- SCRAPER
+- SECRETS
+- SERVOCITY
+- SHINY
+- SIMPLON
+- SIRI
+- SIVER
+- SLIDEY
+- Smile
+- SOFT LOVER
+- SOLAR
+- SOMETHING
+- SOUVENIR
+- STYER
+- SULT
+- SUMMER SAVINGS
+- Sumner
+- SUPRA
+- SURVEY
+- TAVED
+- TOP5
+- Trude
+- TRUFFLE
+- TRUTHS
+- TUURNOVER
+- WOODS 2
+
+## Other source gaps
+
+- `EB`: no identifiable full master was found, so no delivery package was created.
+- `HEFT`: Basic and Premium are ready, but the matched tracked-out folder did not contain enough WAV stems for Exclusive.
+- `WOODS 2`: Basic is ready; no matched tracked-out folder was found.
+- `Clocain`: Basic is ready; no matched tracked-out folder was found.
+
