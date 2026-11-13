@@ -3029,7 +3029,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         if (paymentIntentId && (payload.refunded === true || Number(payload.amount_refunded || 0) >= Number(payload.amount || 0))) {
-          const purchase = (await storage.getAllBeatPurchases()).find((item) => item.transactionId === paymentIntentId);
+          const metadataPurchaseId = Number(payload.metadata?.beatPurchaseId);
+          const purchase = Number.isSafeInteger(metadataPurchaseId) && metadataPurchaseId > 0
+            ? await storage.getBeatPurchase(metadataPurchaseId)
+            : (await storage.getAllBeatPurchases()).find((item) => item.transactionId === paymentIntentId);
+          if (purchase && payload.metadata?.beatId && Number(payload.metadata.beatId) !== purchase.beatId) {
+            throw new Error("Refunded charge does not match the beat purchase");
+          }
           if (purchase && purchase.licenseStatus !== "refunded") {
             await storage.updateBeatPurchaseContract(purchase.id, true, { licenseStatus: "refunded" } as any);
             if (purchase.licenseType === "exclusive") {
