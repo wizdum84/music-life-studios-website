@@ -3,8 +3,10 @@ import Stripe from "stripe";
 const secretKey = process.env.STRIPE_SECRET_KEY;
 
 export const stripe = secretKey
-  ? new Stripe(secretKey, { apiVersion: "2025-03-31.basil" })
+  ? new Stripe(secretKey, { apiVersion: "2026-07-29.dahlia" })
   : null;
+
+const checkoutIntegrationIdentifier = "music_life_studios_kqmtzvpa";
 
 export function assertStripeConfigured() {
   if (!stripe) {
@@ -51,6 +53,7 @@ export async function createMembershipCheckoutSession(input: {
 }) {
   const client = assertStripeConfigured();
   return client.checkout.sessions.create({
+    integration_identifier: checkoutIntegrationIdentifier,
     mode: "subscription",
     customer_email: input.customerEmail,
     line_items: [{
@@ -95,6 +98,7 @@ export async function createBeatLicenseCheckoutSession(input: {
 }) {
   const client = assertStripeConfigured();
   return client.checkout.sessions.create({
+    integration_identifier: checkoutIntegrationIdentifier,
     mode: "payment",
     customer_email: input.customerEmail,
     line_items: [{
