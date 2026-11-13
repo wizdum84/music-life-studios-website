@@ -35,6 +35,11 @@ const coverArt = [
   "/assets/beats/covers/cover-masked.png",
 ];
 
+type CommerceConfig = {
+  beatCheckoutEnabled: boolean;
+  membershipEnrollmentEnabled: boolean;
+};
+
 // Every beat row uses the same audio element as the persistent player dock.
 const BeatPlayer = ({ beat }: { beat: Beat }) => {
   const { audioSrc, playing, currentTime, duration, volume, muted, play, pause, seek, setVolume, toggleMute } = useAudio();
@@ -100,6 +105,8 @@ const BeatCover = ({ beat, index, playing, onPlay }: { beat: Beat; index: number
 };
 // Catalog row for displaying an individual beat and its license paths.
 const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
+  const { data: commerceConfig } = useQuery<CommerceConfig>({ queryKey: ["/api/commerce-config"] });
+  const beatCheckoutEnabled = commerceConfig?.beatCheckoutEnabled === true;
   const [selectedLicense, setSelectedLicense] = useState("basic");
   const [purchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
@@ -371,9 +378,11 @@ const BeatCard = ({ beat, index }: { beat: Beat; index: number }) => {
         </CardContent>
         
         <CardFooter className="mt-auto p-4 pt-0">
-          <Button className="w-full rounded-none border border-primary bg-primary px-5 text-primary-foreground shadow-[4px_4px_0_#6d4918] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-primary/90 hover:shadow-[2px_2px_0_#6d4918]" onClick={handlePurchaseClick} disabled={beat.availabilityStatus !== "available_nonexclusive"}>
+          <Button className="w-full rounded-none border border-primary bg-primary px-5 text-primary-foreground shadow-[4px_4px_0_#6d4918] transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-primary/90 hover:shadow-[2px_2px_0_#6d4918]" onClick={handlePurchaseClick} disabled={!beatCheckoutEnabled || beat.availabilityStatus !== "available_nonexclusive"}>
             <ShoppingCart className="h-4 w-4 mr-2" />
-            Purchase {selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License
+            {beatCheckoutEnabled
+              ? `Purchase ${selectedLicense.charAt(0).toUpperCase() + selectedLicense.slice(1)} License`
+              : "Licensing Checkout Coming Soon"}
           </Button>
         </CardFooter>
         </div>

@@ -33,6 +33,11 @@ import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
+const commerceMode = String(
+  process.env.COMMERCE_MODE || (process.env.NODE_ENV === "production" ? "booking_only" : "full"),
+).trim().toLowerCase();
+const beatCheckoutEnabled = commerceMode === "full" || commerceMode === "beats";
+const membershipEnrollmentEnabled = commerceMode === "full" || commerceMode === "memberships";
 const beatDeliverableUpload = multer({
   dest: path.join(tmpdir(), "music-life-studios-uploads"),
   limits: { fileSize: 1024 * 1024 * 1024, files: 1 },
@@ -921,6 +926,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // API routes
+
+  app.get("/api/commerce-config", (_req, res) => {
+    res.json({ beatCheckoutEnabled, membershipEnrollmentEnabled });
+  });
   
   // Services API
   app.get("/api/services", async (req, res) => {
@@ -1324,6 +1333,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create beat purchase
   app.post("/api/beat-purchases", async (req, res) => {
     try {
+      if (!beatCheckoutEnabled) {
+        return res.status(503).json({ error: "Online beat checkout is not available during the booking-first launch." });
+      }
       const beat = await storage.getBeat(Number(req.body.beatId));
       if (!beat) return res.status(404).json({ error: "Beat not found" });
 
@@ -3104,6 +3116,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/user/membership/subscribe", isAuthenticated, async (req, res) => {
     try {
+      if (!membershipEnrollmentEnabled) {
+        return res.status(503).json({ error: "New Passport enrollment is not available during the booking-first launch." });
+      }
       const userId = req.user!.id;
       const { planId, prepaidTermMonths, contractId } = req.body;
 

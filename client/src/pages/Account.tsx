@@ -103,6 +103,11 @@ type MembershipAccountPayload = {
   cancellationLanguage: string;
 };
 
+type CommerceConfig = {
+  beatCheckoutEnabled: boolean;
+  membershipEnrollmentEnabled: boolean;
+};
+
 export default function Account() {
   const [_, navigate] = useLocation();
   const { user, logoutMutation } = useAuth();
@@ -206,6 +211,11 @@ export default function Account() {
   const { data: membershipPlans = [], isLoading: isLoadingMembershipPlans } = useQuery<MembershipPlan[]>({
     queryKey: ["/api/membership/plans"],
   });
+
+  const { data: commerceConfig } = useQuery<CommerceConfig>({
+    queryKey: ["/api/commerce-config"],
+  });
+  const membershipEnrollmentEnabled = commerceConfig?.membershipEnrollmentEnabled === true;
 
   const { data: membershipData = {
     subscription: null,
@@ -835,7 +845,9 @@ export default function Account() {
                   <div className="rounded-lg border p-4">
                     <h3 className="font-semibold mb-2">Choose a Passport Plan</h3>
                     <p className="text-sm text-muted-foreground">
-                      Review and sign your selected Passport agreement before payment. Monthly enrollment continues through Stripe after agreement acceptance.
+                      {membershipEnrollmentEnabled
+                        ? "Review and sign your selected Passport agreement before payment. Monthly enrollment continues through Stripe after agreement acceptance."
+                        : "Passport details are available for review. New enrollment will open after the booking-first launch."}
                     </p>
                   </div>
                   {enrollmentContract && (
@@ -895,12 +907,12 @@ export default function Account() {
                               ))}
                             </ul>
                             <div className="grid grid-cols-1 gap-2">
-                              <Button onClick={() => beginEnrollment(plan.id)} disabled={subscribeMutation.isPending}>
-                                Start Monthly Enrollment
+                              <Button onClick={() => beginEnrollment(plan.id)} disabled={!membershipEnrollmentEnabled || subscribeMutation.isPending}>
+                                {membershipEnrollmentEnabled ? "Start Monthly Enrollment" : "Enrollment Coming Soon"}
                               </Button>
                               {catalog && (
-                                <Button variant="outline" onClick={() => beginEnrollment(plan.id, 3)} disabled={subscribeMutation.isPending}>
-                                  Start Prepaid Enrollment
+                                <Button variant="outline" onClick={() => beginEnrollment(plan.id, 3)} disabled={!membershipEnrollmentEnabled || subscribeMutation.isPending}>
+                                  {membershipEnrollmentEnabled ? "Start Prepaid Enrollment" : "Prepaid Enrollment Coming Soon"}
                                 </Button>
                               )}
                             </div>
