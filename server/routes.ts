@@ -31,6 +31,7 @@ import { issueFeedbackToken, verifyFeedbackToken } from "./services/feedback-lin
 import { sendBeatLicenseDeliveryReadyEmail, sendBeatLicensePaymentEmails, sendBeatLicenseRequestEmails, sendMembershipConfirmationEmail, verifyEmailConnection } from "./services/email";
 import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
+import { membershipPatchFromStripeSubscription } from "./services/membership-stripe-state";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
 const commerceMode = String(
@@ -914,6 +915,53 @@ async function reverseMembershipPaymentEffects(input: {
       paymentAssociationId: input.paymentAssociationId,
       reason: input.reason,
       note: "Unused benefits from this payment were reversed. Redeemed rewards, if any, were marked for admin review.",
+    }),
+  });
+}
+
+async function restoreMembershipPaymentAfterWonDispute(input: {
+  subscriptionId: number;
+  paymentAssociationId: number;
+  stripeEventId: string;
+  providerObjectId: string;
+}) {
+  const ledger = await storage.getMembershipBenefitLedger(input.subscriptionId);
+  const reversals = ledger.filter((entry) =>
+    entry.referenceType === "stripe_charge_disputed" &&
+    entry.referenceId === input.paymentAssociationId &&
+    entry.action === "reversal" && entry.quantity < 0
+  );
+  for (const reversal of reversals) {
+    const entries = (await storage.getMembershipBenefitLedger(input.subscriptionId))
+      .filter((entry) => entry.benefitDefinitionId === reversal.benefitDefinitionId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const balanceBefore = entries.at(-1)?.balanceAfter ?? 0;
+    const quantity = Math.abs(reversal.quantity);
+    await storage.createMembershipBenefitLedger({
+      subscriptionId: input.subscriptionId,
+      benefitDefinitionId: reversal.benefitDefinitionId,
+      action: "credit",
+      quantity,
+      balanceBefore,
+      balanceAfter: balanceBefore + quantity,
+      referenceType: "stripe_dispute_won",
+      referenceId: input.paymentAssociationId,
+      notes: "Benefits restored after Stripe closed the dispute in the studio's favor.",
+    });
+  }
+  for (const reward of (await storage.getMembershipLoyaltyRewards(input.subscriptionId))
+    .filter((item) => item.sourcePaymentAssociationId === input.paymentAssociationId)) {
+    await storage.updateMembershipLoyaltyReward(reward.id, { status: reward.redeemedAt ? "redeemed" : "issued" });
+  }
+  await storage.updateMembershipPaymentAssociation(input.paymentAssociationId, { status: "succeeded" });
+  await storage.updateMembershipSubscription(input.subscriptionId, { status: "active", paymentStatus: "paid", updatedAt: new Date() } as any);
+  await storage.createMembershipEvent({
+    subscriptionId: input.subscriptionId,
+    eventType: "stripe_dispute_won",
+    details: JSON.stringify({
+      stripeEventId: input.stripeEventId,
+      providerObjectId: input.providerObjectId,
+      paymentAssociationId: input.paymentAssociationId,
     }),
   });
 }
@@ -3058,6 +3106,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      if (event.type === "customer.subscription.updated") {
+        const membership = (await storage.getAllMembershipSubscriptions())
+          .find((item) => item.paymentProviderSubscriptionId === payload.id);
+        if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
+          await storage.updateMembershipSubscription(
+            membership.id,
+            membershipPatchFromStripeSubscription(payload, membership) as any,
+          );
+          await storage.createMembershipEvent({
+            subscriptionId: membership.id,
+            eventType: "stripe_subscription_updated",
+            details: JSON.stringify({
+              stripeEventId: event.id,
+              providerSubscriptionId: payload.id,
+              providerStatus: payload.status,
+              cancelAtPeriodEnd: Boolean(payload.cancel_at_period_end),
+              paused: Boolean(payload.pause_collection),
+            }),
+          });
+        }
+      }
+
       if (event.type === "charge.refunded") {
         const paymentIntentId = typeof payload.payment_intent === "string" ? payload.payment_intent : payload.payment_intent?.id;
         if (paymentIntentId && Array.isArray(payload.refunds?.data)) {
@@ -3124,6 +3194,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
             providerObjectId: payload.id,
             reason: "Stripe dispute was opened for the membership payment.",
           });
+        }
+      }
+
+      if (event.type === "charge.dispute.closed") {
+        const chargeId = typeof payload.charge === "string" ? payload.charge : payload.charge?.id;
+        const payment = await findMembershipPaymentByProviderObjects([chargeId, payload.payment_intent]);
+        if (payment && !(await hasStripeMembershipEvent(payment.subscriptionId, event.id))) {
+          if (payload.status === "won") {
+            await restoreMembershipPaymentAfterWonDispute({
+              subscriptionId: payment.subscriptionId,
+              paymentAssociationId: payment.id,
+              stripeEventId: event.id,
+              providerObjectId: payload.id,
+            });
+          } else {
+            await storage.updateMembershipPaymentAssociation(payment.id, { status: "chargeback" });
+            await storage.updateMembershipSubscription(payment.subscriptionId, {
+              status: "suspended", paymentStatus: "chargeback", updatedAt: new Date(),
+            } as any);
+            await storage.createMembershipEvent({
+              subscriptionId: payment.subscriptionId,
+              eventType: "stripe_dispute_lost",
+              details: JSON.stringify({
+                stripeEventId: event.id,
+                providerObjectId: payload.id,
+                paymentAssociationId: payment.id,
+              }),
+            });
+          }
         }
       }
 
@@ -3396,6 +3495,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "No active membership found" });
       }
 
+      if (subscription.paymentProviderSubscriptionId) {
+        await stripeService.scheduleMembershipCancellation(subscription.paymentProviderSubscriptionId);
+      }
+
       const cancelled = await storage.cancelMembershipSubscription(subscription.id, subscription.currentPeriodEnd);
       if (cancelled) {
         await storage.createMembershipEvent({
@@ -3435,6 +3538,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const pauseStart = startDate ? new Date(startDate) : new Date(subscription.nextBillingDate);
       const pauseEnd = endDate ? new Date(endDate) : addMonths(pauseStart, MEMBERSHIP_LAUNCH_RULES.pauseLengthCycles);
+      if (subscription.paymentProviderSubscriptionId) {
+        await stripeService.pauseMembershipBilling(subscription.paymentProviderSubscriptionId, pauseEnd);
+      }
       const paused = await storage.pauseMembershipSubscription(
         subscription.id,
         pauseStart,
@@ -3476,6 +3582,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!pausedSubscription) {
         return res.status(404).json({ error: "No paused membership found" });
+      }
+
+      if (pausedSubscription.paymentProviderSubscriptionId) {
+        await stripeService.resumeMembershipBilling(pausedSubscription.paymentProviderSubscriptionId);
       }
 
       const resumed = await storage.resumeMembershipSubscription(pausedSubscription.id);

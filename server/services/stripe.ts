@@ -73,10 +73,17 @@ export async function createMembershipCheckoutSession(input: {
 }) {
   const client = assertStripeConfigured();
   const charge = liveTestCharge(input.customerEmail, input.priceCents);
+  const testClockId = String(process.env.MEMBERSHIP_QA_TEST_CLOCK_ID || "").trim();
+  if (testClockId && !String(secretKey || "").startsWith("sk_test_")) {
+    throw new Error("MEMBERSHIP_QA_TEST_CLOCK_ID can only be used with a Stripe test secret key.");
+  }
+  const testCustomer = testClockId
+    ? await client.customers.create({ email: input.customerEmail, test_clock: testClockId })
+    : null;
   return client.checkout.sessions.create({
     integration_identifier: checkoutIntegrationIdentifier,
     mode: "subscription",
-    customer_email: input.customerEmail,
+    ...(testCustomer ? { customer: testCustomer.id } : { customer_email: input.customerEmail }),
     line_items: [{
       quantity: 1,
       price_data: {
@@ -107,6 +114,23 @@ export async function createMembershipCheckoutSession(input: {
 
 export async function retrieveCheckoutSession(sessionId: string) {
   return assertStripeConfigured().checkout.sessions.retrieve(sessionId, { expand: ["subscription"] });
+}
+
+export async function scheduleMembershipCancellation(subscriptionId: string, client: Stripe = assertStripeConfigured()) {
+  return client.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
+}
+
+export async function pauseMembershipBilling(subscriptionId: string, resumesAt: Date, client: Stripe = assertStripeConfigured()) {
+  return client.subscriptions.update(subscriptionId, {
+    pause_collection: {
+      behavior: "void",
+      resumes_at: Math.floor(resumesAt.getTime() / 1000),
+    },
+  });
+}
+
+export async function resumeMembershipBilling(subscriptionId: string, client: Stripe = assertStripeConfigured()) {
+  return client.subscriptions.update(subscriptionId, { pause_collection: "" });
 }
 
 export async function createBeatLicenseCheckoutSession(input: {

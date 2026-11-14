@@ -102,7 +102,9 @@ export async function scanMembershipLifecycles(now = new Date()) {
 export function startMembershipLifecycleWorker() {
   const scan = () => void scanMembershipLifecycles().catch((error) => console.error("Unable to scan membership lifecycles:", error));
   scan();
-  const timer = setInterval(scan, 6 * 60 * 60 * 1000);
+  const configuredSeconds = Number(process.env.MEMBERSHIP_LIFECYCLE_SCAN_SECONDS || 6 * 60 * 60);
+  const intervalSeconds = Number.isFinite(configuredSeconds) ? Math.max(30, Math.floor(configuredSeconds)) : 6 * 60 * 60;
+  const timer = setInterval(scan, intervalSeconds * 1000);
   timer.unref();
   return () => clearInterval(timer);
 }
