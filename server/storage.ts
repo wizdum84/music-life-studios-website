@@ -1726,6 +1726,39 @@ class MemoryStorage implements IStorage {
 export const storage = process.env.DATABASE_URL ? new DatabaseStorage() : new MemoryStorage();
 
 const bookingLocks = new Map<number, Promise<unknown>>();
+const beatCheckoutLocks = new Map<string, Promise<unknown>>();
+
+function stableCheckoutLockId(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) hash = Math.imul(31, hash) + value.charCodeAt(index) | 0;
+  return hash;
+}
+
+export async function withBeatCheckoutLock<T>(key: string, work: () => Promise<T>): Promise<T> {
+  if (process.env.DATABASE_URL) {
+    const client = await bookingLockPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(7722, $1::integer)", [stableCheckoutLockId(key)]);
+      return await work();
+    } finally {
+      await client.query("ROLLBACK").catch(() => undefined);
+      client.release();
+    }
+  }
+  const previous = beatCheckoutLocks.get(key) || Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  beatCheckoutLocks.set(key, queued);
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+    if (beatCheckoutLocks.get(key) === queued) beatCheckoutLocks.delete(key);
+  }
+}
 
 // Serialize webhook, browser callback, and email retries for each booking.
 // A database advisory lock also protects deployments with multiple Node processes.

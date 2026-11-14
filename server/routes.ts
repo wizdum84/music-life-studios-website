@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import multer from "multer";
 import ffmpegPath from "ffmpeg-static";
-import { storage, withBookingPaymentLock } from "./storage";
+import { storage, withBeatCheckoutLock, withBookingPaymentLock } from "./storage";
 import { insertBeatSchema, insertBookingSchema, insertMessageSchema, insertMembershipSubscriptionSchema, insertContractSignatureSchema, insertFeedbackSchema } from "@shared/schema";
 import { calculatePricing } from "@shared/pricing";
 import {
@@ -1400,38 +1400,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!signedContract) return res.status(400).json({ error: "Sign the selected beat-license agreement before continuing." });
       if (product !== "exclusive" && !req.body.contentIdAcknowledged) return res.status(400).json({ error: "Acknowledge the nonexclusive license and Content ID restriction." });
 
-      const rightsSnapshot = getBeatRightsSnapshot(product);
-      const purchase = await storage.createBeatPurchase({
-        ...req.body,
-        beatId: beat.id,
-        licenseType: requestedLicense,
-        licenseProduct: product,
-        licenseVersion: beat.licenseVersion,
-        nonexclusive: product !== "exclusive",
-        rightsSnapshot,
-        contentIdAcknowledged: Boolean(req.body.contentIdAcknowledged),
-        licenseStatus: "pending",
-        price: expectedPrice,
-        transactionId: req.body.transactionId || `pending:${Date.now()}`,
-        userId: req.isAuthenticated() ? req.user!.id : null,
-      } as any);
-      createdPurchase = purchase;
       const origin = (process.env.APP_ORIGIN || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
-      const checkout = await stripeService.createBeatLicenseCheckoutSession({
-        purchaseId: purchase.id,
-        beatId: beat.id,
-        beatTitle: beat.title,
-        licenseType: requestedLicense,
-        customerEmail: purchase.customerEmail,
-        priceCents: purchase.price,
-        successUrl: `${origin}/account?tab=bookings&beat_checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: `${origin}/beats?beat_checkout=cancelled`,
+      const normalizedEmail = String(req.body.customerEmail || "").trim().toLowerCase();
+      const checkoutKey = `${normalizedEmail}:${beat.id}:${requestedLicense}`;
+      const result = await withBeatCheckoutLock(checkoutKey, async () => {
+        const candidates = (await storage.getBeatPurchasesByBeat(beat.id)).filter((purchase) =>
+          purchase.customerEmail.trim().toLowerCase() === normalizedEmail &&
+          purchase.licenseType === requestedLicense &&
+          ["pending", "recovery_pending", "recovery_sent"].includes(purchase.licenseStatus) &&
+          (purchase.licenseStatus !== "pending" || Date.now() - purchase.purchaseDate.getTime() < 24 * 60 * 60 * 1000)
+        );
+        for (const existing of candidates) {
+          const prefix = existing.transactionId.startsWith("checkout:") ? "checkout:" : existing.transactionId.startsWith("recovery:") ? "recovery:" : "";
+          if (!prefix) continue;
+          try {
+            const session = await stripeService.retrieveCheckoutSession(existing.transactionId.slice(prefix.length));
+            if (session.payment_status === "paid") {
+              const activated = await activateBeatLicenseCheckout(session, req.isAuthenticated() ? req.user!.id : undefined);
+              return { purchase: activated, checkoutUrl: null, reused: true };
+            }
+            if (session.status === "open" && session.url) return { purchase: existing, checkoutUrl: session.url, reused: true };
+            await storage.updateBeatPurchaseContract(existing.id, true, { licenseStatus: "abandoned" } as any);
+          } catch (error) {
+            console.error(`Unable to inspect existing beat checkout ${existing.id}:`, error);
+            throw new Error("Unable to resume the existing checkout. Please try again.");
+          }
+        }
+
+        const rightsSnapshot = getBeatRightsSnapshot(product);
+        const purchase = await storage.createBeatPurchase({
+          ...req.body,
+          beatId: beat.id,
+          customerEmail: normalizedEmail,
+          licenseType: requestedLicense,
+          licenseProduct: product,
+          licenseVersion: beat.licenseVersion,
+          nonexclusive: product !== "exclusive",
+          rightsSnapshot,
+          contentIdAcknowledged: Boolean(req.body.contentIdAcknowledged),
+          licenseStatus: "pending",
+          price: expectedPrice,
+          transactionId: req.body.transactionId || `pending:${Date.now()}`,
+          userId: req.isAuthenticated() ? req.user!.id : null,
+        } as any);
+        createdPurchase = purchase;
+        const checkout = await stripeService.createBeatLicenseCheckoutSession({
+          purchaseId: purchase.id, beatId: beat.id, beatTitle: beat.title,
+          licenseType: requestedLicense, customerEmail: purchase.customerEmail, priceCents: purchase.price,
+          successUrl: `${origin}/account?tab=bookings&beat_checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${origin}/beats?beat_checkout=cancelled`,
+        });
+        await storage.updateBeatPurchaseContract(purchase.id, true, { transactionId: `checkout:${checkout.id}` } as any);
+        return { purchase, checkoutUrl: checkout.url, reused: false };
       });
-      await storage.updateBeatPurchaseContract(purchase.id, true, { transactionId: `checkout:${checkout.id}` } as any);
-      void sendBeatLicenseRequestEmails(purchase, beat.title).catch((error) => {
-        console.error(`Beat license request email failed for purchase ${purchase.id}:`, error);
+      if (!result.reused) void sendBeatLicenseRequestEmails(result.purchase, beat.title).catch((error) => {
+        console.error(`Beat license request email failed for purchase ${result.purchase.id}:`, error);
       });
-      res.status(201).json({ ...purchase, checkoutUrl: checkout.url });
+      res.status(result.reused ? 200 : 201).json({ ...result.purchase, checkoutUrl: result.checkoutUrl, reused: result.reused });
     } catch (error: any) {
       if (createdPurchase) {
         await storage.updateBeatPurchaseContract(createdPurchase.id, true, { licenseStatus: "checkout_failed" } as any).catch(() => undefined);
