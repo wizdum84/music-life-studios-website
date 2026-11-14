@@ -2,7 +2,9 @@ import { storage } from "../storage";
 import { createBeatLicenseCheckoutSession, expireCheckoutSession, retrieveCheckoutSession } from "./stripe";
 import { sendBeatLicenseRecoveryEmail } from "./email";
 
-const RECOVERY_AFTER_MS = 24 * 60 * 60 * 1000;
+// Temporary live QA window. Restore to 24 hours after the controlled recovery-email test.
+const RECOVERY_AFTER_MS = 2 * 60 * 1000;
+const RECOVERY_SCAN_INTERVAL_MS = 30 * 1000;
 const RECOVERY_DISCOUNT_PERCENT = 5;
 let scanning = false;
 
@@ -59,7 +61,7 @@ export async function scanBeatCheckoutRecoveries(now = new Date()) {
 
 export function startBeatCheckoutRecoveryWorker() {
   void scanBeatCheckoutRecoveries();
-  const timer = setInterval(() => void scanBeatCheckoutRecoveries(), 15 * 60 * 1000);
+  const timer = setInterval(() => void scanBeatCheckoutRecoveries(), RECOVERY_SCAN_INTERVAL_MS);
   timer.unref?.();
   return timer;
 }
