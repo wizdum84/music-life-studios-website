@@ -186,6 +186,7 @@ export interface IStorage {
   createBeatPurchase(purchase: InsertBeatPurchase): Promise<BeatPurchase>;
   updateBeatPurchaseContract(id: number, contractSigned: boolean, patch?: Partial<InsertBeatPurchase>): Promise<BeatPurchase | undefined>;
   incrementBeatPurchaseDownloadCount(id: number): Promise<BeatPurchase | undefined>;
+  deleteBeatPurchase(id: number): Promise<boolean>;
   
   // Contracts
   getAllContracts(): Promise<Contract[]>;
@@ -652,6 +653,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(beatPurchases.id, id))
       .returning();
     return result[0];
+  }
+
+  async deleteBeatPurchase(id: number): Promise<boolean> {
+    const result = await db.delete(beatPurchases).where(eq(beatPurchases.id, id)).returning({ id: beatPurchases.id });
+    return result.length > 0;
   }
 
   // Contracts
@@ -1652,6 +1658,7 @@ class MemoryStorage implements IStorage {
     const purchase = await this.getBeatPurchase(id);
     return purchase ? this.updateById(this.beatPurchasesData, id, { downloadCount: (purchase.downloadCount || 0) + 1 }) : undefined;
   }
+  async deleteBeatPurchase(id: number) { return this.deleteById(this.beatPurchasesData, id); }
 
   async getAllContracts() { return this.contractsData; }
   async getContractsByCategory(category: string) { return this.contractsData.filter((contract) => contract.category === category); }

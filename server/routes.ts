@@ -1367,6 +1367,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message });
     }
   });
+
+  app.delete("/api/beat-purchases/:id", requireAdmin, async (req, res) => {
+    try {
+      const purchase = await storage.getBeatPurchase(Number(req.params.id));
+      if (!purchase) return res.status(404).json({ error: "Beat checkout not found" });
+      const removableStatuses = new Set(["pending", "recovery_pending", "recovery_sent", "abandoned", "checkout_failed"]);
+      if (!removableStatuses.has(purchase.licenseStatus)) {
+        return res.status(409).json({ error: "Only unpaid or abandoned checkout attempts can be deleted." });
+      }
+      await storage.deleteBeatPurchase(purchase.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
   
   // Create beat purchase
   app.post("/api/beat-purchases", async (req, res) => {
