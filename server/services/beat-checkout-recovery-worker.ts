@@ -2,9 +2,8 @@ import { storage } from "../storage";
 import { createBeatLicenseCheckoutSession, expireCheckoutSession, retrieveCheckoutSession } from "./stripe";
 import { sendBeatLicenseRecoveryEmail } from "./email";
 
-// Temporary live QA window. Restore to 24 hours after the controlled recovery-email test.
-const RECOVERY_AFTER_MS = 2 * 60 * 1000;
-const RECOVERY_SCAN_INTERVAL_MS = 30 * 1000;
+const RECOVERY_AFTER_MS = 24 * 60 * 60 * 1000;
+const RECOVERY_SCAN_INTERVAL_MS = 15 * 60 * 1000;
 const RECOVERY_DISCOUNT_PERCENT = 5;
 let scanning = false;
 
