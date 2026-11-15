@@ -337,7 +337,7 @@ export const contractSignatures = pgTable("contract_signatures", {
   contractId: integer("contract_id").notNull(),
   customerName: text("customer_name").notNull(),
   customerEmail: text("customer_email").notNull(),
-  signatureData: text("signature_data").notNull(), // Base64 signature image
+  signatureData: text("signature_data").notNull(), // Typed name or Base64 signature image
   ipAddress: text("ip_address"), // IP address for verification
   agreedToTerms: boolean("agreed_to_terms").notNull().default(false),
   relatedEntityType: text("related_entity_type"), // "beat", "booking", etc.
@@ -354,7 +354,7 @@ export const insertContractSignatureSchema = createInsertSchema(contractSignatur
     contractId: z.number(),
     customerName: z.string().min(2, "Name must be at least 2 characters"),
     customerEmail: z.string().email("Please enter a valid email"),
-    signatureData: z.string().min(10, "Signature data is required"),
+    signatureData: z.string().trim().min(2, "Signature data is required"),
     ipAddress: z.string().optional(),
     agreedToTerms: z.boolean(),
     relatedEntityType: z.string().optional(),

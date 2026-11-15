@@ -23,4 +23,26 @@ describe("security-sensitive input schemas", () => {
     expect(result.success).toBe(true);
     expect(result.data?.agreedToTerms).toBe(false);
   });
+
+  it("accepts a short typed contract signature", () => {
+    const result = insertContractSignatureSchema.safeParse({
+      contractId: 1,
+      customerName: "Artist QA",
+      customerEmail: "artist@example.com",
+      signatureData: "Artist QA",
+      agreedToTerms: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a blank contract signature", () => {
+    const result = insertContractSignatureSchema.safeParse({
+      contractId: 1,
+      customerName: "Artist QA",
+      customerEmail: "artist@example.com",
+      signatureData: "   ",
+      agreedToTerms: true,
+    });
+    expect(result.success).toBe(false);
+  });
 });
