@@ -3,8 +3,44 @@ import { isEmailConfigured, sendMembershipLifecycleEmail, sendRewardExpirationEm
 import { deadlineHasPassed } from "./membership-benefits";
 import { retryPendingMembershipLifecycleEmails } from "./membership-lifecycle-email-queue";
 import { retrieveMembershipTestClockTime } from "./stripe";
+import { isOrphanedPendingMembership } from "./membership-checkout-state";
 
 const DAY = 24 * 60 * 60 * 1000;
+
+async function retireOrphanedMembershipEnrollments(now: Date) {
+  let retiredCount = 0;
+  for (const membership of await storage.getAllMembershipSubscriptions()) {
+    if (membership.status !== "pending_payment") continue;
+    const [events, payments] = await Promise.all([
+      storage.getMembershipEvents(membership.id),
+      storage.getMembershipPaymentAssociations(membership.id),
+    ]);
+    const hasCheckoutSession = events.some((event) => event.eventType === "stripe_membership_checkout_created");
+    if (!isOrphanedPendingMembership({
+      status: membership.status,
+      paymentProviderSubscriptionId: membership.paymentProviderSubscriptionId,
+      createdAt: membership.createdAt,
+      hasCheckoutSession,
+      hasPaymentAssociation: payments.length > 0,
+      now,
+    })) continue;
+
+    await storage.updateMembershipSubscription(membership.id, {
+      status: "checkout_failed",
+      paymentStatus: "failed",
+      updatedAt: now,
+    } as any);
+    if (!events.some((event) => event.eventType === "enrollment_checkout_abandoned_worker")) {
+      await storage.createMembershipEvent({
+        subscriptionId: membership.id,
+        eventType: "enrollment_checkout_abandoned_worker",
+        details: JSON.stringify({ retiredAt: now.toISOString() }),
+      });
+    }
+    retiredCount += 1;
+  }
+  return retiredCount;
+}
 
 async function eventExists(subscriptionId: number, eventType: string) {
   return (await storage.getMembershipEvents(subscriptionId)).some((event) => event.eventType === eventType);
@@ -107,6 +143,11 @@ export async function scanMembershipLifecycles(now?: Date) {
   if (running) return { membershipEmails: 0, rewardEmails: 0 };
   running = true;
   try {
+    const operationalNow = new Date();
+    const retiredEnrollments = await retireOrphanedMembershipEnrollments(operationalNow);
+    if (retiredEnrollments > 0) {
+      console.info(`Retired ${retiredEnrollments} orphaned membership enrollment(s).`);
+    }
     const effectiveNow = now ?? await retrieveMembershipTestClockTime() ?? new Date();
     const queuedEmails = await retryPendingMembershipLifecycleEmails();
     return {
