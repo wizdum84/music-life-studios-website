@@ -32,6 +32,7 @@ import { sendBeatLicenseDeliveryReadyEmail, sendBeatLicensePaymentEmails, sendBe
 import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
 import { membershipPatchFromStripeSubscription } from "./services/membership-stripe-state";
+import { stripeInvoiceIsRenewal, stripeInvoiceServicePeriod, stripeInvoiceSubscriptionId } from "./services/membership-stripe-invoice";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
 const commerceMode = String(
@@ -3042,25 +3043,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (event.type === "invoice.paid") {
-        const providerSubscriptionId = typeof payload.subscription === "string" ? payload.subscription : payload.subscription?.id;
+        const providerSubscriptionId = stripeInvoiceSubscriptionId(payload);
         const membership = providerSubscriptionId
           ? (await storage.getAllMembershipSubscriptions()).find((item) => item.paymentProviderSubscriptionId === providerSubscriptionId)
           : undefined;
         if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
+          const servicePeriod = stripeInvoiceServicePeriod(payload);
+          const periodStart = servicePeriod?.start ?? membership.currentPeriodStart;
+          const periodEnd = servicePeriod?.end ?? addMonths(membership.currentPeriodEnd, 1);
+          const updated = await storage.updateMembershipSubscription(membership.id, {
+            status: "active",
+            paymentStatus: "paid",
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            nextBillingDate: periodEnd,
+            paidThroughDate: periodEnd,
+            updatedAt: new Date(),
+          } as any);
           const providerPaymentId = `invoice:${payload.id}`;
           const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(providerPaymentId);
-          if (!existingPayment) {
-            const periodStart = payload.period_start ? new Date(payload.period_start * 1000) : membership.currentPeriodStart;
-            const periodEnd = payload.period_end ? new Date(payload.period_end * 1000) : addMonths(membership.currentPeriodEnd, 1);
-            const updated = await storage.updateMembershipSubscription(membership.id, {
-              status: "active",
-              paymentStatus: "paid",
-              currentPeriodStart: periodStart,
-              currentPeriodEnd: periodEnd,
-              nextBillingDate: periodEnd,
-              paidThroughDate: periodEnd,
-              updatedAt: new Date(),
-            } as any);
+          if (!existingPayment && stripeInvoiceIsRenewal(payload)) {
             const payment = await storage.createMembershipPaymentAssociation({
               subscriptionId: membership.id,
               paymentProviderId: providerPaymentId,
@@ -3086,13 +3088,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.createMembershipEvent({
             subscriptionId: membership.id,
             eventType: "stripe_invoice_paid",
-            details: JSON.stringify({ stripeEventId: event.id, invoiceId: payload.id }),
+            details: JSON.stringify({
+              stripeEventId: event.id,
+              invoiceId: payload.id,
+              billingReason: payload.billing_reason ?? null,
+              periodStart: periodStart.toISOString(),
+              periodEnd: periodEnd.toISOString(),
+              benefitsIssued: !existingPayment && stripeInvoiceIsRenewal(payload),
+            }),
           });
+        } else if (providerSubscriptionId && !membership) {
+          console.warn(`Stripe invoice ${payload.id} references unknown membership subscription ${providerSubscriptionId}`);
         }
       }
 
       if (event.type === "invoice.payment_failed") {
-        const providerSubscriptionId = typeof payload.subscription === "string" ? payload.subscription : payload.subscription?.id;
+        const providerSubscriptionId = stripeInvoiceSubscriptionId(payload);
         const membership = providerSubscriptionId
           ? (await storage.getAllMembershipSubscriptions()).find((item) => item.paymentProviderSubscriptionId === providerSubscriptionId)
           : undefined;
