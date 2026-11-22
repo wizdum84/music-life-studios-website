@@ -2,6 +2,16 @@
 
 This runbook covers the booking-first Render deployment. Never paste secrets into tickets, logs, screenshots, or this file.
 
+## Account and browser-session safety
+
+Use the established, regular browser profile for Music Life Studios operations. Do not open an incognito window, temporary browser session, separate automated browser profile, or sign in to a different Render, Stripe, Cloudflare, Zoho, GitHub, or Namecheap account while completing a deployment or QA task. A separate browser session can silently select a different account or workspace and make the correct services appear missing.
+
+Before changing settings, confirm the page shows the expected Music Life Studios workspace, service, Stripe mode, and account. If the displayed account or workspace differs, stop without changing anything and ask the owner to confirm the correct account. Never create a replacement service, workspace, webhook, database, or credential merely because the expected resource is not visible.
+
+Use this prompt when handing browser work to another AI assistant:
+
+> Continue only in my existing regular browser session and the already established Music Life Studios accounts. Do not open an incognito window, temporary browser session, separate automated browser profile, or sign in to a different account. Before making changes, confirm the displayed account, workspace, service, and Stripe mode match the task. If they do not match—or the expected resource is missing—stop and report exactly what is displayed. Do not create replacement resources, reveal secrets, or change production unless I explicitly approve it.
+
 ## Health and uptime monitoring
 
 - Liveness: `GET /api/health` confirms that the Node process can answer requests.
