@@ -3049,8 +3049,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : undefined;
         if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
           const servicePeriod = stripeInvoiceServicePeriod(payload);
-          const periodStart = servicePeriod?.start ?? membership.currentPeriodStart;
-          const periodEnd = servicePeriod?.end ?? addMonths(membership.currentPeriodEnd, 1);
+          const renewal = stripeInvoiceIsRenewal(payload);
+          const periodStart = servicePeriod?.start ?? (renewal ? membership.currentPeriodEnd : membership.currentPeriodStart);
+          const periodEnd = servicePeriod?.end ?? (renewal ? addMonths(membership.currentPeriodEnd, 1) : membership.currentPeriodEnd);
           const updated = await storage.updateMembershipSubscription(membership.id, {
             status: "active",
             paymentStatus: "paid",
@@ -3062,7 +3063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } as any);
           const providerPaymentId = `invoice:${payload.id}`;
           const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(providerPaymentId);
-          if (!existingPayment && stripeInvoiceIsRenewal(payload)) {
+          if (!existingPayment && renewal) {
             const payment = await storage.createMembershipPaymentAssociation({
               subscriptionId: membership.id,
               paymentProviderId: providerPaymentId,
@@ -3094,7 +3095,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               billingReason: payload.billing_reason ?? null,
               periodStart: periodStart.toISOString(),
               periodEnd: periodEnd.toISOString(),
-              benefitsIssued: !existingPayment && stripeInvoiceIsRenewal(payload),
+              benefitsIssued: !existingPayment && renewal,
             }),
           });
         } else if (providerSubscriptionId && !membership) {
