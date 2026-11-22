@@ -34,6 +34,7 @@ import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObjec
 import { membershipPatchFromStripeSubscription } from "./services/membership-stripe-state";
 import { stripeInvoiceIsRenewal, stripeInvoiceServicePeriod, stripeInvoiceSubscriptionId } from "./services/membership-stripe-invoice";
 import { benefitBalanceExpiresAt, calculateRenewalBenefitTransition } from "./services/membership-benefits";
+import { queueMembershipLifecycleEmail } from "./services/membership-lifecycle-email-queue";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
 const commerceMode = String(
@@ -3050,10 +3051,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const existingPayment = await storage.getMembershipPaymentAssociationByProviderId(providerPaymentId);
           if (!existingPayment) {
             const providerSubscriptionId = typeof payload.subscription === "string" ? payload.subscription : payload.subscription?.id ?? null;
+            const providerSubscription = providerSubscriptionId
+              ? await stripeService.retrieveMembershipSubscription(providerSubscriptionId)
+              : null;
+            const initialInvoice = providerSubscription && typeof providerSubscription.latest_invoice === "object"
+              ? providerSubscription.latest_invoice
+              : null;
+            const initialPeriod = initialInvoice ? stripeInvoiceServicePeriod(initialInvoice) : null;
             const updated = await storage.updateMembershipSubscription(membership.id, {
               status: "active",
               paymentStatus: "paid",
               paymentProviderSubscriptionId: providerSubscriptionId,
+              ...(initialPeriod ? {
+                currentPeriodStart: initialPeriod.start,
+                currentPeriodEnd: initialPeriod.end,
+                nextBillingDate: initialPeriod.end,
+                paidThroughDate: initialPeriod.end,
+              } : {}),
               updatedAt: new Date(),
             } as any);
             const plan = await storage.getMembershipPlan(membership.planId);
@@ -3086,6 +3100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? (await storage.getAllMembershipSubscriptions()).find((item) => item.paymentProviderSubscriptionId === providerSubscriptionId)
           : undefined;
         if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
+          const wasPastDue = ["past_due", "payment_failed"].includes(membership.status) || membership.paymentStatus === "failed";
           const servicePeriod = stripeInvoiceServicePeriod(payload);
           const renewal = stripeInvoiceIsRenewal(payload);
           const periodStart = servicePeriod?.start ?? (renewal ? membership.currentPeriodEnd : membership.currentPeriodStart);
@@ -3136,6 +3151,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               benefitsIssued: !existingPayment && renewal,
             }),
           });
+          if (renewal) {
+            await queueMembershipLifecycleEmail({
+              subscriptionId: membership.id,
+              sourceId: payload.id,
+              kind: wasPastDue ? "recovered" : "renewed",
+              effectiveDate: periodEnd,
+            });
+          }
         } else if (providerSubscriptionId && !membership) {
           console.warn(`Stripe invoice ${payload.id} references unknown membership subscription ${providerSubscriptionId}`);
         }
@@ -3153,6 +3176,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             eventType: "stripe_invoice_payment_failed",
             details: JSON.stringify({ stripeEventId: event.id, invoiceId: payload.id }),
           });
+          await queueMembershipLifecycleEmail({
+            subscriptionId: membership.id,
+            sourceId: payload.id,
+            kind: "payment_failed",
+          });
         }
       }
 
@@ -3160,7 +3188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const membership = (await storage.getAllMembershipSubscriptions())
           .find((item) => item.paymentProviderSubscriptionId === payload.id);
         if (membership && !(await hasStripeMembershipEvent(membership.id, event.id))) {
-          await storage.updateMembershipSubscription(
+          const updated = await storage.updateMembershipSubscription(
             membership.id,
             membershipPatchFromStripeSubscription(payload, membership) as any,
           );
@@ -3175,6 +3203,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               paused: Boolean(payload.pause_collection),
             }),
           });
+          if (payload.cancel_at_period_end && updated) {
+            await queueMembershipLifecycleEmail({
+              subscriptionId: membership.id,
+              sourceId: payload.id,
+              kind: "cancelled",
+              effectiveDate: updated.cancellationEffectiveAt || updated.paidThroughDate,
+            });
+          }
         }
       }
 
@@ -3284,6 +3320,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             subscriptionId: membership.id,
             eventType: "stripe_subscription_cancelled",
             details: JSON.stringify({ stripeEventId: event.id, providerSubscriptionId: payload.id }),
+          });
+          await queueMembershipLifecycleEmail({
+            subscriptionId: membership.id,
+            sourceId: payload.id,
+            kind: "cancelled",
+            effectiveDate: membership.cancellationEffectiveAt || membership.paidThroughDate,
           });
         }
       }

@@ -116,6 +116,12 @@ export async function retrieveCheckoutSession(sessionId: string) {
   return assertStripeConfigured().checkout.sessions.retrieve(sessionId, { expand: ["subscription"] });
 }
 
+export async function retrieveMembershipSubscription(subscriptionId: string) {
+  return assertStripeConfigured().subscriptions.retrieve(subscriptionId, {
+    expand: ["latest_invoice.lines"],
+  });
+}
+
 export async function scheduleMembershipCancellation(subscriptionId: string, client: Stripe = assertStripeConfigured()) {
   return client.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
 }

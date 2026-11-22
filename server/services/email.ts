@@ -231,7 +231,7 @@ export async function sendFeedbackRequestEmail(booking: Booking, feedbackUrl: st
 export async function sendMembershipLifecycleEmail(
   user: Pick<User, "email" | "firstName" | "username">,
   plan: MembershipPlan,
-  kind: "renewal" | "payment_failed" | "cancelled",
+  kind: "renewal" | "renewed" | "payment_failed" | "recovered" | "cancelled",
   effectiveDate?: Date,
 ) {
   const config = mailConfiguration();
@@ -240,9 +240,13 @@ export async function sendMembershipLifecycleEmail(
   const formattedDate = effectiveDate?.toLocaleDateString("en-US", { timeZone: "America/Chicago", month: "long", day: "numeric", year: "numeric" });
   const content = kind === "renewal"
     ? { subject: `${plan.name} renews soon`, body: `Hi ${name},\n\nYour ${plan.name} membership is scheduled to renew${formattedDate ? ` on ${formattedDate}` : " soon"}. You can review your membership from your Music Life Studios account.\n\nMusic Life Studios` }
+    : kind === "renewed"
+      ? { subject: `${plan.name} membership renewed`, body: `Hi ${name},\n\nYour ${plan.name} membership renewal was successful${formattedDate ? ` and your membership is paid through ${formattedDate}` : ""}. Your new monthly benefits are available in your Music Life Studios account.\n\nMusic Life Studios` }
     : kind === "payment_failed"
       ? { subject: `${plan.name} payment needs attention`, body: `Hi ${name},\n\nWe could not verify the latest payment for your ${plan.name} membership. Please contact Music Life Studios so we can help keep your benefits active.\n\nMusic Life Studios` }
-      : { subject: `${plan.name} membership cancelled`, body: `Hi ${name},\n\nYour ${plan.name} membership has been cancelled${formattedDate ? ` effective ${formattedDate}` : ""}. Reply if you have questions.\n\nMusic Life Studios` };
+      : kind === "recovered"
+        ? { subject: `${plan.name} payment recovered`, body: `Hi ${name},\n\nYour ${plan.name} membership payment was recovered successfully${formattedDate ? ` and your membership is paid through ${formattedDate}` : ""}. Your membership is active again.\n\nMusic Life Studios` }
+        : { subject: `${plan.name} membership cancelled`, body: `Hi ${name},\n\nYour ${plan.name} membership has been cancelled${formattedDate ? ` effective ${formattedDate}` : ""}. Reply if you have questions.\n\nMusic Life Studios` };
   await config.transport.sendMail({ from: config.from, replyTo: config.replyTo, to: user.email, subject: content.subject, text: content.body });
   return true;
 }

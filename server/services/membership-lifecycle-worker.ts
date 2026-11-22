@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { isEmailConfigured, sendMembershipLifecycleEmail, sendRewardExpirationEmail } from "./email";
 import { deadlineHasPassed } from "./membership-benefits";
+import { retryPendingMembershipLifecycleEmails } from "./membership-lifecycle-email-queue";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -17,14 +18,7 @@ async function sendMembershipLifecycleNotifications(now: Date) {
     let kind: "renewal" | "payment_failed" | "cancelled" | null = null;
     let eventType = "";
     let effectiveDate: Date | undefined;
-    if (["past_due", "payment_failed"].includes(membership.status) || membership.paymentStatus === "failed") {
-      kind = "payment_failed";
-      eventType = "membership_payment_failed_email_sent";
-    } else if (membership.status === "cancelled") {
-      kind = "cancelled";
-      eventType = "membership_cancellation_email_sent";
-      effectiveDate = membership.cancellationEffectiveAt || membership.paidThroughDate;
-    } else if (membership.status === "active") {
+    if (membership.status === "active") {
       const nextBilling = new Date(membership.nextBillingDate);
       const untilBilling = nextBilling.getTime() - now.getTime();
       if (untilBilling > 0 && untilBilling <= 3 * DAY) {
@@ -112,8 +106,9 @@ export async function scanMembershipLifecycles(now = new Date()) {
   if (running) return { membershipEmails: 0, rewardEmails: 0 };
   running = true;
   try {
+    const queuedEmails = await retryPendingMembershipLifecycleEmails();
     return {
-      membershipEmails: await sendMembershipLifecycleNotifications(now),
+      membershipEmails: queuedEmails + await sendMembershipLifecycleNotifications(now),
       rewardEmails: await sendRewardExpirationNotifications(now),
     };
   } finally { running = false; }

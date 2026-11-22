@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { sendMail } = vi.hoisted(() => ({ sendMail: vi.fn(async () => ({ accepted: ["test@example.com"] })) }));
 vi.mock("nodemailer", () => ({ default: { createTransport: () => ({ sendMail }) } }));
-import { sendWelcomeEmail, sendClientConfirmationEmail, sendEmailVerificationEmail } from "../server/services/email";
+import { sendWelcomeEmail, sendClientConfirmationEmail, sendEmailVerificationEmail, sendMembershipLifecycleEmail } from "../server/services/email";
 import type { Booking } from "../shared/schema";
 
 beforeEach(() => {
@@ -64,5 +64,22 @@ describe("transactional email content", () => {
     const message = sendMail.mock.calls[0] as unknown as [{ text: string }];
     expect(message[0].text).toContain("Paid in this payment: $100.00");
     expect(message[0].text).toContain("Remaining booking balance: $100.00");
+  });
+  it("describes successful renewal and payment recovery", async () => {
+    const user = { email: "test@example.com", firstName: "Alex", username: "alex" };
+    const plan = { name: "Artist Access" } as any;
+    const paidThrough = new Date("2027-04-14T12:00:00Z");
+
+    await sendMembershipLifecycleEmail(user, plan, "renewed", paidThrough);
+    expect(sendMail).toHaveBeenLastCalledWith(expect.objectContaining({
+      subject: "Artist Access membership renewed",
+      text: expect.stringContaining("renewal was successful"),
+    }));
+
+    await sendMembershipLifecycleEmail(user, plan, "recovered", paidThrough);
+    expect(sendMail).toHaveBeenLastCalledWith(expect.objectContaining({
+      subject: "Artist Access payment recovered",
+      text: expect.stringContaining("active again"),
+    }));
   });
 });
