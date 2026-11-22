@@ -3452,7 +3452,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const existingMembership = await storage.getUserMembership(userId);
-      if (existingMembership && ["active", "cancel_pending", "paused", "past_due", "pending_payment"].includes(existingMembership.status)) {
+      if (existingMembership?.status === "pending_payment") {
+        const events = await storage.getMembershipEvents(existingMembership.id);
+        const checkoutCreated = events.find((event) => event.eventType === "stripe_membership_checkout_created");
+        if (checkoutCreated) {
+          try {
+            const details = JSON.parse(checkoutCreated.details || "{}") as { checkoutSessionId?: string };
+            if (details.checkoutSessionId) {
+              const existingCheckout = await stripeService.retrieveCheckoutSession(details.checkoutSessionId);
+              if (existingCheckout.status === "open" && existingCheckout.url) {
+                return res.json({ ...(await getMembershipAccountPayload(userId)), checkoutUrl: existingCheckout.url });
+              }
+              if (existingCheckout.status !== "expired") {
+                return res.status(409).json({ error: "Your existing membership checkout is being finalized. Refresh your membership status before trying again." });
+              }
+            }
+          } catch (error) {
+            console.error(`Unable to resume membership checkout ${existingMembership.id}:`, error);
+            return res.status(503).json({ error: "Unable to check the existing Stripe checkout. Please try again shortly." });
+          }
+        }
+        await storage.updateMembershipSubscription(existingMembership.id, {
+          status: "checkout_failed",
+          paymentStatus: "failed",
+          updatedAt: new Date(),
+        } as any);
+        await storage.createMembershipEvent({
+          subscriptionId: existingMembership.id,
+          eventType: "enrollment_checkout_abandoned",
+          details: JSON.stringify({ retiredAt: new Date().toISOString() }),
+        });
+      } else if (existingMembership && ["active", "cancel_pending", "paused", "past_due"].includes(existingMembership.status)) {
         return res.status(400).json({ error: "You already have a membership record in progress." });
       }
 
@@ -3505,17 +3535,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let checkoutUrl: string | null = null;
       if (stripeService.stripe && termMonths === 1) {
         const origin = `${req.protocol}://${req.get("host")}`;
-        const checkout = await stripeService.createMembershipCheckoutSession({
-          customerEmail: req.user!.email,
-          userId,
-          subscriptionId: subscription.id,
-          planId: plan.id,
-          planName: plan.name,
-          priceCents: plan.priceCents,
-          successUrl: `${origin}/account?tab=membership&checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-          cancelUrl: `${origin}/account?tab=membership&checkout=cancelled`,
-        });
-        checkoutUrl = checkout.url;
+        try {
+          const checkout = await stripeService.createMembershipCheckoutSession({
+            customerEmail: req.user!.email,
+            userId,
+            subscriptionId: subscription.id,
+            planId: plan.id,
+            planName: plan.name,
+            priceCents: plan.priceCents,
+            successUrl: `${origin}/account?tab=membership&checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+            cancelUrl: `${origin}/account?tab=membership&checkout=cancelled`,
+          });
+          checkoutUrl = checkout.url;
+          await storage.createMembershipEvent({
+            subscriptionId: subscription.id,
+            eventType: "stripe_membership_checkout_created",
+            details: JSON.stringify({ checkoutSessionId: checkout.id, createdAt: new Date().toISOString() }),
+          });
+        } catch (error) {
+          await storage.updateMembershipSubscription(subscription.id, {
+            status: "checkout_failed",
+            paymentStatus: "failed",
+            updatedAt: new Date(),
+          } as any);
+          await storage.createMembershipEvent({
+            subscriptionId: subscription.id,
+            eventType: "stripe_membership_checkout_failed",
+            details: JSON.stringify({ failedAt: new Date().toISOString() }),
+          });
+          throw error;
+        }
       }
 
       res.status(201).json({ ...(await getMembershipAccountPayload(userId)), checkoutUrl });
