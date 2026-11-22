@@ -122,6 +122,16 @@ export async function retrieveMembershipSubscription(subscriptionId: string) {
   });
 }
 
+export async function retrieveMembershipTestClockTime() {
+  const testClockId = String(process.env.MEMBERSHIP_QA_TEST_CLOCK_ID || "").trim();
+  if (!testClockId) return null;
+  if (!String(secretKey || "").startsWith("sk_test_")) {
+    throw new Error("MEMBERSHIP_QA_TEST_CLOCK_ID can only be used with a Stripe test secret key.");
+  }
+  const clock = await assertStripeConfigured().testHelpers.testClocks.retrieve(testClockId);
+  return new Date(clock.frozen_time * 1000);
+}
+
 export async function scheduleMembershipCancellation(subscriptionId: string, client: Stripe = assertStripeConfigured()) {
   return client.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
 }

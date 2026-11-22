@@ -2,6 +2,7 @@ import { storage } from "../storage";
 import { isEmailConfigured, sendMembershipLifecycleEmail, sendRewardExpirationEmail } from "./email";
 import { deadlineHasPassed } from "./membership-benefits";
 import { retryPendingMembershipLifecycleEmails } from "./membership-lifecycle-email-queue";
+import { retrieveMembershipTestClockTime } from "./stripe";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -102,14 +103,15 @@ async function sendRewardExpirationNotifications(now: Date) {
 }
 
 let running = false;
-export async function scanMembershipLifecycles(now = new Date()) {
+export async function scanMembershipLifecycles(now?: Date) {
   if (running) return { membershipEmails: 0, rewardEmails: 0 };
   running = true;
   try {
+    const effectiveNow = now ?? await retrieveMembershipTestClockTime() ?? new Date();
     const queuedEmails = await retryPendingMembershipLifecycleEmails();
     return {
-      membershipEmails: queuedEmails + await sendMembershipLifecycleNotifications(now),
-      rewardEmails: await sendRewardExpirationNotifications(now),
+      membershipEmails: queuedEmails + await sendMembershipLifecycleNotifications(effectiveNow),
+      rewardEmails: await sendRewardExpirationNotifications(effectiveNow),
     };
   } finally { running = false; }
 }
