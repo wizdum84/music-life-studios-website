@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import { isEmailConfigured, sendMembershipLifecycleEmail, sendRewardExpirationEmail } from "./email";
+import { deadlineHasPassed } from "./membership-benefits";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -45,7 +46,7 @@ async function sendMembershipLifecycleNotifications(now: Date) {
 }
 
 async function sendRewardExpirationNotifications(now: Date) {
-  if (!isEmailConfigured()) return 0;
+  const emailConfigured = isEmailConfigured();
   let sentCount = 0;
   for (const user of (await storage.getAllUsers()).filter((item) => item.role === "customer")) {
     let records;
@@ -55,7 +56,14 @@ async function sendRewardExpirationNotifications(now: Date) {
       const deadline = new Date(reward.redemptionDeadline!);
       const timeLeft = deadline.getTime() - now.getTime();
       const metadata = reward.metadata && typeof reward.metadata === "object" ? reward.metadata as Record<string, unknown> : {};
-      if (timeLeft <= 0 || timeLeft > 7 * DAY || metadata.expirationReminderSentAt) continue;
+      if (deadlineHasPassed(deadline, now)) {
+        await storage.updateLoyaltyRecord(reward.id, {
+          status: "expired",
+          metadata: { ...metadata, expiredAt: now.toISOString() },
+        });
+        continue;
+      }
+      if (!emailConfigured || timeLeft > 7 * DAY || metadata.expirationReminderSentAt) continue;
       try {
         if (!await sendRewardExpirationEmail(user, "Music Lifer reward", deadline)) continue;
         await storage.updateLoyaltyRecord(reward.id, { metadata: { ...metadata, expirationReminderSentAt: now.toISOString() } });
@@ -74,7 +82,19 @@ async function sendRewardExpirationNotifications(now: Date) {
       const deadline = new Date(deadlineValue);
       const timeLeft = deadline.getTime() - now.getTime();
       const eventType = `membership_reward_expiration_${reward.id}`;
-      if (timeLeft <= 0 || timeLeft > 7 * DAY || await eventExists(membership.id, eventType)) continue;
+      if (deadlineHasPassed(deadline, now)) {
+        await storage.updateMembershipLoyaltyReward(reward.id, { status: "expired" });
+        const expiredEventType = `membership_reward_expired_${reward.id}`;
+        if (!await eventExists(membership.id, expiredEventType)) {
+          await storage.createMembershipEvent({
+            subscriptionId: membership.id,
+            eventType: expiredEventType,
+            details: JSON.stringify({ rewardId: reward.id, expiredAt: now.toISOString() }),
+          });
+        }
+        continue;
+      }
+      if (!emailConfigured || timeLeft > 7 * DAY || await eventExists(membership.id, eventType)) continue;
       try {
         if (!await sendRewardExpirationEmail(user, "Passport membership reward", deadline)) continue;
         await storage.createMembershipEvent({ subscriptionId: membership.id, eventType, details: JSON.stringify({ rewardId: reward.id, sentAt: now.toISOString() }) });

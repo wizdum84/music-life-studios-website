@@ -49,6 +49,16 @@ describe("transactional email content", () => {
     await sendWelcomeEmail({ email: "test@example.com", firstName: "Alex", username: "alex" });
     expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to: "test@example.com", subject: "Welcome to Music Life Studios", text: expect.stringContaining("Your account is ready") }));
   });
+  it("labels QA email and blocks recipients outside its allowlist", async () => {
+    vi.stubEnv("EMAIL_ENVIRONMENT_LABEL", "QA");
+    vi.stubEnv("EMAIL_RECIPIENT_ALLOWLIST", "test@example.com,bookings@example.com");
+
+    await sendWelcomeEmail({ email: "test@example.com", firstName: "Alex", username: "alex" });
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ subject: "[QA] Welcome to Music Life Studios" }));
+
+    await expect(sendWelcomeEmail({ email: "other@example.com", firstName: "Other", username: "other" }))
+      .rejects.toThrow("Email recipient is not allowed in QA environment");
+  });
   it("shows the actual deposit and remaining balance", async () => {
     await sendClientConfirmationEmail({ id: 1, name: "Alex", email: "test@example.com", date: new Date("2026-11-10T18:00:00Z"), duration: 120, amount: 20000, paymentStatus: "deposit_paid" } as Booking, "pi_test", 10000);
     const message = sendMail.mock.calls[0] as unknown as [{ text: string }];

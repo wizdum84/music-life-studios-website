@@ -86,6 +86,28 @@ function mailConfiguration() {
     };
   }
 
+  const environmentLabel = String(process.env.EMAIL_ENVIRONMENT_LABEL || "").trim();
+  const recipientAllowlist = new Set(
+    String(process.env.EMAIL_RECIPIENT_ALLOWLIST || "")
+      .split(",")
+      .map((address) => address.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const baseTransport = transport;
+  transport = {
+    async sendMail(message) {
+      const recipient = message.to.trim().toLowerCase();
+      if (recipientAllowlist.size > 0 && !recipientAllowlist.has(recipient)) {
+        throw new Error(`Email recipient is not allowed in ${environmentLabel || "this"} environment`);
+      }
+      return baseTransport.sendMail({
+        ...message,
+        subject: environmentLabel ? `[${environmentLabel}] ${message.subject}` : message.subject,
+      });
+    },
+    verify: () => baseTransport.verify(),
+  };
+
   return {
     transport,
     from: `"${senderName}" <${senderAddress}>`,

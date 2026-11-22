@@ -33,6 +33,7 @@ import { setupAuth } from "./auth";
 import { buildObjectKey, createPrivateDownloadUrl, deleteObject, putPrivateObject, putPublicObject } from "./services/object-storage";
 import { membershipPatchFromStripeSubscription } from "./services/membership-stripe-state";
 import { stripeInvoiceIsRenewal, stripeInvoiceServicePeriod, stripeInvoiceSubscriptionId } from "./services/membership-stripe-invoice";
+import { benefitBalanceExpiresAt, calculateRenewalBenefitTransition } from "./services/membership-benefits";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
 const commerceMode = String(
@@ -662,7 +663,7 @@ async function getMembershipAccountPayload(userId: number) {
       rolloverAllowed: definition.rolloverAllowed,
       rolloverLimit: definition.rolloverLimit,
       balance: latest ? latest.balanceAfter : 0,
-      expiresAt: definition.expiresAfterCycles > 0 ? addBillingCycles(subscription.currentPeriodEnd, definition.expiresAfterCycles - 1) : subscription.currentPeriodEnd,
+      expiresAt: benefitBalanceExpiresAt(subscription.currentPeriodEnd, definition.expiresAfterCycles),
     };
   });
 
@@ -767,6 +768,7 @@ async function activateWaitingBeatDeliveries(beat: { id: number; title: string }
 async function issueMembershipBenefits(subscriptionId: number, planId: number, referenceType: string, referenceId: number | null, notes: string) {
   const definitions = await storage.getMembershipBenefitDefinitions(planId);
   const existingLedger = await storage.getMembershipBenefitLedger(subscriptionId);
+  const isRenewal = referenceType === "stripe_renewal";
 
   for (const definition of definitions) {
     const latest = existingLedger
@@ -774,6 +776,42 @@ async function issueMembershipBenefits(subscriptionId: number, planId: number, r
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       .at(-1);
     const balanceBefore = latest?.balanceAfter ?? 0;
+
+    if (isRenewal) {
+      const transition = calculateRenewalBenefitTransition({
+        currentBalance: balanceBefore,
+        cycleQuantity: definition.quantity,
+        rolloverAllowed: definition.rolloverAllowed,
+        rolloverLimit: definition.rolloverLimit,
+      });
+
+      if (transition.expiredQuantity > 0) {
+        await storage.createMembershipBenefitLedger({
+          subscriptionId,
+          benefitDefinitionId: definition.id,
+          action: "expiration",
+          quantity: -transition.expiredQuantity,
+          balanceBefore: transition.balanceBefore,
+          balanceAfter: transition.carriedQuantity,
+          referenceType,
+          referenceId,
+          notes: `Expired unused benefits before renewal. ${notes}`,
+        });
+      }
+
+      await storage.createMembershipBenefitLedger({
+        subscriptionId,
+        benefitDefinitionId: definition.id,
+        action: "credit",
+        quantity: transition.creditQuantity,
+        balanceBefore: transition.carriedQuantity,
+        balanceAfter: transition.balanceAfter,
+        referenceType,
+        referenceId,
+        notes,
+      });
+      continue;
+    }
 
     await storage.createMembershipBenefitLedger({
       subscriptionId,
