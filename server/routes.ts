@@ -35,6 +35,7 @@ import { membershipPatchFromStripeSubscription } from "./services/membership-str
 import { stripeInvoiceIsRenewal, stripeInvoiceServicePeriod, stripeInvoiceSubscriptionId } from "./services/membership-stripe-invoice";
 import { benefitBalanceExpiresAt, calculateRenewalBenefitTransition } from "./services/membership-benefits";
 import { queueMembershipLifecycleEmail } from "./services/membership-lifecycle-email-queue";
+import { isOrphanedPendingMembership } from "./services/membership-checkout-state";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
 const commerceMode = String(
@@ -610,6 +611,58 @@ async function getContractAccountStatus(userId: number | null | undefined): Prom
   if (plan?.tier === "consistent_artist") return "passport_builder";
   if (plan?.tier === "release_artist") return "passport_release";
   return "music_lifer";
+}
+
+async function retireOrphanedMembershipForUser(userId: number, now = new Date()) {
+  const membership = await storage.getUserMembership(userId);
+  if (!membership || membership.status !== "pending_payment") return false;
+
+  const [events, payments] = await Promise.all([
+    storage.getMembershipEvents(membership.id),
+    storage.getMembershipPaymentAssociations(membership.id),
+  ]);
+  if (membership.paymentProviderSubscriptionId || payments.length > 0) return false;
+
+  const checkoutCreated = [...events]
+    .reverse()
+    .find((event) => event.eventType === "stripe_membership_checkout_created");
+  let hasUsableCheckoutSession = false;
+  if (checkoutCreated) {
+    try {
+      const details = JSON.parse(checkoutCreated.details || "{}") as { checkoutSessionId?: string };
+      if (details.checkoutSessionId) {
+        const checkout = await stripeService.retrieveCheckoutSession(details.checkoutSessionId);
+        hasUsableCheckoutSession = checkout.status !== "expired";
+      }
+    } catch (error) {
+      console.error(`Unable to inspect pending membership checkout ${membership.id}:`, error);
+      return false;
+    }
+  }
+
+  if (!isOrphanedPendingMembership({
+    status: membership.status,
+    paymentProviderSubscriptionId: membership.paymentProviderSubscriptionId,
+    createdAt: membership.createdAt,
+    hasCheckoutSession: hasUsableCheckoutSession,
+    hasPaymentAssociation: payments.length > 0,
+    now,
+  })) return false;
+
+  await storage.updateMembershipSubscription(membership.id, {
+    status: "checkout_failed",
+    paymentStatus: "failed",
+    updatedAt: now,
+  } as any);
+  if (!events.some((event) => event.eventType === "enrollment_checkout_abandoned_account_refresh")) {
+    await storage.createMembershipEvent({
+      subscriptionId: membership.id,
+      eventType: "enrollment_checkout_abandoned_account_refresh",
+      details: JSON.stringify({ retiredAt: now.toISOString() }),
+    });
+  }
+  console.info(`Retired orphaned membership enrollment ${membership.id} during account refresh.`);
+  return true;
 }
 
 async function getMembershipAccountPayload(userId: number) {
@@ -3364,6 +3417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/user/membership", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
+      await retireOrphanedMembershipForUser(userId);
       res.json(await getMembershipAccountPayload(userId));
     } catch (error) {
       console.error("Error fetching user membership:", error);
