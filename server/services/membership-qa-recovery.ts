@@ -1,5 +1,4 @@
 import type { IStorage } from "../storage";
-import { createHmac } from "node:crypto";
 import {
   assertMembershipQaRecoveryEnvironment,
   createMembershipCheckoutSession,
@@ -11,13 +10,6 @@ export const MEMBERSHIP_QA_RECOVERY = {
   email: "wizdum84@gmail.com",
   expectedSucceededPayments: 2,
 } as const;
-
-export function issueMembershipQaRecoveryToken(secret: string, testClockId: string) {
-  if (secret.length < 32) throw new Error("QA recovery requires a strong session secret.");
-  return createHmac("sha256", secret)
-    .update(`membership-qa-recovery:${testClockId}:${MEMBERSHIP_QA_RECOVERY.userId}:${MEMBERSHIP_QA_RECOVERY.membershipId}`)
-    .digest("base64url");
-}
 
 type CreateCheckout = typeof createMembershipCheckoutSession;
 

@@ -94,9 +94,7 @@ app.use([
 
 // Reject cross-site state-changing requests while allowing Stripe's server-to-server webhook.
 app.use((req, res, next) => {
-  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS"
-    || req.path === "/api/stripe/webhook"
-    || req.path === "/api/user/membership/qa-recovery-checkout") {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS" || req.path === "/api/stripe/webhook") {
     return next();
   }
   const origin = req.get("origin");
