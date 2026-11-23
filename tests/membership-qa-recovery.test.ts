@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { assertMembershipQaRecoveryEnvironment } from "../server/services/stripe";
+import { assertMembershipQaRecoveryEnvironment, selectOldestMatchingTestCustomer } from "../server/services/stripe";
 import { createMembershipQaRecoveryCheckout } from "../server/services/membership-qa-recovery";
 import type { IStorage } from "../server/storage";
 
@@ -10,6 +10,15 @@ const validEnvironment = {
 } as NodeJS.ProcessEnv;
 
 describe("membership QA recovery guards", () => {
+  it("reuses the oldest matching customer on a full QA Test Clock", () => {
+    const selected = selectOldestMatchingTestCustomer([
+      { id: "cus_new", email: "wizdum84@gmail.com", created: 30 },
+      { id: "cus_other", email: "other@example.com", created: 5 },
+      { id: "cus_first", email: "WIZDUM84@gmail.com", created: 10 },
+    ] as any, "wizdum84@gmail.com");
+    expect(selected?.id).toBe("cus_first");
+  });
+
   it("accepts only the exact QA origin with test credentials and a test clock", () => {
     expect(assertMembershipQaRecoveryEnvironment(validEnvironment)).toEqual({
       appOrigin: "https://music-life-studios-membership-qa.onrender.com",

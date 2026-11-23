@@ -33,6 +33,13 @@ export function assertStripeConfigured() {
   return stripe;
 }
 
+export function selectOldestMatchingTestCustomer(customers: Stripe.Customer[], customerEmail: string) {
+  const normalizedEmail = customerEmail.trim().toLowerCase();
+  return customers
+    .filter((customer) => customer.email?.trim().toLowerCase() === normalizedEmail)
+    .sort((left, right) => left.created - right.created)[0] ?? null;
+}
+
 export async function createPaymentIntent(input: {
   amountCents: number;
   bookingId: number;
@@ -78,9 +85,21 @@ export async function createMembershipCheckoutSession(input: {
   if (testClockId && !String(secretKey || "").startsWith("sk_test_")) {
     throw new Error("MEMBERSHIP_QA_TEST_CLOCK_ID can only be used with a Stripe test secret key.");
   }
-  const testCustomer = testClockId
-    ? await client.customers.create({ email: input.customerEmail, test_clock: testClockId })
-    : null;
+  let testCustomer: Stripe.Customer | null = null;
+  if (testClockId) {
+    const matchingCustomers = await client.customers.list({
+      email: input.customerEmail,
+      test_clock: testClockId,
+      limit: 100,
+    });
+    testCustomer = selectOldestMatchingTestCustomer(matchingCustomers.data, input.customerEmail);
+    if (!testCustomer) {
+      testCustomer = await client.customers.create(
+        { email: input.customerEmail, test_clock: testClockId },
+        input.idempotencyKey ? { idempotencyKey: `${input.idempotencyKey}:customer` } : undefined,
+      );
+    }
+  }
   return client.checkout.sessions.create({
     integration_identifier: checkoutIntegrationIdentifier,
     mode: "subscription",
