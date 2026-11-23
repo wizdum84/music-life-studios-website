@@ -3433,6 +3433,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         || req.user!.email.trim().toLowerCase() !== MEMBERSHIP_QA_RECOVERY.email) {
         return res.status(403).type("text/plain").send("This QA recovery is restricted to the approved test account.");
       }
+      const recoveryToken = randomBytes(32).toString("base64url");
+      (req.session as any).qaMembershipRecoveryToken = recoveryToken;
       res.type("html").send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QA membership recovery</title></head>
@@ -3440,6 +3442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 <h1>QA membership recovery</h1>
 <p>This creates one idempotent Stripe sandbox Checkout for QA user 4 and membership 5. It preserves the two verified payments and creates no membership record.</p>
 <form method="post" action="/api/user/membership/qa-recovery-checkout">
+<input type="hidden" name="recoveryToken" value="${recoveryToken}">
 <button type="submit" style="font:inherit;padding:.7rem 1rem;cursor:pointer">Create recovery Checkout</button>
 </form></body></html>`);
     } catch {
@@ -3449,13 +3452,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/user/membership/qa-recovery-checkout", isAuthenticated, async (req, res) => {
     try {
-      const { appOrigin } = stripeService.assertMembershipQaRecoveryEnvironment();
-      if (req.get("origin") !== appOrigin) {
-        return res.status(403).type("text/plain").send("Invalid recovery request origin.");
-      }
+      stripeService.assertMembershipQaRecoveryEnvironment();
       if (req.user!.id !== MEMBERSHIP_QA_RECOVERY.userId
         || req.user!.email.trim().toLowerCase() !== MEMBERSHIP_QA_RECOVERY.email) {
         return res.status(403).type("text/plain").send("This QA recovery is restricted to the approved test account.");
+      }
+      const submittedToken = String(req.body.recoveryToken || "");
+      const expectedToken = String((req.session as any).qaMembershipRecoveryToken || "");
+      delete (req.session as any).qaMembershipRecoveryToken;
+      const submittedBytes = Buffer.from(submittedToken);
+      const expectedBytes = Buffer.from(expectedToken);
+      if (!submittedToken || submittedBytes.length !== expectedBytes.length
+        || !timingSafeEqual(submittedBytes, expectedBytes)) {
+        return res.status(403).type("text/plain").send("Invalid or expired recovery confirmation.");
       }
       const recovery = await createMembershipQaRecoveryCheckout(storage);
       res.redirect(303, recovery.checkoutUrl);
