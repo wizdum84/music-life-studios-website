@@ -36,7 +36,7 @@ import { stripeInvoiceIsRenewal, stripeInvoiceServicePeriod, stripeInvoiceSubscr
 import { benefitBalanceExpiresAt, calculateRenewalBenefitTransition } from "./services/membership-benefits";
 import { queueMembershipLifecycleEmail } from "./services/membership-lifecycle-email-queue";
 import { isOrphanedPendingMembership } from "./services/membership-checkout-state";
-import { createMembershipQaRecoveryCheckout, MEMBERSHIP_QA_RECOVERY } from "./services/membership-qa-recovery";
+import { createMembershipQaRecoveryCheckout, issueMembershipQaRecoveryToken, MEMBERSHIP_QA_RECOVERY } from "./services/membership-qa-recovery";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
 const commerceMode = String(
@@ -3428,13 +3428,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/user/membership/qa-recovery-checkout", isAuthenticated, (req, res) => {
     try {
-      stripeService.assertMembershipQaRecoveryEnvironment();
+      const { testClockId } = stripeService.assertMembershipQaRecoveryEnvironment();
       if (req.user!.id !== MEMBERSHIP_QA_RECOVERY.userId
         || req.user!.email.trim().toLowerCase() !== MEMBERSHIP_QA_RECOVERY.email) {
         return res.status(403).type("text/plain").send("This QA recovery is restricted to the approved test account.");
       }
-      const recoveryToken = randomBytes(32).toString("base64url");
-      (req.session as any).qaMembershipRecoveryToken = recoveryToken;
+      const recoveryToken = issueMembershipQaRecoveryToken(String(process.env.SESSION_SECRET || ""), testClockId);
       res.type("html").send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QA membership recovery</title></head>
@@ -3452,14 +3451,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/user/membership/qa-recovery-checkout", isAuthenticated, async (req, res) => {
     try {
-      stripeService.assertMembershipQaRecoveryEnvironment();
+      const { testClockId } = stripeService.assertMembershipQaRecoveryEnvironment();
       if (req.user!.id !== MEMBERSHIP_QA_RECOVERY.userId
         || req.user!.email.trim().toLowerCase() !== MEMBERSHIP_QA_RECOVERY.email) {
         return res.status(403).type("text/plain").send("This QA recovery is restricted to the approved test account.");
       }
       const submittedToken = String(req.body.recoveryToken || "");
-      const expectedToken = String((req.session as any).qaMembershipRecoveryToken || "");
-      delete (req.session as any).qaMembershipRecoveryToken;
+      const expectedToken = issueMembershipQaRecoveryToken(String(process.env.SESSION_SECRET || ""), testClockId);
       const submittedBytes = Buffer.from(submittedToken);
       const expectedBytes = Buffer.from(expectedToken);
       if (!submittedToken || submittedBytes.length !== expectedBytes.length

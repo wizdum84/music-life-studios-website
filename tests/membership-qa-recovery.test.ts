@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { assertMembershipQaRecoveryEnvironment, selectOldestMatchingTestCustomer } from "../server/services/stripe";
-import { createMembershipQaRecoveryCheckout } from "../server/services/membership-qa-recovery";
+import { createMembershipQaRecoveryCheckout, issueMembershipQaRecoveryToken } from "../server/services/membership-qa-recovery";
 import type { IStorage } from "../server/storage";
 
 const validEnvironment = {
@@ -10,6 +10,14 @@ const validEnvironment = {
 } as NodeJS.ProcessEnv;
 
 describe("membership QA recovery guards", () => {
+  it("issues a stable signed confirmation tied to the Test Clock", () => {
+    const secret = "a".repeat(32);
+    const token = issueMembershipQaRecoveryToken(secret, "clock_example");
+    expect(token).toBe(issueMembershipQaRecoveryToken(secret, "clock_example"));
+    expect(token).not.toBe(issueMembershipQaRecoveryToken(secret, "clock_other"));
+    expect(() => issueMembershipQaRecoveryToken("short", "clock_example")).toThrow(/strong session secret/i);
+  });
+
   it("reuses the oldest matching customer on a full QA Test Clock", () => {
     const selected = selectOldestMatchingTestCustomer([
       { id: "cus_new", email: "wizdum84@gmail.com", created: 30 },
