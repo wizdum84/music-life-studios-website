@@ -38,6 +38,13 @@ type AdminMembershipRow = {
     details: string;
     createdAt: string | Date;
   }>;
+  missingReward: {
+    cycleNumber: number;
+    thresholdMonths: number;
+    successfulPaymentCount: number;
+    qualifyingPaymentId: number;
+    missingRewards: Array<{ milestoneId: number; rewardType: string; rewardQuantity: number }>;
+  } | null;
 };
 
 export default function MembershipManager() {
@@ -84,6 +91,25 @@ export default function MembershipManager() {
     },
   });
 
+  const issueRewardMutation = useMutation({
+    mutationFn: async (subscriptionId: number) => {
+      const response = await apiRequest("POST", `/api/admin/memberships/${subscriptionId}/issue-reward`, {});
+      return response.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/memberships"] });
+      toast({
+        title: result.idempotent ? "Reward already handled" : "Reward issued",
+        description: result.idempotent
+          ? "No qualifying missing reward remains."
+          : "The missing membership reward was issued and recorded in the audit history.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Reward issuance failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const selectedMembership = memberships.find((item) => item.subscription.id.toString() === selectedSubscriptionId);
   const benefitOptions = selectedMembership
     ? Array.from(new Map(selectedMembership.ledger.map((entry) => [entry.benefitDefinitionId, entry])).values())
@@ -108,6 +134,14 @@ export default function MembershipManager() {
 
   return (
     <div className="space-y-6">
+      {memberships.some((item) => item.missingReward) && (
+        <Card className="border-amber-500/60 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle>Membership reward needs review</CardTitle>
+            <CardDescription>Verified payments reached a reward threshold, but the expected reward is missing. Use Issue reward on the matching member.</CardDescription>
+          </CardHeader>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Memberships</CardTitle>
@@ -135,6 +169,15 @@ export default function MembershipManager() {
                   <div><p className="text-muted-foreground">Ledger entries</p><p>{item.ledger.length}</p></div>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
+                  {item.missingReward && (
+                    <Button
+                      size="sm"
+                      onClick={() => issueRewardMutation.mutate(item.subscription.id)}
+                      disabled={issueRewardMutation.isPending}
+                    >
+                      Issue reward
+                    </Button>
+                  )}
                   {item.subscription.status === "pending_payment" && (
                     <Button size="sm" onClick={() => activateMutation.mutate(item.subscription.id)} disabled={activateMutation.isPending}>Activate</Button>
                   )}
@@ -174,15 +217,27 @@ export default function MembershipManager() {
                     {item.plan && <div className="text-xs text-muted-foreground">{formatCurrency(item.plan.priceCents)} / month</div>}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={item.subscription.status === "active" ? "default" : "secondary"}>
-                      {item.subscription.status.replace("_", " ")}
-                    </Badge>
+                    <div className="space-y-1">
+                      <Badge variant={item.subscription.status === "active" ? "default" : "secondary"}>
+                        {item.subscription.status.replace("_", " ")}
+                      </Badge>
+                      {item.missingReward && <Badge variant="destructive">Reward missing</Badge>}
+                    </div>
                   </TableCell>
                   <TableCell>{formatDate(item.subscription.nextBillingDate)}</TableCell>
                   <TableCell>{formatDate(item.subscription.paidThroughDate)}</TableCell>
                   <TableCell>{item.ledger.length}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      {item.missingReward && (
+                        <Button
+                          size="sm"
+                          onClick={() => issueRewardMutation.mutate(item.subscription.id)}
+                          disabled={issueRewardMutation.isPending}
+                        >
+                          Issue reward
+                        </Button>
+                      )}
                       {item.subscription.status === "pending_payment" && (
                         <Button size="sm" onClick={() => activateMutation.mutate(item.subscription.id)} disabled={activateMutation.isPending}>
                           Activate

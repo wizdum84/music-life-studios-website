@@ -1,9 +1,10 @@
 import { storage } from "../storage";
-import { isEmailConfigured, sendMembershipLifecycleEmail, sendRewardExpirationEmail } from "./email";
+import { isEmailConfigured, sendMembershipLifecycleEmail, sendMissingMembershipRewardAlert, sendRewardExpirationEmail } from "./email";
 import { deadlineHasPassed } from "./membership-benefits";
 import { retryPendingMembershipLifecycleEmails } from "./membership-lifecycle-email-queue";
 import { retrieveMembershipTestClockTime } from "./stripe";
 import { isOrphanedPendingMembership } from "./membership-checkout-state";
+import { getMissingMembershipReward } from "./membership-reward-fallback";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -138,9 +139,46 @@ async function sendRewardExpirationNotifications(now: Date) {
   return sentCount;
 }
 
+async function sendMissingRewardAlerts(now: Date) {
+  if (!isEmailConfigured()) return 0;
+  let sentCount = 0;
+  for (const membership of await storage.getAllMembershipSubscriptions()) {
+    const missing = await getMissingMembershipReward(storage, membership);
+    if (!missing) continue;
+    const eventType = `membership_reward_missing_alert_cycle_${missing.cycleNumber}`;
+    if (await eventExists(membership.id, eventType)) continue;
+    const [user, plan] = await Promise.all([
+      storage.getUser(membership.userId),
+      storage.getMembershipPlan(membership.planId),
+    ]);
+    if (!user || !plan) continue;
+    try {
+      const sent = await sendMissingMembershipRewardAlert(user, plan, membership, {
+        cycleNumber: missing.cycleNumber,
+        successfulPaymentCount: missing.successfulPaymentCount,
+        rewards: missing.missingRewards,
+      });
+      if (!sent) continue;
+      await storage.createMembershipEvent({
+        subscriptionId: membership.id,
+        eventType,
+        details: JSON.stringify({
+          cycleNumber: missing.cycleNumber,
+          qualifyingPaymentId: missing.qualifyingPaymentId,
+          alertedAt: now.toISOString(),
+        }),
+      });
+      sentCount += 1;
+    } catch (error) {
+      console.error(`Missing membership reward alert pending retry for subscription ${membership.id}:`, error);
+    }
+  }
+  return sentCount;
+}
+
 let running = false;
 export async function scanMembershipLifecycles(now?: Date) {
-  if (running) return { membershipEmails: 0, rewardEmails: 0 };
+  if (running) return { membershipEmails: 0, rewardEmails: 0, rewardAlerts: 0 };
   running = true;
   try {
     const operationalNow = new Date();
@@ -153,6 +191,7 @@ export async function scanMembershipLifecycles(now?: Date) {
     return {
       membershipEmails: queuedEmails + await sendMembershipLifecycleNotifications(effectiveNow),
       rewardEmails: await sendRewardExpirationNotifications(effectiveNow),
+      rewardAlerts: await sendMissingRewardAlerts(effectiveNow),
     };
   } finally { running = false; }
 }

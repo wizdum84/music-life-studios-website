@@ -37,6 +37,7 @@ import { benefitBalanceExpiresAt, calculateRenewalBenefitTransition } from "./se
 import { queueMembershipLifecycleEmail } from "./services/membership-lifecycle-email-queue";
 import { isOrphanedPendingMembership } from "./services/membership-checkout-state";
 import { createMembershipQaRecoveryCheckout, MEMBERSHIP_QA_RECOVERY } from "./services/membership-qa-recovery";
+import { getMissingMembershipReward, issueMissingMembershipReward } from "./services/membership-reward-fallback";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
 const commerceMode = String(
@@ -3880,6 +3881,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const plan = await storage.getMembershipPlan(subscription.planId);
         const ledger = await storage.getMembershipBenefitLedger(subscription.id);
         const events = await storage.getMembershipEvents(subscription.id);
+        const missingReward = await getMissingMembershipReward(storage, subscription);
 
         return {
           subscription,
@@ -3887,6 +3889,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           plan,
           ledger,
           events,
+          missingReward,
         };
       }));
 
@@ -3894,6 +3897,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching admin memberships:", error);
       res.status(500).json({ error: "Failed to fetch memberships" });
+    }
+  });
+
+  app.post("/api/admin/memberships/:id/issue-reward", requireAdmin, async (req, res) => {
+    try {
+      const subscriptionId = parseInt(req.params.id, 10);
+      const subscription = (await storage.getAllMembershipSubscriptions()).find((item) => item.id === subscriptionId);
+      if (!subscription) return res.status(404).json({ error: "Membership subscription not found" });
+
+      const result = await issueMissingMembershipReward(storage, subscription);
+      if (result.issued.length === 0) {
+        return res.json({ issued: [], idempotent: true, message: "No qualifying missing reward remains." });
+      }
+      await storage.createMembershipEvent({
+        subscriptionId,
+        eventType: `membership_reward_manual_issue_cycle_${result.missing!.cycleNumber}`,
+        details: JSON.stringify({
+          adminUserId: req.user!.id,
+          cycleNumber: result.missing!.cycleNumber,
+          qualifyingPaymentId: result.missing!.qualifyingPaymentId,
+          rewardIds: result.issued.map((reward) => reward.id),
+          issuedAt: new Date().toISOString(),
+        }),
+      });
+      res.status(201).json({ issued: result.issued, idempotent: false });
+    } catch (error) {
+      console.error("Error issuing missing membership reward:", error);
+      res.status(500).json({ error: "Failed to issue missing membership reward" });
     }
   });
 

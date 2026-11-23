@@ -269,6 +269,26 @@ export async function sendRewardExpirationEmail(
   return true;
 }
 
+export async function sendMissingMembershipRewardAlert(
+  user: Pick<User, "email" | "firstName" | "lastName" | "username">,
+  plan: Pick<MembershipPlan, "name">,
+  membership: Pick<MembershipSubscription, "id">,
+  details: { cycleNumber: number; successfulPaymentCount: number; rewards: Array<{ rewardType: string; rewardQuantity: number }> },
+) {
+  const config = mailConfiguration();
+  if (!config) return false;
+  const customerName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.username;
+  const rewards = details.rewards.map((reward) => `${reward.rewardQuantity} × ${reward.rewardType}`).join(", ");
+  await config.transport.sendMail({
+    from: config.from,
+    replyTo: config.replyTo,
+    to: config.admin,
+    subject: `Membership reward needs review #${membership.id}`,
+    text: `A qualifying membership reward was not found after verified payments.\n\nMember: ${customerName}\nEmail: ${user.email}\nPlan: ${plan.name}\nMembership: ${membership.id}\nSuccessful payments: ${details.successfulPaymentCount}\nReward cycle: ${details.cycleNumber}\nExpected reward: ${rewards}\n\nOpen Admin > Memberships and use Issue reward. The action rechecks eligibility and blocks duplicates.`,
+  });
+  return true;
+}
+
 export async function sendAdminNotificationEmail(booking: Booking, transactionId: string, amountPaid?: number) {
   const config = mailConfiguration();
   if (!config) {

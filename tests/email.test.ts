@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { sendMail } = vi.hoisted(() => ({ sendMail: vi.fn(async () => ({ accepted: ["test@example.com"] })) }));
 vi.mock("nodemailer", () => ({ default: { createTransport: () => ({ sendMail }) } }));
-import { sendWelcomeEmail, sendClientConfirmationEmail, sendEmailVerificationEmail, sendMembershipLifecycleEmail } from "../server/services/email";
+import { sendWelcomeEmail, sendClientConfirmationEmail, sendEmailVerificationEmail, sendMembershipLifecycleEmail, sendMissingMembershipRewardAlert } from "../server/services/email";
 import type { Booking } from "../shared/schema";
 
 beforeEach(() => {
@@ -80,6 +80,20 @@ describe("transactional email content", () => {
     expect(sendMail).toHaveBeenLastCalledWith(expect.objectContaining({
       subject: "Artist Access payment recovered",
       text: expect.stringContaining("active again"),
+    }));
+  });
+  it("alerts the admin with the exact missing membership reward", async () => {
+    vi.stubEnv("ADMIN_NOTIFICATION_EMAIL", "bookings@example.com");
+    await sendMissingMembershipRewardAlert(
+      { email: "member@example.com", firstName: "Alex", lastName: "Artist", username: "alex" },
+      { name: "Artist Access" },
+      { id: 5 },
+      { cycleNumber: 1, successfulPaymentCount: 3, rewards: [{ rewardType: "recording_hours", rewardQuantity: 2 }] },
+    );
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({
+      to: "bookings@example.com",
+      subject: "Membership reward needs review #5",
+      text: expect.stringContaining("2 × recording_hours"),
     }));
   });
 });
