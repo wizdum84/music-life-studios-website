@@ -9,6 +9,7 @@ vi.mock("../server/storage", () => ({ withMembershipNotificationLock: async (_id
   getMembershipEvents: async () => f.events,
   createMembershipEvent: async (event: any) => { f.events.push(event); return event; },
   getMembershipLoyaltyRewards: async () => f.rewards,
+  getMembershipLoyaltyReward: async (id: number) => f.rewards.find(reward => reward.id === id),
   updateMembershipLoyaltyReward: async (id: number, update: any) => Object.assign(f.rewards.find(r => r.id === id), update),
 } }));
 vi.mock("../server/services/email", () => ({ isEmailConfigured: f.configured, sendRewardExpirationEmail: f.send, sendMembershipLifecycleEmail: vi.fn(), sendMissingMembershipRewardAlert: vi.fn() }));
@@ -39,21 +40,26 @@ describe("membership reward notifications", () => {
     expect(f.rewards[0].status).toBe("expired");
     expect(f.send).toHaveBeenCalledTimes(1);
     expect(f.send.mock.calls[0][3]).toBe("expired");
-    expect(f.events.map(e => e.eventType)).toEqual(["membership_reward_expired_4", "membership_reward_expired_email_sent_4"]);
+    expect(f.events.map(e => e.eventType)).toEqual([
+      "membership_reward_expired_4",
+      "membership_reward_expired_email_pending_4",
+      "membership_reward_expired_email_sent_4",
+    ]);
   });
   it("retries an already expired reward after email configuration becomes available", async () => {
     f.clock.mockResolvedValue(new Date("2027-02-24T00:00:00Z"));
     f.configured.mockReturnValue(false);
     await scanMembershipLifecycles();
     expect(f.send).not.toHaveBeenCalled();
+    expect(f.events).toHaveLength(2);
     f.configured.mockReturnValue(true);
     f.send.mockResolvedValueOnce(false);
     await scanMembershipLifecycles();
-    expect(f.events).toHaveLength(1);
+    expect(f.events).toHaveLength(2);
     await scanMembershipLifecycles();
     await scanMembershipLifecycles();
     expect(f.send).toHaveBeenCalledTimes(2);
-    expect(f.events).toHaveLength(2);
+    expect(f.events).toHaveLength(3);
   });
   it("never emails a redeemed reward", async () => {
     f.rewards[0].status = "redeemed";
@@ -66,11 +72,20 @@ describe("membership reward notifications", () => {
     const now = new Date("2027-02-24T00:00:00Z");
     try {
       await scanMembershipLifecycles(now);
-      expect(f.events).toHaveLength(1);
+      expect(f.events).toHaveLength(2);
       await scanMembershipLifecycles(now);
       await scanMembershipLifecycles(now);
       expect(f.send).toHaveBeenCalledTimes(2);
-      expect(f.events).toHaveLength(2);
+      expect(f.events).toHaveLength(3);
     } finally { log.mockRestore(); }
+  });
+
+  it("does not replay email for a legacy expired reward without a pending marker", async () => {
+    f.clock.mockResolvedValue(new Date("2027-02-24T00:00:00Z"));
+    f.rewards[0].status = "expired";
+    f.events = [{ eventType: "membership_reward_expired_4" }];
+    await scanMembershipLifecycles();
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.events).toHaveLength(1);
   });
 });

@@ -115,30 +115,35 @@ async function sendRewardExpirationNotifications(now: Date) {
       const timeLeft = deadline.getTime() - now.getTime();
       const eventType = `membership_reward_expiration_${reward.id}`;
       if (deadlineHasPassed(deadline, now)) {
-        if (reward.status === "issued") await storage.updateMembershipLoyaltyReward(reward.id, { status: "expired" });
         const expiredEventType = `membership_reward_expired_${reward.id}`;
-        if (!await eventExists(membership.id, expiredEventType)) {
-          await storage.createMembershipEvent({
-            subscriptionId: membership.id,
-            eventType: expiredEventType,
-            details: JSON.stringify({ rewardId: reward.id, expiredAt: now.toISOString() }),
-          });
-        }
-        // The state-change event is not proof of email delivery. Retry expired
-        // records too, including records expired before this notification existed.
+        const pendingEventType = `membership_reward_expired_email_pending_${reward.id}`;
         const sentEventType = `membership_reward_expired_email_sent_${reward.id}`;
-        if (emailConfigured) {
-          try {
-            const sent = await withMembershipNotificationLock((reward.id * 2) + 1, async () => {
-              if (await eventExists(membership.id, sentEventType)) return false;
-              if (!await sendRewardExpirationEmail(user, "Passport membership reward", deadline, "expired")) return false;
-              await storage.createMembershipEvent({ subscriptionId: membership.id, eventType: sentEventType, details: JSON.stringify({ rewardId: reward.id, sentAt: now.toISOString() }) });
-              return true;
-            });
-            if (sent) sentCount += 1;
-          } catch (error) {
-            console.error(`Membership reward expired email pending retry for reward ${reward.id}:`, error);
-          }
+        try {
+          const sent = await withMembershipNotificationLock((reward.id * 2) + 1, async () => {
+            const currentReward = await storage.getMembershipLoyaltyReward(reward.id);
+            if (!currentReward || !["issued", "expired"].includes(currentReward.status)) return false;
+            const events = await storage.getMembershipEvents(membership.id);
+            let pending = events.some((event) => event.eventType === pendingEventType);
+            if (currentReward.status === "issued") {
+              await storage.updateMembershipLoyaltyReward(reward.id, { status: "expired" });
+              if (!events.some((event) => event.eventType === expiredEventType)) {
+                await storage.createMembershipEvent({ subscriptionId: membership.id, eventType: expiredEventType, details: JSON.stringify({ rewardId: reward.id, expiredAt: now.toISOString() }) });
+              }
+              if (!pending) {
+                await storage.createMembershipEvent({ subscriptionId: membership.id, eventType: pendingEventType, details: JSON.stringify({ rewardId: reward.id, queuedAt: now.toISOString() }) });
+                pending = true;
+              }
+            }
+            // Legacy expired records have no pending marker. They may already
+            // have delivered mail, so do not replay them during deployment.
+            if (!pending || events.some((event) => event.eventType === sentEventType) || !emailConfigured) return false;
+            if (!await sendRewardExpirationEmail(user, "Passport membership reward", deadline, "expired")) return false;
+            await storage.createMembershipEvent({ subscriptionId: membership.id, eventType: sentEventType, details: JSON.stringify({ rewardId: reward.id, sentAt: now.toISOString() }) });
+            return true;
+          });
+          if (sent) sentCount += 1;
+        } catch (error) {
+          console.error(`Membership reward expired email pending retry for reward ${reward.id}:`, error);
         }
         continue;
       }
