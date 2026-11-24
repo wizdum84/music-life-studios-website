@@ -1795,3 +1795,33 @@ export async function withBookingPaymentLock<T>(id: number, work: () => Promise<
   try { return await current; }
   finally { if (bookingLocks.get(id) === current) bookingLocks.delete(id); }
 }
+
+const membershipNotificationLocks = new Map<number, Promise<unknown>>();
+
+// Serialize the final eligibility check, email handoff, and delivery event for
+// a reward across overlapping scans and overlapping Render processes.
+export async function withMembershipNotificationLock<T>(id: number, work: () => Promise<T>): Promise<T> {
+  if (process.env.DATABASE_URL) {
+    const client = await bookingLockPool.connect();
+    let transactionStarted = false;
+    let releaseError: Error | undefined;
+    try {
+      await client.query("BEGIN");
+      transactionStarted = true;
+      await client.query("SELECT pg_advisory_xact_lock(7712, $1::integer)", [id]);
+      return await work();
+    } finally {
+      try {
+        if (transactionStarted) await client.query("ROLLBACK");
+      } catch {
+        releaseError = new Error("Unable to release membership notification lock");
+      }
+      client.release(releaseError);
+    }
+  }
+  const previous = membershipNotificationLocks.get(id) || Promise.resolve();
+  const current = previous.catch(() => undefined).then(work);
+  membershipNotificationLocks.set(id, current);
+  try { return await current; }
+  finally { if (membershipNotificationLocks.get(id) === current) membershipNotificationLocks.delete(id); }
+}

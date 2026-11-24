@@ -44,7 +44,13 @@ function createZeptoApiTransport(token: string, senderAddress: string, senderNam
         throw new Error(`ZeptoMail API returned ${response.status}${details ? `: ${details}` : ""}`);
       }
 
-      return response.json();
+      // A 2xx response means ZeptoMail accepted the message. Do not turn an
+      // accepted delivery into a retry merely because its response body is
+      // empty or changes shape.
+      const responseBody = await response.text();
+      if (!responseBody) return { accepted: true };
+      try { return JSON.parse(responseBody); }
+      catch { return { accepted: true }; }
     },
     async verify() {
       if (!token.trim() || !senderAddress.trim()) {

@@ -1,4 +1,4 @@
-import { storage } from "../storage";
+import { storage, withMembershipNotificationLock } from "../storage";
 import { isEmailConfigured, sendMembershipLifecycleEmail, sendMissingMembershipRewardAlert, sendRewardExpirationEmail } from "./email";
 import { deadlineHasPassed } from "./membership-benefits";
 import { retryPendingMembershipLifecycleEmails } from "./membership-lifecycle-email-queue";
@@ -127,12 +127,15 @@ async function sendRewardExpirationNotifications(now: Date) {
         // The state-change event is not proof of email delivery. Retry expired
         // records too, including records expired before this notification existed.
         const sentEventType = `membership_reward_expired_email_sent_${reward.id}`;
-        if (emailConfigured && !await eventExists(membership.id, sentEventType)) {
+        if (emailConfigured) {
           try {
-            if (await sendRewardExpirationEmail(user, "Passport membership reward", deadline, "expired")) {
+            const sent = await withMembershipNotificationLock((reward.id * 2) + 1, async () => {
+              if (await eventExists(membership.id, sentEventType)) return false;
+              if (!await sendRewardExpirationEmail(user, "Passport membership reward", deadline, "expired")) return false;
               await storage.createMembershipEvent({ subscriptionId: membership.id, eventType: sentEventType, details: JSON.stringify({ rewardId: reward.id, sentAt: now.toISOString() }) });
-              sentCount += 1;
-            }
+              return true;
+            });
+            if (sent) sentCount += 1;
           } catch (error) {
             console.error(`Membership reward expired email pending retry for reward ${reward.id}:`, error);
           }
@@ -140,11 +143,15 @@ async function sendRewardExpirationNotifications(now: Date) {
         continue;
       }
       if (reward.status !== "issued") continue;
-      if (!emailConfigured || timeLeft > 7 * DAY || await eventExists(membership.id, eventType)) continue;
+      if (!emailConfigured || timeLeft > 7 * DAY) continue;
       try {
-        if (!await sendRewardExpirationEmail(user, "Passport membership reward", deadline)) continue;
-        await storage.createMembershipEvent({ subscriptionId: membership.id, eventType, details: JSON.stringify({ rewardId: reward.id, sentAt: now.toISOString() }) });
-        sentCount += 1;
+        const sent = await withMembershipNotificationLock(reward.id * 2, async () => {
+          if (await eventExists(membership.id, eventType)) return false;
+          if (!await sendRewardExpirationEmail(user, "Passport membership reward", deadline)) return false;
+          await storage.createMembershipEvent({ subscriptionId: membership.id, eventType, details: JSON.stringify({ rewardId: reward.id, sentAt: now.toISOString() }) });
+          return true;
+        });
+        if (sent) sentCount += 1;
       } catch (error) {
         console.error(`Membership reward reminder pending retry for reward ${reward.id}:`, error);
       }

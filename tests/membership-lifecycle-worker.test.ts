@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const f = vi.hoisted(() => ({ events: [] as any[], rewards: [] as any[], send: vi.fn(), configured: vi.fn(), clock: vi.fn() }));
-vi.mock("../server/storage", () => ({ storage: {
+vi.mock("../server/storage", () => ({ withMembershipNotificationLock: async (_id: number, work: () => Promise<unknown>) => work(), storage: {
   getAllMembershipSubscriptions: async () => [{ id: 1, userId: 2, planId: 3, status: "active", nextBillingDate: "2028-01-01" }],
   getAllUsers: async () => [],
   getUser: async () => ({ id: 2, email: "qa@example.com" }),

@@ -20,7 +20,7 @@ describe("transactional email content", () => {
     vi.stubEnv("EMAIL_FROM_ADDRESS", "bookings@musiclifestudios.work");
     const apiRequest = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ message: "OK" }),
+      text: async () => JSON.stringify({ message: "OK" }),
     }));
     vi.stubGlobal("fetch", apiRequest);
 
@@ -43,6 +43,17 @@ describe("transactional email content", () => {
       subject: "Verify your Music Life Studios email",
     }));
     expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("treats an empty successful ZeptoMail response as accepted", async () => {
+    vi.stubEnv("ZOHO_SMTP_HOST", "smtp.zeptomail.com");
+    vi.stubEnv("EMAIL_FROM_ADDRESS", "bookings@musiclifestudios.work");
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, text: async () => "" })));
+
+    await expect(sendEmailVerificationEmail(
+      { email: "test@example.com", firstName: "Alex", username: "alex" },
+      "https://example.com/verify",
+    )).resolves.toBe(true);
   });
 
   it("welcomes a new account without claiming email verification", async () => {
