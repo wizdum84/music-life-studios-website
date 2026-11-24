@@ -36,7 +36,6 @@ import { stripeInvoiceIsRenewal, stripeInvoiceServicePeriod, stripeInvoiceSubscr
 import { benefitBalanceExpiresAt, calculateRenewalBenefitTransition } from "./services/membership-benefits";
 import { queueMembershipLifecycleEmail } from "./services/membership-lifecycle-email-queue";
 import { isOrphanedPendingMembership } from "./services/membership-checkout-state";
-import { createMembershipQaRecoveryCheckout, MEMBERSHIP_QA_RECOVERY } from "./services/membership-qa-recovery";
 import { getMissingMembershipReward, issueMissingMembershipReward } from "./services/membership-reward-fallback";
 
 const BOOKING_DEPOSIT_RATE = 0.5;
@@ -3424,23 +3423,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user membership:", error);
       res.status(500).json({ error: "Failed to fetch user membership" });
-    }
-  });
-
-  app.get("/api/user/membership/qa-recovery-checkout", isAuthenticated, async (req, res) => {
-    try {
-      stripeService.assertMembershipQaRecoveryEnvironment();
-      if (req.user!.id !== MEMBERSHIP_QA_RECOVERY.userId
-        || req.user!.email.trim().toLowerCase() !== MEMBERSHIP_QA_RECOVERY.email) {
-        return res.status(403).type("text/plain").send("This QA recovery is restricted to the approved test account.");
-      }
-      const recovery = await createMembershipQaRecoveryCheckout(storage);
-      res.redirect(302, recovery.checkoutUrl);
-    } catch (error) {
-      console.error("QA membership recovery Checkout failed:", error);
-      res.status(409).type("text/plain").send(
-        error instanceof Error ? error.message : "Unable to create the QA recovery Checkout.",
-      );
     }
   });
 

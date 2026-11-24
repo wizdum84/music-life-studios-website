@@ -13,7 +13,6 @@
     "db:push": "drizzle-kit push",
     "db:add-checkout-columns": "tsx scripts/add-checkout-schema-columns.ts",
     "db:add-account-security": "tsx scripts/add-account-security-columns.ts",
-    "qa:recover-membership-checkout": "tsx scripts/create-membership-qa-recovery-checkout.ts",
     "media:migrate-r2": "tsx scripts/migrate-beat-media-to-r2.ts"
   },
   "dependencies": {

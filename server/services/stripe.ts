@@ -132,24 +132,6 @@ export async function createMembershipCheckoutSession(input: {
   }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
 }
 
-export function assertMembershipQaRecoveryEnvironment(env: NodeJS.ProcessEnv = process.env) {
-  const appOrigin = String(env.APP_ORIGIN || "").trim();
-  const stripeSecretKey = String(env.STRIPE_SECRET_KEY || "").trim();
-  const testClockId = String(env.MEMBERSHIP_QA_TEST_CLOCK_ID || "").trim();
-
-  if (!/^https:\/\/music-life-studios-membership-qa\.onrender\.com\/?$/.test(appOrigin)) {
-    throw new Error("Membership recovery is restricted to the Music Life Studios QA service.");
-  }
-  if (!stripeSecretKey.startsWith("sk_test_")) {
-    throw new Error("Membership recovery requires Stripe test credentials.");
-  }
-  if (!testClockId.startsWith("clock_")) {
-    throw new Error("Membership recovery requires MEMBERSHIP_QA_TEST_CLOCK_ID.");
-  }
-
-  return { appOrigin: appOrigin.replace(/\/$/, ""), testClockId };
-}
-
 export async function retrieveCheckoutSession(sessionId: string) {
   return assertStripeConfigured().checkout.sessions.retrieve(sessionId, { expand: ["subscription"] });
 }
