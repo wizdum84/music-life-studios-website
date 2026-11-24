@@ -110,12 +110,12 @@ async function sendRewardExpirationNotifications(now: Date) {
     if (!user) continue;
     for (const reward of await storage.getMembershipLoyaltyRewards(membership.id)) {
       const deadlineValue = reward.redemptionDeadline || reward.expiresAt;
-      if (!deadlineValue || reward.status !== "issued") continue;
+      if (!deadlineValue || !["issued", "expired"].includes(reward.status)) continue;
       const deadline = new Date(deadlineValue);
       const timeLeft = deadline.getTime() - now.getTime();
       const eventType = `membership_reward_expiration_${reward.id}`;
       if (deadlineHasPassed(deadline, now)) {
-        await storage.updateMembershipLoyaltyReward(reward.id, { status: "expired" });
+        if (reward.status === "issued") await storage.updateMembershipLoyaltyReward(reward.id, { status: "expired" });
         const expiredEventType = `membership_reward_expired_${reward.id}`;
         if (!await eventExists(membership.id, expiredEventType)) {
           await storage.createMembershipEvent({
@@ -124,8 +124,22 @@ async function sendRewardExpirationNotifications(now: Date) {
             details: JSON.stringify({ rewardId: reward.id, expiredAt: now.toISOString() }),
           });
         }
+        // The state-change event is not proof of email delivery. Retry expired
+        // records too, including records expired before this notification existed.
+        const sentEventType = `membership_reward_expired_email_sent_${reward.id}`;
+        if (emailConfigured && !await eventExists(membership.id, sentEventType)) {
+          try {
+            if (await sendRewardExpirationEmail(user, "Passport membership reward", deadline, "expired")) {
+              await storage.createMembershipEvent({ subscriptionId: membership.id, eventType: sentEventType, details: JSON.stringify({ rewardId: reward.id, sentAt: now.toISOString() }) });
+              sentCount += 1;
+            }
+          } catch (error) {
+            console.error(`Membership reward expired email pending retry for reward ${reward.id}:`, error);
+          }
+        }
         continue;
       }
+      if (reward.status !== "issued") continue;
       if (!emailConfigured || timeLeft > 7 * DAY || await eventExists(membership.id, eventType)) continue;
       try {
         if (!await sendRewardExpirationEmail(user, "Passport membership reward", deadline)) continue;

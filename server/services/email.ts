@@ -255,6 +255,7 @@ export async function sendRewardExpirationEmail(
   user: Pick<User, "email" | "firstName" | "username">,
   rewardName: string,
   deadline: Date,
+  kind: "reminder" | "expired" = "reminder",
 ) {
   const config = mailConfiguration();
   if (!config) return false;
@@ -263,8 +264,10 @@ export async function sendRewardExpirationEmail(
     from: config.from,
     replyTo: config.replyTo,
     to: user.email,
-    subject: `Your Music Life Studios reward expires soon`,
-    text: `Hi ${user.firstName || user.username},\n\nYour ${rewardName} expires on ${formattedDate}. Contact Music Life Studios before the deadline to redeem it.\n\nMusic Life Studios`,
+    subject: kind === "expired" ? "Your Music Life Studios reward has expired" : "Your Music Life Studios reward expires soon",
+    text: kind === "expired"
+      ? `Hi ${user.firstName || user.username},\n\nYour ${rewardName} expired on ${formattedDate} and is no longer available to redeem.\n\nMusic Life Studios`
+      : `Hi ${user.firstName || user.username},\n\nYour ${rewardName} expires on ${formattedDate}. Contact Music Life Studios before the deadline to redeem it.\n\nMusic Life Studios`,
   });
   return true;
 }

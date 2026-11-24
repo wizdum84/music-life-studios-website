@@ -49,4 +49,13 @@ describe("membership reward fallback", () => {
     expect(second.issued).toHaveLength(0);
     expect(rewards).toHaveLength(2);
   });
+
+  it("does not reissue an existing cycle after its rewards expire", async () => {
+    const { store, membership, rewards } = fixture();
+    await issueMissingMembershipReward(store, membership);
+    rewards.forEach((reward) => { reward.status = "expired"; });
+    expect(await getMissingMembershipReward(store, membership)).toBeNull();
+    expect((await issueMissingMembershipReward(store, membership)).issued).toHaveLength(0);
+    expect(rewards).toHaveLength(2);
+  });
 });
