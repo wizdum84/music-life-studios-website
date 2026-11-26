@@ -86,9 +86,18 @@ function exactMasterCandidates(title: string, files: string[], trackedDirectory:
   });
 }
 
+function exactFolderWav(title: string, files: string[]) {
+  const expectedDirectory = path.resolve(productionRoot, "These Need WAVs", title).toLowerCase();
+  const matches = files.filter((file) =>
+    path.resolve(path.dirname(file)).toLowerCase() === expectedDirectory
+    && [".wav", ".aiff", ".aif"].includes(path.extname(file).toLowerCase()),
+  );
+  return matches.length === 1 ? matches[0] : null;
+}
+
 function chooseMaster(title: string, manifestSource: string | undefined, files: string[], trackedDirectory: string | null) {
   const exact = exactMasterCandidates(title, files, trackedDirectory);
-  const exactWav = exact.find((file) => path.extname(file).toLowerCase() === ".wav");
+  const exactWav = exact.find((file) => path.extname(file).toLowerCase() === ".wav") || exactFolderWav(title, files);
   if (manifestSource && existsSync(manifestSource)) {
     if (path.extname(manifestSource).toLowerCase() === ".wav") return manifestSource;
     if (exactWav) return exactWav;
@@ -96,8 +105,8 @@ function chooseMaster(title: string, manifestSource: string | undefined, files: 
   }
   const outsideTracked = exact.filter((file) => !file.toLowerCase().startsWith(trackedRoot.toLowerCase()));
   return outsideTracked.find((file) => path.extname(file).toLowerCase() === ".wav")
-    || outsideTracked.find((file) => path.extname(file).toLowerCase() === ".mp3")
     || exactWav
+    || outsideTracked.find((file) => path.extname(file).toLowerCase() === ".mp3")
     || exact.find((file) => path.extname(file).toLowerCase() === ".mp3")
     || null;
 }
